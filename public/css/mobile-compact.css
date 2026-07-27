@@ -1,0 +1,715 @@
+/**
+ * Mobile-first compact layout — tighter headers, cards, and forms
+ * across CEO, Cashier, and Member dashboards.
+ * Load after mobile-responsive.css and mobile-app-menu.css.
+ */
+
+@media (max-width: 768px) {
+  /* ----- Compact top bar ----- */
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "toggle heading actions"
+      "search search search";
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  .topbar-left {
+    display: contents;
+  }
+
+  .sidebar-toggle {
+    grid-area: toggle;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 1.1rem;
+  }
+
+  .topbar-heading {
+    grid-area: heading;
+    min-width: 0;
+  }
+
+  .topbar-eyebrow {
+    margin: 0;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+  }
+
+  .topbar-left h1,
+  .topbar-heading h1 {
+    font-size: 1.05rem !important;
+    line-height: 1.2;
+    margin: 0;
+  }
+
+  .topbar-note {
+    margin: 0.15rem 0 0;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .topbar-right {
+    grid-area: actions;
+    width: auto !important;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.3rem;
+  }
+
+  .search-wrapper {
+    grid-area: search;
+    width: 100% !important;
+    order: unset;
+  }
+
+  /* Top bars without search — single compact row */
+  .topbar:not(:has(.search-wrapper)),
+  .cashier-topbar:not(:has(.search-wrapper)) {
+    grid-template-areas: "toggle heading actions";
+    grid-template-rows: auto;
+  }
+
+  .search-input {
+    padding: 0.5rem 0.75rem 0.5rem 2.35rem !important;
+    font-size: 0.88rem;
+    border-radius: 10px;
+    min-height: 38px;
+  }
+
+  .search-icon {
+    left: 0.7rem;
+    font-size: 0.9rem;
+  }
+
+  .theme-toggle-btn,
+  .language-toggle-btn {
+    width: 2.15rem;
+    height: 2.15rem;
+    min-width: 2.15rem;
+    min-height: 2.15rem;
+    font-size: 0.95rem;
+  }
+
+  .notification-bell-btn {
+    min-width: 2.15rem;
+    min-height: 2.15rem;
+    padding: 0.25rem;
+  }
+
+  .user-profile-menu,
+  .cashier-profile-chip {
+    padding: 0.2rem 0.45rem 0.2rem 0.2rem;
+    gap: 0.35rem;
+    max-width: 7.5rem;
+  }
+
+  .user-profile-menu img,
+  .cashier-profile-chip img {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* ----- Page rhythm ----- */
+  .page-layout,
+  .staff-dashboard .page-layout,
+  .ceo-dashboard .page-layout,
+  .admin-dashboard .page-layout {
+    padding: 0.65rem 0.75rem 1rem !important;
+    gap: 0.65rem !important;
+  }
+
+  .page-section.active {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .page-actions {
+    margin-bottom: 0.35rem;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
+  /* ----- Panel cards ----- */
+  .panel-card {
+    padding: 0.8rem 0.85rem !important;
+    border-radius: 14px !important;
+    margin-bottom: 0 !important;
+  }
+
+  .panel-card h2,
+  .panel-card h3 {
+    font-size: 1.02rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .table-subtitle {
+    margin: 0.2rem 0 0.45rem;
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+
+  .member-profile-section-header {
+    gap: 0.45rem;
+    margin-bottom: 0.35rem;
+  }
+
+  /* ----- Metric / KPI cards (2-col grid, compact) ----- */
+  .metrics-grid,
+  .report-metrics-grid,
+  .admin-dashboard .metrics-grid,
+  .admin-dashboard .dashboard-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.5rem !important;
+    margin-bottom: 0.15rem;
+  }
+
+  .dashboard-kpi-grid .dashboard-monthly-kpi-card,
+  .dashboard-kpi-grid .dashboard-investment-kpi-card,
+  .admin-dashboard .dashboard-kpi-grid .dashboard-monthly-kpi-card,
+  .admin-dashboard .dashboard-kpi-grid .dashboard-investment-kpi-card {
+    grid-column: 1 / -1;
+  }
+
+  .metric-card,
+  .admin-dashboard .metric-card,
+  .report-metric-card,
+  .member-metric-card {
+    flex-direction: row !important;
+    align-items: center !important;
+    text-align: left !important;
+    gap: 0.55rem !important;
+    padding: 0.65rem 0.7rem !important;
+    border-radius: 12px !important;
+    min-height: 0 !important;
+  }
+
+  .dashboard-kpi-grid .dashboard-kpi-card {
+    min-height: 0 !important;
+  }
+
+  .metric-icon {
+    font-size: 1.35rem !important;
+    min-width: 2rem;
+    line-height: 1;
+  }
+
+  .metric-content {
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  .metric-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+  }
+
+  .metric-value,
+  .kpi-one-number {
+    font-size: 1.15rem !important;
+    line-height: 1.1;
+  }
+
+  .kpi-footnote,
+  .snapshot-label {
+    margin-top: 0.1rem;
+    font-size: 0.68rem;
+    line-height: 1.25;
+  }
+
+  /* Quick actions */
+  .dashboard-quick-actions {
+    gap: 0.45rem !important;
+    margin-bottom: 0.65rem !important;
+  }
+
+  .dashboard-quick-btn {
+    padding: 0.55rem 0.6rem !important;
+    gap: 0.45rem;
+    border-radius: 10px;
+    font-size: 0.78rem;
+  }
+
+  .dashboard-quick-icon {
+    font-size: 1rem;
+  }
+
+  /* Monthly KPI cards */
+  .dashboard-monthly-kpi-card {
+    padding: 0.75rem 0.8rem !important;
+  }
+
+  .monthly-kpi-head {
+    gap: 0.45rem;
+  }
+
+  .monthly-kpi-amount {
+    font-size: 0.82rem;
+  }
+
+  .monthly-contribution-list-compact {
+    gap: 0.25rem;
+  }
+
+  .monthly-contribution-list-compact li,
+  .monthly-contribution-list li {
+    padding: 0.25rem 0;
+    font-size: 0.74rem;
+  }
+
+  /* Investment breakdown inside KPI */
+  .admin-dashboard .investment-kpi-breakdown {
+    gap: 0.3rem;
+  }
+
+  .admin-dashboard .investment-kpi-breakdown-item {
+    padding: 0.3rem 0.45rem;
+    border-radius: 8px;
+  }
+
+  .admin-dashboard .investment-kpi-breakdown-label {
+    font-size: 0.62rem;
+  }
+
+  .admin-dashboard .investment-kpi-breakdown-value {
+    font-size: 0.78rem;
+  }
+
+  /* Dashboard finance / snapshot */
+  .dashboard-finance-grid,
+  .dashboard-main-grid,
+  .dashboard-finance-body {
+    gap: 0.55rem !important;
+    margin-bottom: 0.55rem !important;
+  }
+
+  .dashboard-snapshot-grid {
+    gap: 0.45rem !important;
+    margin-bottom: 0.55rem !important;
+  }
+
+  .dashboard-snapshot-card {
+    padding: 0.6rem 0.65rem;
+    border-radius: 10px;
+  }
+
+  .dashboard-snapshot-card .secondary-btn {
+    margin-top: 0.25rem;
+    padding: 0.35rem 0.55rem;
+    min-height: 34px;
+    font-size: 0.72rem;
+  }
+
+  .dashboard-finance-list {
+    gap: 0.4rem;
+  }
+
+  .dashboard-finance-list li {
+    padding: 0.45rem 0.55rem;
+    font-size: 0.78rem;
+    border-radius: 8px;
+  }
+
+  .dashboard-chart-wrap {
+    min-height: 160px;
+  }
+
+  .dashboard-chart-wrap canvas {
+    max-height: 160px;
+  }
+
+  /* Member roster & profile cards */
+  .members-layout {
+    grid-template-columns: 1fr !important;
+    gap: 0.55rem;
+  }
+
+  .member-roster-list {
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+  }
+
+  .member-roster-item {
+    padding: 0.5rem 0.6rem;
+    gap: 0.5rem;
+    border-radius: 10px;
+  }
+
+  .member-roster-item img {
+    width: 36px;
+    height: 36px;
+  }
+
+  .member-roster-item span {
+    font-size: 0.76rem;
+  }
+
+  .member-profile-financial-grid,
+  .member-loan-outstanding-grid,
+  .member-profile-stats,
+  .member-profile-stats.stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.45rem !important;
+  }
+
+  .profile-finance-card,
+  .loan-stat-card {
+    padding: 0.6rem 0.65rem !important;
+    border-radius: 10px;
+  }
+
+  .profile-finance-card span {
+    font-size: 0.64rem;
+  }
+
+  .profile-finance-card strong {
+    font-size: 1rem;
+  }
+
+  .profile-finance-card small {
+    font-size: 0.72rem;
+  }
+
+  .member-highlight-card {
+    padding: 0.85rem;
+    border-radius: 12px;
+  }
+
+  .highlight-content {
+    gap: 0.75rem;
+  }
+
+  .highlight-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+  }
+
+  /* Cashier home */
+  .cashier-hero-banner {
+    padding: 0.85rem 0.9rem !important;
+    border-radius: 12px;
+  }
+
+  .cashier-summary-grid,
+  .cashier-module-grid,
+  .cashier-home-modules {
+    gap: 0.45rem !important;
+  }
+
+  .cashier-summary-card,
+  .cashier-module-card,
+  .cashier-metric-tile {
+    padding: 0.65rem 0.7rem !important;
+    border-radius: 10px;
+  }
+
+  .cashier-metric-tile strong {
+    font-size: 1rem;
+  }
+
+  /* ----- Forms (Sell Product, deposits, modals) ----- */
+  .form-group {
+    margin-bottom: 0.65rem !important;
+  }
+
+  .form-group label {
+    gap: 0.3rem !important;
+    margin-bottom: 0.25rem !important;
+    font-size: 0.8rem !important;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 0.52rem 0.65rem !important;
+    font-size: 0.9rem;
+    border-radius: 10px;
+    min-height: 38px;
+  }
+
+  .form-group textarea {
+    min-height: 72px;
+  }
+
+  .form-row-2,
+  .form-row-3,
+  .form-grid-2,
+  .form-grid-3,
+  .add-member-form .form-row-2,
+  .ceo-form .form-grid-2,
+  .audit-filter-form .form-row-3 {
+    gap: 0.5rem !important;
+  }
+
+  .deposit-form,
+  .add-member-form,
+  .investment-profit-form,
+  .investment-loss-form {
+    gap: 0.55rem !important;
+  }
+
+  .card-form-wide .panel-card,
+  .card-form-wide.panel-card {
+    padding: 0.75rem 0.8rem !important;
+  }
+
+  .primary-btn,
+  .secondary-btn,
+  .ghost-btn {
+    min-height: 40px;
+    padding: 0.48rem 0.75rem !important;
+    font-size: 0.82rem;
+    border-radius: 10px;
+  }
+
+  .page-actions .primary-btn,
+  .page-actions .secondary-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .profile-tabs,
+  .profile-tabs-v2,
+  .loan-list-tabs,
+  .member-list-tabs {
+    gap: 0.35rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .profile-tab {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.78rem;
+    border-radius: 999px;
+  }
+
+  .loan-admin-filters {
+    gap: 0.45rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .loan-admin-filters label {
+    font-size: 0.78rem;
+  }
+
+  /* Modals */
+  .modal-content,
+  .modal-large {
+    padding: 0.75rem 0.85rem !important;
+    border-radius: 14px 14px 0 0 !important;
+  }
+
+  .modal-header {
+    margin-bottom: 0.45rem;
+    gap: 0.45rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1rem !important;
+  }
+
+  .investment-code-banner {
+    padding: 0.55rem 0.65rem;
+    margin-bottom: 0.45rem;
+    border-radius: 10px;
+  }
+
+  /* Nav list / dashboard menu */
+  .dashboard-nav-bar {
+    padding: 0.55rem 0.65rem;
+    font-size: 0.82rem;
+    border-radius: 10px;
+  }
+
+  .dashboard-nav-list {
+    gap: 0.35rem;
+  }
+
+  .dashboard-notes-input {
+    min-height: 64px;
+    font-size: 0.85rem;
+  }
+
+  .loan-portfolio-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.45rem !important;
+    margin-top: 0.35rem;
+  }
+
+  .loan-stat-card strong {
+    font-size: 1rem;
+  }
+
+  .snapshot-number {
+    font-size: 1.25rem !important;
+  }
+
+  .dashboard-live-table-wrap {
+    max-height: 160px;
+  }
+
+  /* Cashier top bar (staff dashboard) */
+  .cashier-topbar {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "toggle heading actions"
+      "search search search";
+    gap: 0.35rem 0.5rem;
+    padding: 0.5rem 0.75rem !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .cashier-topbar:not(:has(.search-wrapper)) {
+    grid-template-areas: "toggle heading actions";
+  }
+
+  .cashier-topbar .topbar-left {
+    display: contents;
+  }
+
+  .cashier-topbar h1 {
+    font-size: 1.05rem !important;
+    line-height: 1.2;
+  }
+
+  .cashier-topbar-right {
+    grid-area: actions;
+    width: auto !important;
+    gap: 0.3rem;
+  }
+
+  .cashier-hero-banner {
+    padding: 0.75rem 0.8rem !important;
+    gap: 0.45rem;
+  }
+
+  .cashier-hero-banner h2 {
+    font-size: 1.05rem;
+    margin: 0;
+  }
+
+  .cashier-hero-pills {
+    gap: 0.35rem;
+  }
+
+  .cashier-pill {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.72rem;
+    min-width: 0;
+  }
+
+  .cashier-member-status-list {
+    max-height: 200px;
+  }
+
+  /* Mobile menu toolbar */
+  .mobile-menu-toolbar {
+    padding: 0.55rem 0.75rem 0.45rem !important;
+  }
+
+  .mobile-menu-title {
+    font-size: 1.1rem !important;
+  }
+
+  .mobile-menu-back {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mobile-menu-grid .nav-item {
+    min-height: 72px;
+    padding: 0.6rem 0.55rem;
+    gap: 0.4rem;
+  }
+
+  .mobile-menu-grid .nav-label {
+    font-size: 0.76rem;
+  }
+    min-height: 200px;
+  }
+
+  .chat-compose-form textarea {
+    min-height: 64px;
+    font-size: 0.88rem;
+  }
+
+  .chat-compose-actions {
+    gap: 0.35rem;
+  }
+
+  /* Section spacing overrides */
+  .admin-dashboard .page-layout > .dashboard-quick-actions,
+  .admin-dashboard .page-layout > .metrics-grid,
+  .admin-dashboard .page-layout > .dashboard-finance-grid,
+  .admin-dashboard .page-layout > .dashboard-main-grid,
+  .admin-dashboard .page-layout > .panel-card {
+    margin-bottom: 0.65rem !important;
+  }
+}
+
+/* Extra-small phones */
+@media (max-width: 380px) {
+  .topbar-left h1,
+  .topbar-heading h1 {
+    font-size: 0.95rem !important;
+  }
+
+  .topbar-note {
+    -webkit-line-clamp: 1;
+  }
+
+  .metrics-grid,
+  .dashboard-kpi-grid,
+  .report-metrics-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .metric-card {
+    padding: 0.55rem 0.6rem !important;
+  }
+
+  .dashboard-quick-actions,
+  .cashier-module-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .member-profile-financial-grid,
+  .member-profile-stats.stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@supports (padding: max(0px)) {
+  @media (max-width: 768px) {
+    .topbar {
+      padding-top: max(0.45rem, env(safe-area-inset-top)) !important;
+      padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+      padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    }
+
+    .page-layout,
+    .staff-dashboard .page-layout,
+    .ceo-dashboard .page-layout,
+    .admin-dashboard .page-layout {
+      padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+      padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+      padding-bottom: max(0.85rem, env(safe-area-inset-bottom)) !important;
+    }
+  }
+}
