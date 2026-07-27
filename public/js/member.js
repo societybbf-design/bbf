@@ -58,6 +58,7 @@ const memberPageKeys = {
   messages: 'messages',
   documents: 'documents',
   settings: 'settings',
+  'cashier-tracking': 'cashierTracking',
 };
 
 function memberPageText(page, field, fallback) {
@@ -111,6 +112,12 @@ function navigateMemberPage(page) {
     void loadMemberChat();
   } else {
     stopMemberChatPolling();
+  }
+  if (page === 'cashier-tracking') {
+    void mountMemberCashierTracking();
+  }
+  if (page === 'dashboard') {
+    void loadMemberCashierTrackingTeaser();
   }
 }
 
@@ -1842,6 +1849,34 @@ async function loadMemberDepositTrend() {
   }
 }
 
+function moneyTracking(value) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return '$0.00';
+  return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+async function loadMemberCashierTrackingTeaser() {
+  const balanceEl = document.getElementById('memberTrackingBookBalance');
+  const payoutsEl = document.getElementById('memberTrackingRecentPayouts');
+  if (!balanceEl && !payoutsEl) return;
+  try {
+    const response = await fetch('/api/cashier-tracking/summary');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load cashier tracking.');
+    if (balanceEl) balanceEl.textContent = moneyTracking(data.ledger?.bookBalance);
+    if (payoutsEl) payoutsEl.textContent = String((data.recentPayouts || []).length);
+  } catch (error) {
+    if (balanceEl) balanceEl.textContent = '—';
+    if (payoutsEl) payoutsEl.textContent = '—';
+  }
+}
+
+async function mountMemberCashierTracking() {
+  const root = document.getElementById('memberCashierTrackingRoot');
+  if (!root || !window.SocietyCashierTracking) return;
+  await window.SocietyCashierTracking.mount(root);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   bindSidebarControls();
   bindMemberReportCards();
@@ -1860,6 +1895,18 @@ document.addEventListener('DOMContentLoaded', () => {
   void loadMemberInvestmentRequests();
   void loadLoanEligibility();
   void loadMemberDepositTrend();
+  void loadMemberCashierTrackingTeaser();
+
+  const hashPage = (window.location.hash || '').replace(/^#/, '');
+  if (hashPage && document.querySelector(`[data-page="${hashPage}"]`)) {
+    navigateMemberPage(hashPage);
+  }
+
+  document.getElementById('openCashierTrackingBtn')?.addEventListener('click', () => {
+    navigateMemberPage('cashier-tracking');
+    window.location.hash = 'cashier-tracking';
+    closeSidebar();
+  });
 
   document.getElementById('memberSelfPasswordForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();

@@ -40,7 +40,8 @@
     "ious": "IOUs",
     "kyc": "KYC",
     "notices": "Notices",
-    "chat": "Chat"
+    "chat": "Chat",
+    "cashierTracking": "Cashier Tracking"
   },
   "common": {
     "signOut": "Sign Out",
@@ -203,6 +204,10 @@
       "settings": {
         "title": "Settings",
         "note": "Manage your account preferences."
+      },
+      "cashierTracking": {
+        "title": "Cashier Tracking",
+        "note": "View society central bank balance, recent payouts, and read-only transaction activity."
       }
     },
     "staff": {
@@ -504,5 +509,35 @@
       "breakdownInvested": "Invested",
       "breakdownSold": "Sold"
     }
+  },
+  "tracking": {
+    "title": "Cashier Tracking",
+    "teaserNote": "Live society bank balance and recent cashier activity.",
+    "viewFull": "View full tracking",
+    "memberNote": "Read-only transparency into the society central bank balance, recent payouts, and society-wide transaction activity.",
+    "staffNote": "Read-only society fund transparency — central bank balance, payouts, and transaction activity.",
+    "centralBalance": "Central bank balance",
+    "recentPayouts": "Recent payouts",
+    "recentLedger": "Recent ledger activity",
+    "transactionLog": "Society transaction log",
+    "fromDate": "From date",
+    "toDate": "To date",
+    "category": "Category",
+    "allTransactions": "All transactions",
+    "direction": "Direction",
+    "directionIn": "In",
+    "directionOut": "Out",
+    "balanceAfter": "Balance after",
+    "description": "Description",
+    "totalIn": "Total in",
+    "totalOut": "Total out",
+    "transactions": "Transactions",
+    "loadMore": "Load more",
+    "matched": "transaction(s) matched.",
+    "summaryUpdated": "Live society cashier data.",
+    "noLedger": "No ledger activity yet.",
+    "noPayouts": "No recent payouts recorded.",
+    "noAudit": "No transactions matched your filters.",
+    "reconciliationAlert": "The society bank ledger is under review. Book balance may differ from the physical bank until cashier reconciliation is complete."
   }
 }

@@ -1014,6 +1014,64 @@ html[data-theme="dark"] .cashier-collection-ring {
   }
 }
 
+/* Cashier tracking / transparency (read-only) */
+.cashier-tracking-panel .tracking-subsection {
+  margin-top: 1rem;
+}
+
+.cashier-tracking-panel .tracking-subsection h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.tracking-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.65rem;
+}
+
+.tracking-stat-card {
+  padding: 0.85rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.tracking-stat-card h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.tracking-stat-card p {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.cashier-history-list[data-tracking-payouts] li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.75rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cashier-history-list[data-tracking-payouts] li small {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.cashier-tracking-teaser .member-profile-section-header {
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .tracking-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .cashier-directory-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -65,6 +65,10 @@
         <span class="nav-icon-wrap"><span class="nav-icon">📄</span></span>
         <span class="nav-label" data-i18n="nav.documents">Documents</span>
       </a>
+      <a href="#cashier-tracking" class="nav-item" data-page="cashier-tracking">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏛️</span></span>
+        <span class="nav-label" data-i18n="nav.cashierTracking">Cashier Tracking</span>
+      </a>
       <a href="#settings" class="nav-item" data-page="settings">
         <span class="nav-icon-wrap"><span class="nav-icon">⚙️</span></span>
         <span class="nav-label" data-i18n="nav.settings">Settings</span>
@@ -318,6 +322,26 @@
         <p class="table-subtitle">Your monthly deposit activity over the last 12 months.</p>
         <div class="dashboard-chart-wrap">
           <canvas id="memberDepositTrendChart" height="220"></canvas>
+        </div>
+      </section>
+
+      <section class="panel-card cashier-tracking-teaser" id="memberCashierTrackingTeaser">
+        <div class="member-profile-section-header">
+          <div>
+            <h2 data-i18n="tracking.title">Cashier Tracking</h2>
+            <p class="table-subtitle" data-i18n="tracking.teaserNote">Live society bank balance and recent cashier activity.</p>
+          </div>
+          <button type="button" class="secondary-btn" id="openCashierTrackingBtn" data-i18n="tracking.viewFull">View full tracking</button>
+        </div>
+        <div class="stats-grid tracking-summary-grid">
+          <div class="stat-card tracking-stat-card">
+            <h3 id="memberTrackingBookBalance">—</h3>
+            <p data-i18n="tracking.centralBalance">Central bank balance</p>
+          </div>
+          <div class="stat-card tracking-stat-card">
+            <h3 id="memberTrackingRecentPayouts">—</h3>
+            <p data-i18n="tracking.recentPayouts">Recent payouts</p>
+          </div>
         </div>
       </section>
       </section>
@@ -649,6 +673,87 @@
         </section>
       </section>
 
+      <section class="page-section" data-page-section="cashier-tracking">
+        <section class="panel-card cashier-tracking-panel" id="memberCashierTrackingRoot">
+          <div class="panel-card-header">
+            <h2 data-i18n="tracking.title">Cashier Tracking</h2>
+            <p class="table-subtitle" data-i18n="tracking.memberNote">Read-only transparency into the society central bank balance, recent payouts, and society-wide transaction activity.</p>
+          </div>
+          <div id="memberTrackingAlert" class="ledger-mismatch-alert hidden" data-tracking-alert role="status"></div>
+          <div class="stats-grid" data-tracking-summary></div>
+          <section class="tracking-subsection">
+            <h3 data-i18n="tracking.recentPayouts">Recent payouts</h3>
+            <ul class="cashier-history-list" data-tracking-payouts></ul>
+          </section>
+          <section class="tracking-subsection">
+            <h3 data-i18n="tracking.recentLedger">Recent ledger activity</h3>
+            <div class="table-wrapper">
+              <table class="data-table table-cards">
+                <thead>
+                  <tr>
+                    <th data-i18n="table.date">Date</th>
+                    <th data-i18n="table.type">Type</th>
+                    <th data-i18n="tracking.direction">Direction</th>
+                    <th data-i18n="table.amount">Amount</th>
+                    <th data-i18n="tracking.balanceAfter">Balance after</th>
+                    <th data-i18n="table.notes">Notes</th>
+                  </tr>
+                </thead>
+                <tbody data-tracking-ledger-body>
+                  <tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="tracking-subsection">
+            <h3 data-i18n="tracking.transactionLog">Society transaction log</h3>
+            <form class="add-member-form audit-filter-form" data-tracking-filter-form>
+              <div class="form-row-3">
+                <label>
+                  <span data-i18n="tracking.fromDate">From date</span>
+                  <input type="date" name="from" />
+                </label>
+                <label>
+                  <span data-i18n="tracking.toDate">To date</span>
+                  <input type="date" name="to" />
+                </label>
+                <label>
+                  <span data-i18n="tracking.category">Category</span>
+                  <select name="category" data-tracking-category>
+                    <option value="all" data-i18n="tracking.allTransactions">All transactions</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row-2">
+                <button type="submit" class="primary-btn" data-i18n="common.applyFilters">Apply filters</button>
+                <button type="button" class="ghost-btn" data-tracking-clear data-i18n="common.clearFilters">Clear filters</button>
+              </div>
+            </form>
+            <div class="table-wrapper u-mt-1">
+              <table class="data-table table-cards">
+                <thead>
+                  <tr>
+                    <th data-i18n="table.date">Date</th>
+                    <th data-i18n="table.type">Type</th>
+                    <th data-i18n="tracking.direction">Direction</th>
+                    <th data-i18n="table.amount">Amount</th>
+                    <th data-i18n="tracking.description">Description</th>
+                    <th data-i18n="tracking.balanceAfter">Balance after</th>
+                  </tr>
+                </thead>
+                <tbody data-tracking-audit-body>
+                  <tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="form-row-2 u-mt-1">
+              <button type="button" class="ghost-btn" data-tracking-load-more hidden data-i18n="tracking.loadMore">Load more</button>
+              <p class="message" data-tracking-message></p>
+            </div>
+          </section>
+        </section>
+      </section>
+
       <section class="page-section" data-page-section="settings">
         <section class="panel-card">
           <h2>Account Settings</h2>
@@ -732,6 +837,7 @@
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/table-cards.js"></script>
   <script src="/static/js/chat-shared.js"></script>
+  <script src="/static/js/cashier-tracking.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="/static/js/member.js"></script>
 </body>

@@ -27,6 +27,7 @@ const profitPoolRoutes = require('./routes/profitPool');
 const advanceBorrowingRoutes = require('./routes/advanceBorrowing');
 const monthlyTargetsRoutes = require('./routes/monthlyTargets');
 const transactionAuditRoutes = require('./routes/transactionAudit');
+const cashierTrackingRoutes = require('./routes/cashierTracking');
 const analyticsRoutes = require('./routes/analytics');
 const duesRemindersRoutes = require('./routes/duesReminders');
 const activityLogRoutes = require('./routes/activityLog');
@@ -156,6 +157,7 @@ function buildApp(sessionStore) {
   app.use('/api/admin/funding', advanceBorrowingRoutes);
   app.use('/api/admin/monthly-targets', monthlyTargetsRoutes);
   app.use('/api/admin/transaction-audit', transactionAuditRoutes);
+  app.use('/api/cashier-tracking', cashierTrackingRoutes);
   app.use('/api/admin/analytics', analyticsRoutes);
   app.use('/api/admin/dues-reminders', duesRemindersRoutes);
   app.use('/api/admin/activity-log', activityLogRoutes);
