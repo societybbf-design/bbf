@@ -40,7 +40,11 @@ const FEATURE_CATALOG = [
 
 let staffSessionUser = null;
 let staffMembersCache = [];
+let staffInvestorsCache = [];
 let staffCurrentView = 'home';
+let auditState = { offset: 0, hasMore: false, filters: {} };
+let activeMemberProfileId = null;
+let activeInvestorProfileId = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -52,6 +56,35 @@ function escapeHtml(value) {
 
 function money(value) {
   return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function buildQueryString(params = {}) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(key, String(value));
+    }
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
+function triggerPdfDownload(button, url, { loadingLabel = 'Generating PDF…' } = {}) {
+  if (!button || button.disabled) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.classList.add('is-loading');
+  button.textContent = button.dataset.loadingLabel || loadingLabel;
+  window.open(url, '_blank', 'noopener');
+  window.setTimeout(() => {
+    button.disabled = false;
+    button.classList.remove('is-loading');
+    button.textContent = original;
+  }, 900);
+}
+
+function auditDirectionClass(direction) {
+  return direction === 'in' ? 'audit-direction-in' : 'audit-direction-out';
 }
 
 function navItemHtml({ title, icon, active = false, panel = 'home' }) {
@@ -343,6 +376,8 @@ async function loadViewData(viewId) {
       return loadRefundsModule();
     case 'reports':
       return loadReportsModule();
+    case 'audit':
+      return loadAuditModule();
     case 'chat':
       return loadChatModule();
     case 'members':
@@ -1062,6 +1097,171 @@ async function loadReportsModule() {
   }
 }
 
+function renderAuditSummary(summary = {}) {
+  const grid = document.getElementById('auditSummaryStats');
+  if (!grid) return;
+  grid.innerHTML = `
+    <div class="stat-card"><h3>${money(summary.totalIn)}</h3><p>Total in</p></div>
+    <div class="stat-card"><h3>${money(summary.totalOut)}</h3><p>Total out</p></div>
+    <div class="stat-card"><h3>${money(summary.net)}</h3><p>Net flow</p></div>
+    <div class="stat-card"><h3>${summary.count ?? 0}</h3><p>Transactions</p></div>
+  `;
+}
+
+function renderAuditRows(transactions = [], { append = false } = {}) {
+  const tbody = document.getElementById('auditTransactionsBody');
+  if (!tbody) return;
+  const rows = transactions.map((tx) => `
+    <tr>
+      <td>${escapeHtml(tx.occurredAt ? new Date(tx.occurredAt).toLocaleString() : '—')}</td>
+      <td>${escapeHtml(tx.categoryLabel || tx.category || '—')}</td>
+      <td><span class="${auditDirectionClass(tx.direction)}">${escapeHtml(tx.direction === 'in' ? 'In' : 'Out')}</span></td>
+      <td>${money(tx.amount)}</td>
+      <td>${escapeHtml(tx.description || '—')}</td>
+      <td>${escapeHtml(tx.actor || '—')}</td>
+      <td>${tx.balanceAfter != null ? money(tx.balanceAfter) : '—'}</td>
+    </tr>
+  `).join('');
+
+  if (append) {
+    tbody.insertAdjacentHTML('beforeend', rows);
+  } else {
+    tbody.innerHTML = rows || '<tr><td colspan="7">No transactions matched the selected filters.</td></tr>';
+  }
+}
+
+async function ensureAuditCategories() {
+  const select = document.getElementById('auditCategory');
+  if (!select || select.dataset.loaded === '1') return;
+  const response = await fetch('/api/admin/transaction-audit/categories');
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Unable to load audit categories.');
+  select.innerHTML = (data.categories || []).map((item) => (
+    `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
+  )).join('');
+  select.dataset.loaded = '1';
+}
+
+async function fetchAuditTrail({ append = false } = {}) {
+  const msg = document.getElementById('auditMessage');
+  const loadMoreBtn = document.getElementById('auditLoadMoreBtn');
+  const query = buildQueryString({
+    ...auditState.filters,
+    limit: 100,
+    offset: append ? auditState.offset : 0,
+  });
+
+  const response = await fetch(`/api/admin/transaction-audit${query}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Unable to load audit trail.');
+
+  auditState.offset = append ? auditState.offset + (data.transactions || []).length : (data.transactions || []).length;
+  auditState.hasMore = Boolean(data.hasMore);
+  renderAuditSummary(data.summary || {});
+  renderAuditRows(data.transactions || [], { append });
+  if (loadMoreBtn) loadMoreBtn.hidden = !auditState.hasMore;
+  if (msg) msg.textContent = `${data.totalMatched ?? 0} transaction(s) matched.`;
+}
+
+async function loadAuditModule() {
+  const tbody = document.getElementById('auditTransactionsBody');
+  if (tbody && !tbody.dataset.loading) {
+    tbody.innerHTML = '<tr><td colspan="7">Loading audit trail…</td></tr>';
+  }
+  try {
+    await ensureAuditCategories();
+    if (!auditState.filters.category) {
+      auditState.filters = {
+        from: document.getElementById('auditFromDate')?.value || '',
+        to: document.getElementById('auditToDate')?.value || '',
+        category: document.getElementById('auditCategory')?.value || 'all',
+      };
+    }
+    auditState.offset = 0;
+    await fetchAuditTrail({ append: false });
+  } catch (error) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+function bindAuditForms() {
+  const form = document.getElementById('auditFilterForm');
+  if (!form || form.dataset.bound === '1') return;
+  form.dataset.bound = '1';
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    auditState.filters = {
+      from: formData.get('from') || '',
+      to: formData.get('to') || '',
+      category: formData.get('category') || 'all',
+    };
+    auditState.offset = 0;
+    const applyBtn = document.getElementById('auditApplyBtn');
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Loading…';
+    }
+    try {
+      await fetchAuditTrail({ append: false });
+    } catch (error) {
+      const msg = document.getElementById('auditMessage');
+      if (msg) msg.textContent = error.message;
+    } finally {
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply filters';
+      }
+    }
+  });
+
+  document.getElementById('auditClearBtn')?.addEventListener('click', () => {
+    form.reset();
+    auditState.filters = { from: '', to: '', category: 'all' };
+    auditState.offset = 0;
+    void loadAuditModule();
+  });
+
+  document.getElementById('auditLoadMoreBtn')?.addEventListener('click', () => {
+    void fetchAuditTrail({ append: true }).catch((error) => {
+      const msg = document.getElementById('auditMessage');
+      if (msg) msg.textContent = error.message;
+    });
+  });
+
+  document.getElementById('auditExportPdfBtn')?.addEventListener('click', (event) => {
+    const button = event.currentTarget;
+    const query = buildQueryString({
+      ...auditState.filters,
+      limit: 500,
+      offset: 0,
+    });
+    triggerPdfDownload(button, `/api/admin/transaction-audit/export.pdf${query}`);
+  });
+}
+
+function bindDirectoryTabs() {
+  const membersTab = document.getElementById('cashierMembersTab');
+  const investorsTab = document.getElementById('cashierInvestorsTab');
+  const membersDir = document.getElementById('cashierMembersDirectory');
+  const investorsDir = document.getElementById('cashierInvestorsDirectory');
+  if (!membersTab || membersTab.dataset.bound === '1') return;
+  membersTab.dataset.bound = '1';
+
+  const activate = (tab) => {
+    const isMembers = tab === 'members';
+    membersTab.classList.toggle('active', isMembers);
+    investorsTab?.classList.toggle('active', !isMembers);
+    membersDir?.classList.toggle('hidden', !isMembers);
+    investorsDir?.classList.toggle('hidden', isMembers);
+    if (!isMembers) void loadInvestorsModule();
+  };
+
+  membersTab.addEventListener('click', () => activate('members'));
+  investorsTab?.addEventListener('click', () => activate('investors'));
+}
+
 let cashierChatMemberId = null;
 let cashierChatMemberName = '';
 let cashierChatReplyTo = null;
@@ -1260,6 +1460,55 @@ async function loadChatModule() {
 
   if (cashierChatMemberId) {
     await openCashierChat(cashierChatMemberId, cashierChatMemberName);
+  }
+}
+
+async function loadInvestorsModule() {
+  const tbody = document.getElementById('cashierInvestorsBody');
+  try {
+    const response = await fetch('/api/admin/investors');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load investors.');
+    staffInvestorsCache = data.investors || [];
+    if (!tbody) return;
+    tbody.innerHTML = staffInvestorsCache.length
+      ? staffInvestorsCache.map((investor) => {
+        const id = investor._id || investor.id;
+        return `
+          <tr class="cashier-investor-row" data-investor-id="${escapeHtml(String(id))}" tabindex="0" role="button" title="Open investor portfolio">
+            <td>${escapeHtml(investor.name)}</td>
+            <td>${escapeHtml(investor.email || '—')}</td>
+            <td>${escapeHtml(investor.phone || '—')}</td>
+            <td>${escapeHtml(investor.status || 'active')}</td>
+            <td>
+              <button type="button" class="secondary-btn" data-open-investor-profile="${escapeHtml(String(id))}">
+                View portfolio
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('')
+      : '<tr><td colspan="5">No investors found.</td></tr>';
+
+    tbody.querySelectorAll('[data-open-investor-profile]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void openCashierInvestorProfile(btn.dataset.openInvestorProfile);
+      });
+    });
+    tbody.querySelectorAll('.cashier-investor-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        void openCashierInvestorProfile(row.dataset.investorId);
+      });
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          void openCashierInvestorProfile(row.dataset.investorId);
+        }
+      });
+    });
+  } catch (error) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -1502,11 +1751,14 @@ async function openCashierMemberProfile(memberId) {
   const modal = document.getElementById('cashierMemberProfileModal');
   const content = document.getElementById('cashierMemberProfileContent');
   const title = document.getElementById('cashierMemberProfileTitle');
+  const pdfBtn = document.getElementById('cashierMemberPdfBtn');
   if (!modal || !content || !memberId) return;
 
+  activeMemberProfileId = memberId;
   modal.classList.remove('hidden');
   content.innerHTML = '<p class="text-secondary">Loading member ledger…</p>';
   if (title) title.textContent = 'Member profile';
+  if (pdfBtn) pdfBtn.classList.add('hidden');
 
   try {
     const response = await fetch(`/api/admin/members/${encodeURIComponent(memberId)}/profile`);
@@ -1515,9 +1767,148 @@ async function openCashierMemberProfile(memberId) {
 
     if (title) title.textContent = `${data.member?.name || 'Member'} — ledger`;
     content.innerHTML = buildCashierMemberProfileHtml(data);
+    if (pdfBtn) {
+      pdfBtn.classList.remove('hidden');
+      pdfBtn.onclick = () => {
+        triggerPdfDownload(
+          pdfBtn,
+          `/api/admin/members/${encodeURIComponent(memberId)}/ledger.pdf`
+        );
+      };
+    }
   } catch (error) {
     content.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
   }
+}
+
+function buildCashierInvestorProfileHtml(data) {
+  const investor = data.investor || {};
+  const summary = data.summary || {};
+  const investments = data.investments || [];
+  const byType = data.byType || [];
+
+  return `
+    <div class="member-profile-shell">
+      <section class="member-profile-section member-profile-section-hero">
+        <div class="member-profile-summary">
+          <div>
+            <strong>${escapeHtml(investor.name || 'Investor')}</strong>
+            <span>${escapeHtml(investor.email || '')}</span>
+            <div class="member-profile-meta u-mt-1">
+              <span class="member-profile-meta-pill">${escapeHtml(investor.status || 'active')}</span>
+              <span class="member-profile-meta-pill">Phone: ${escapeHtml(investor.phone || '—')}</span>
+            </div>
+          </div>
+        </div>
+        <div class="member-profile-stats stats-grid u-mt-1">
+          <div class="stat-card"><h3>${money(summary.totalAmount)}</h3><p>Total invested</p></div>
+          <div class="stat-card"><h3>${money(summary.activeAmount)}</h3><p>Active amount</p></div>
+          <div class="stat-card"><h3>${money(summary.soldAmount)}</h3><p>Sold amount</p></div>
+          <div class="stat-card"><h3>${summary.totalInvestments || 0}</h3><p>Projects</p></div>
+        </div>
+      </section>
+
+      <section class="member-profile-section">
+        <div class="member-profile-section-header"><h3>Investments by type</h3></div>
+        <div class="table-wrapper">
+          <table class="data-table table-cards">
+            <thead><tr><th>Type</th><th>Count</th><th>Total</th><th>Active</th><th>Sold</th></tr></thead>
+            <tbody>
+              ${byType.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.investmentType || '—')}</td>
+                  <td>${row.count || 0}</td>
+                  <td>${money(row.totalAmount)}</td>
+                  <td>${money(row.activeAmount)}</td>
+                  <td>${money(row.soldAmount)}</td>
+                </tr>
+              `).join('') || '<tr><td colspan="5">No investments by type.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="member-profile-section">
+        <div class="member-profile-section-header">
+          <h3>Investment transaction history</h3>
+          <span class="member-profile-meta-pill">${investments.length} records</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table table-cards">
+            <thead><tr><th>Date</th><th>Code</th><th>Type</th><th>Status</th><th>Amount</th><th>Profit</th></tr></thead>
+            <tbody>
+              ${investments.map((item) => `
+                <tr>
+                  <td>${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString() : '—')}</td>
+                  <td>${escapeHtml(item.investmentCode || '—')}</td>
+                  <td>${escapeHtml(item.investmentType || item.sector || '—')}</td>
+                  <td>${statusPill(item.status)}</td>
+                  <td>${money(item.amount)}</td>
+                  <td>${money(item.profit)}</td>
+                </tr>
+              `).join('') || '<tr><td colspan="6">No investments recorded.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+async function openCashierInvestorProfile(investorId) {
+  const modal = document.getElementById('cashierInvestorProfileModal');
+  const content = document.getElementById('cashierInvestorProfileContent');
+  const title = document.getElementById('cashierInvestorProfileTitle');
+  const pdfBtn = document.getElementById('cashierInvestorPdfBtn');
+  if (!modal || !content || !investorId) return;
+
+  activeInvestorProfileId = investorId;
+  modal.classList.remove('hidden');
+  content.innerHTML = '<p class="text-secondary">Loading investor portfolio…</p>';
+  if (title) title.textContent = 'Investor portfolio';
+  if (pdfBtn) pdfBtn.classList.add('hidden');
+
+  try {
+    const response = await fetch(`/api/admin/investors/${encodeURIComponent(investorId)}/profile`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load investor portfolio.');
+
+    if (title) title.textContent = `${data.investor?.name || 'Investor'} — portfolio`;
+    content.innerHTML = buildCashierInvestorProfileHtml(data);
+    if (pdfBtn) {
+      pdfBtn.classList.remove('hidden');
+      pdfBtn.onclick = () => {
+        triggerPdfDownload(
+          pdfBtn,
+          `/api/admin/investors/${encodeURIComponent(investorId)}/ledger.pdf`
+        );
+      };
+    }
+  } catch (error) {
+    content.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function closeCashierInvestorProfile() {
+  const modal = document.getElementById('cashierInvestorProfileModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function bindCashierInvestorProfileModal() {
+  const modal = document.getElementById('cashierInvestorProfileModal');
+  const closeBtn = document.getElementById('cashierInvestorProfileClose');
+  if (!modal || modal.dataset.bound === '1') return;
+  modal.dataset.bound = '1';
+
+  closeBtn?.addEventListener('click', closeCashierInvestorProfile);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeCashierInvestorProfile();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeCashierInvestorProfile();
+    }
+  });
 }
 
 function bindCashierMemberProfileModal() {
@@ -1912,7 +2303,7 @@ async function init() {
       || permissions.has('can_view_reports');
 
     const moduleCount = features.length
-      + (showLedger ? 1 : 0)
+      + (showLedger ? 2 : 0)
       + (showQueue ? 1 : 0)
       + (showProfit && !features.some((f) => f.panel === 'profit') ? 1 : 0)
       + (showMembers && !features.some((f) => f.panel === 'members') ? 1 : 0);
@@ -1929,6 +2320,7 @@ async function init() {
     ];
     if (showMembers) navParts.push(navItemHtml({ title: 'Members', icon: '👥', panel: 'members' }));
     if (showLedger) navParts.push(navItemHtml({ title: 'Bank Ledger', icon: '🏛️', panel: 'ledger' }));
+    if (showLedger) navParts.push(navItemHtml({ title: 'Transaction Audit', icon: '📋', panel: 'audit' }));
     if (showQueue) navParts.push(navItemHtml({ title: 'Payment Queue', icon: '⏳', panel: 'queue' }));
     if (showQueue) navParts.push(navItemHtml({ title: 'Advances & Borrow', icon: '🔄', panel: 'funding' }));
     if (showProfit) navParts.push(navItemHtml({ title: 'Profit Pool', icon: '💹', panel: 'profit' }));
@@ -1962,7 +2354,10 @@ async function init() {
     bindLedgerForms();
     bindProfitPoolForms();
     bindModuleForms();
+    bindAuditForms();
+    bindDirectoryTabs();
     bindCashierMemberProfileModal();
+    bindCashierInvestorProfileModal();
 
     const initial = (window.location.hash || '#home').replace(/^#/, '') || 'home';
     showStaffView(initial);

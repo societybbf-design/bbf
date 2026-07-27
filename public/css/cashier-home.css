@@ -1013,3 +1013,66 @@ html[data-theme="dark"] .cashier-collection-ring {
     font-size: 1.65rem;
   }
 }
+
+.cashier-directory-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cashier-directory-tabs .secondary-btn.active {
+  background: var(--primary, #0f766e);
+  color: #fff;
+  border-color: transparent;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.audit-filter-form .form-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.pdf-export-btn.is-loading {
+  opacity: 0.75;
+  pointer-events: none;
+  position: relative;
+}
+
+.pdf-export-btn.is-loading::after {
+  content: '';
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-left: 0.45rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: pdf-spin 0.7s linear infinite;
+  vertical-align: -0.1rem;
+}
+
+@keyframes pdf-spin {
+  to { transform: rotate(360deg); }
+}
+
+.audit-direction-in {
+  color: #047857;
+  font-weight: 600;
+}
+
+.audit-direction-out {
+  color: #b45309;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .audit-filter-form .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+}

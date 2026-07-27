@@ -11,6 +11,15 @@ const {
 } = require('../services/memberLifecycleService');
 const { createRefund, getRefundsByMember, updateRefundStatus } = require('../services/refundService');
 const { getMonthlyContributionReport, generateMonthlyContributionReportPdf } = require('../services/monthlyContributionService');
+const {
+  getMemberLedgerDocumentData,
+  getInvestorLedgerDocumentData,
+} = require('../services/transactionAuditService');
+const {
+  generateMemberLedgerPdf,
+  generateInvestorPortfolioPdf,
+} = require('../services/documentPdfService');
+const { listInvestorUsers, getInvestorPortfolio } = require('../services/investmentService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const {
   getEntryValuation,
@@ -122,6 +131,22 @@ router.get('/members/deleted/count', async (req, res) => {
   }
 });
 
+router.get('/members/:id/ledger.pdf', async (req, res) => {
+  try {
+    const data = await getMemberLedgerDocumentData(req.params.id);
+    const pdfBuffer = await generateMemberLedgerPdf(data, req.session?.user?.name || 'Cashier');
+    const safeName = String(data.member?.name || 'member').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="member-ledger-${safeName}-${Date.now()}.pdf"`
+    );
+    return res.send(pdfBuffer);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to generate member ledger PDF.' });
+  }
+});
+
 router.get('/members/:id/profile', async (req, res) => {
   try {
     const data = await getMemberProfileData(req.params.id);
@@ -131,6 +156,40 @@ router.get('/members/:id/profile', async (req, res) => {
     res.json(data);
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message || 'Unable to load member profile.' });
+  }
+});
+
+router.get('/investors', async (req, res) => {
+  try {
+    const investors = await listInvestorUsers();
+    return res.json({ investors });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load investors.' });
+  }
+});
+
+router.get('/investors/:id/profile', async (req, res) => {
+  try {
+    const portfolio = await getInvestorPortfolio(req.params.id);
+    return res.json(portfolio);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load investor portfolio.' });
+  }
+});
+
+router.get('/investors/:id/ledger.pdf', async (req, res) => {
+  try {
+    const data = await getInvestorLedgerDocumentData(req.params.id);
+    const pdfBuffer = await generateInvestorPortfolioPdf(data, req.session?.user?.name || 'Cashier');
+    const safeName = String(data.investor?.name || 'investor').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="investor-portfolio-${safeName}-${Date.now()}.pdf"`
+    );
+    return res.send(pdfBuffer);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to generate investor portfolio PDF.' });
   }
 });
 
