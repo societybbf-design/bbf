@@ -45,7 +45,7 @@ const LoanApplicationSchema = new mongoose.Schema({
   }],
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'disbursed'],
+    enum: ['pending', 'approved', 'rejected', 'disbursed', 'completed'],
     default: 'pending',
   },
   memberSavingsAtApply: {
@@ -133,6 +133,13 @@ const LoanApplicationSchema = new mongoose.Schema({
     type: String,
     enum: ['none', 'active', 'paid_off'],
     default: 'none',
+  },
+  /** Planned equal monthly installments for schedule display (default 12). */
+  installmentMonths: {
+    type: Number,
+    default: 12,
+    min: 1,
+    max: 120,
   },
   createdAt: {
     type: Date,

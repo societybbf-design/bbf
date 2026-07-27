@@ -856,52 +856,96 @@
           </div>
           <p id="cashierLoanDisburseMessage" class="message"></p>
 
-          <h3>Record loan repayment</h3>
-          <form id="cashierLoanRepaymentForm" class="add-member-form">
+          <h3>Loan Repayment Desk</h3>
+          <p class="text-secondary u-mb-1">
+            Member pays in person. Search the borrower, review outstanding balance and installment schedule, then record the payment. Ledgers and loan status update automatically.
+          </p>
+
+          <section class="panel-card u-mb-1" id="cashierLoanRepayDesk">
             <div class="form-row-2">
               <div class="form-group">
-                <label>Borrower
-                  <select name="memberId" id="cashierLoanRepayMember" required>
+                <label>Search borrower
+                  <input type="search" id="cashierLoanRepaySearch" placeholder="Name, phone, or email…" autocomplete="off" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Or select active borrower
+                  <select id="cashierLoanRepayMember">
                     <option value="">Select active borrower…</option>
                   </select>
                 </label>
               </div>
-              <div class="form-group">
-                <label>Payment type
-                  <select name="repaymentType" id="cashierLoanRepayType">
-                    <option value="installment">Installment</option>
-                    <option value="full">Full payment</option>
-                  </select>
-                </label>
-              </div>
             </div>
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Amount (৳)
-                  <input type="number" name="amount" id="cashierLoanRepayAmount" min="0.01" step="0.01" required />
-                </label>
+            <div id="cashierLoanRepaySearchResults" class="cashier-loan-search-results" hidden></div>
+
+            <div id="cashierLoanRepayDetail" class="cashier-loan-repay-detail hidden">
+              <div class="stats-grid u-mb-1">
+                <div class="stat-card"><h3 id="cashierLoanDetailOriginal">৳0</h3><p>Total loan</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailPaid">৳0</h3><p>Paid so far</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailRemaining">৳0</h3><p>Remaining</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailStatus">—</h3><p>Loan status</p></div>
               </div>
-              <div class="form-group">
-                <label>Payment method
-                  <select name="paymentMethod">
-                    <option value="cash">Cash</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="mobile_banking">Mobile Banking</option>
-                    <option value="check">Check</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
+              <p class="table-subtitle" id="cashierLoanDetailMeta">Select a borrower to load loan details.</p>
+
+              <h4>Installment schedule</h4>
+              <div class="table-wrapper u-mb-1">
+                <table class="data-table table-cards">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Due date</th>
+                      <th>Installment</th>
+                      <th>Paid</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cashierLoanScheduleBody">
+                    <tr><td colspan="5">No schedule loaded.</td></tr>
+                  </tbody>
+                </table>
               </div>
+
+              <form id="cashierLoanRepaymentForm" class="add-member-form">
+                <input type="hidden" name="memberId" id="cashierLoanRepayMemberId" value="" />
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label>Payment type
+                      <select name="repaymentType" id="cashierLoanRepayType">
+                        <option value="installment">Installment</option>
+                        <option value="full">Full payment (clear loan)</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="form-group">
+                    <label>Amount (৳)
+                      <input type="number" name="amount" id="cashierLoanRepayAmount" min="0.01" step="0.01" required />
+                    </label>
+                  </div>
+                </div>
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label>Payment method
+                      <select name="paymentMethod">
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="mobile_banking">Mobile Banking</option>
+                        <option value="check">Check</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="form-group">
+                    <label>Note
+                      <input type="text" name="adminNote" placeholder="Optional note" />
+                    </label>
+                  </div>
+                </div>
+                <p class="table-subtitle" id="cashierLoanRepayHint">Select a borrower to load outstanding balance.</p>
+                <button type="submit" class="primary-btn" id="cashierLoanRepaySubmitBtn">Confirm &amp; Record Payment</button>
+                <p id="cashierLoanRepayMessage" class="message"></p>
+              </form>
             </div>
-            <div class="form-group">
-              <label>Note
-                <input type="text" name="adminNote" placeholder="Optional note" />
-              </label>
-            </div>
-            <p class="table-subtitle" id="cashierLoanRepayHint">Select a borrower to load outstanding balance.</p>
-            <button type="submit" class="primary-btn">Record Loan Payment</button>
-            <p id="cashierLoanRepayMessage" class="message"></p>
-          </form>
+          </section>
 
           <h3 class="u-mt-1">Recent loan applications</h3>
           <div class="table-wrapper">

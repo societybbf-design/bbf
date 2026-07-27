@@ -2503,6 +2503,194 @@ function buildCashierDisburseCard(loan = {}) {
 
 let cashierLoanBorrowersCache = [];
 let cashierLoansUiBound = false;
+let cashierLoanRepayState = null;
+
+function formatLoanScheduleStatus(status) {
+  if (status === 'paid') return 'Paid';
+  if (status === 'partial') return 'Partial';
+  if (status === 'due') return 'Due now';
+  return 'Upcoming';
+}
+
+function renderCashierLoanSchedule(schedule) {
+  const body = document.getElementById('cashierLoanScheduleBody');
+  if (!body) return;
+  const rows = schedule?.rows || [];
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="5">No installment schedule available.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((row) => {
+    const statusClass = row.status === 'paid'
+      ? 'cashier-loan-schedule-paid'
+      : (row.status === 'due' || row.status === 'partial' ? 'cashier-loan-schedule-due' : '');
+    return `
+      <tr>
+        <td>${row.period}</td>
+        <td>${row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—'}</td>
+        <td>${money(row.amount)}</td>
+        <td>${money(row.paidToward)}</td>
+        <td class="${statusClass}">${escapeHtml(formatLoanScheduleStatus(row.status))}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
+  const detail = document.getElementById('cashierLoanRepayDetail');
+  const originalEl = document.getElementById('cashierLoanDetailOriginal');
+  const paidEl = document.getElementById('cashierLoanDetailPaid');
+  const remainingEl = document.getElementById('cashierLoanDetailRemaining');
+  const statusEl = document.getElementById('cashierLoanDetailStatus');
+  const metaEl = document.getElementById('cashierLoanDetailMeta');
+  const hint = document.getElementById('cashierLoanRepayHint');
+  const amountInput = document.getElementById('cashierLoanRepayAmount');
+  const memberIdInput = document.getElementById('cashierLoanRepayMemberId');
+  const typeSelect = document.getElementById('cashierLoanRepayType');
+
+  if (!detail) return;
+  detail.classList.remove('hidden');
+
+  const original = Number(summary.originalAmount || 0);
+  const paid = Number(summary.totalRepaid || 0);
+  const remaining = Number(summary.availableToPay ?? summary.outstandingBalance ?? 0);
+  const name = memberMeta.name || summary.loan?.member?.name || 'Member';
+
+  if (originalEl) originalEl.textContent = money(original);
+  if (paidEl) paidEl.textContent = money(paid);
+  if (remainingEl) remainingEl.textContent = money(remaining);
+  if (statusEl) statusEl.textContent = summary.displayStatus || (summary.hasOutstandingLoan ? 'Active' : 'Completed / Paid');
+  if (metaEl) {
+    const nextDue = summary.nextDueDate || summary.schedule?.nextDueDate;
+    metaEl.textContent = `${name} · ${summary.loanType || 'general'} loan`
+      + (summary.disbursedAt ? ` · disbursed ${new Date(summary.disbursedAt).toLocaleDateString()}` : '')
+      + (nextDue && summary.hasOutstandingLoan ? ` · next due ${new Date(nextDue).toLocaleDateString()}` : '');
+  }
+
+  if (memberIdInput) memberIdInput.value = memberMeta.memberId || '';
+  renderCashierLoanSchedule(summary.schedule);
+
+  if (amountInput) {
+    amountInput.max = remaining > 0 ? remaining : undefined;
+    const suggested = Number(summary.suggestedInstallment || remaining || 0);
+    if (typeSelect?.value === 'full') {
+      amountInput.value = remaining > 0 ? remaining.toFixed(2) : '';
+    } else if (suggested > 0) {
+      amountInput.value = suggested.toFixed(2);
+    }
+  }
+
+  if (hint) {
+    if (!summary.hasOutstandingLoan) {
+      hint.textContent = 'This loan is fully paid (Completed / Paid). No further payment needed.';
+    } else {
+      hint.textContent = `Available to collect now: ${money(remaining)}`
+        + (summary.suggestedInstallment
+          ? ` · Suggested installment: ${money(summary.suggestedInstallment)}`
+          : '');
+    }
+  }
+
+  const submitBtn = document.getElementById('cashierLoanRepaySubmitBtn');
+  if (submitBtn) submitBtn.disabled = !summary.hasOutstandingLoan || !(remaining > 0);
+}
+
+async function loadCashierLoanRepayDetail(memberId, memberMeta = {}) {
+  const hint = document.getElementById('cashierLoanRepayHint');
+  const msg = document.getElementById('cashierLoanRepayMessage');
+  if (!memberId) return null;
+  if (msg) {
+    msg.textContent = '';
+    msg.classList.remove('success', 'error');
+  }
+  if (hint) hint.textContent = 'Loading loan details…';
+
+  try {
+    const response = await fetch(`/api/loans/admin/member/${encodeURIComponent(memberId)}/outstanding`);
+    const summary = await response.json();
+    if (!response.ok) throw new Error(summary.error || 'Unable to load loan details.');
+
+    const borrower = cashierLoanBorrowersCache.find((row) => String(row.memberId || row.member?._id) === String(memberId));
+    const meta = {
+      memberId: String(memberId),
+      name: memberMeta.name || borrower?.member?.name || borrower?.name || summary.loan?.member?.name || 'Member',
+      phone: memberMeta.phone || borrower?.member?.phone || '',
+      email: memberMeta.email || borrower?.member?.email || '',
+    };
+    cashierLoanRepayState = { memberId: meta.memberId, summary, meta };
+    renderCashierLoanRepayDetail(summary, meta);
+
+    const select = document.getElementById('cashierLoanRepayMember');
+    if (select && [...select.options].some((opt) => opt.value === String(memberId))) {
+      select.value = String(memberId);
+    }
+    return summary;
+  } catch (error) {
+    if (hint) hint.textContent = error.message;
+    if (msg) {
+      msg.classList.add('error');
+      msg.textContent = error.message;
+    }
+    return null;
+  }
+}
+
+function renderCashierLoanSearchResults(query) {
+  const box = document.getElementById('cashierLoanRepaySearchResults');
+  if (!box) return;
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+
+  const matches = cashierLoanBorrowersCache.filter((row) => {
+    const member = row.member || {};
+    const hay = [
+      member.name,
+      row.name,
+      member.email,
+      member.phone,
+      row.memberId,
+    ].map((v) => String(v || '').toLowerCase()).join(' ');
+    return hay.includes(q);
+  }).slice(0, 8);
+
+  if (!matches.length) {
+    box.hidden = false;
+    box.innerHTML = '<p class="text-secondary">No active borrowers match that search.</p>';
+    return;
+  }
+
+  box.hidden = false;
+  box.innerHTML = matches.map((row) => {
+    const member = row.member || {};
+    const id = row.memberId || member._id;
+    return `
+      <button type="button" class="cashier-loan-search-item" data-loan-borrower-id="${escapeHtml(String(id))}"
+        data-loan-borrower-name="${escapeHtml(member.name || row.name || 'Member')}">
+        <span>
+          <strong>${escapeHtml(member.name || row.name || 'Member')}</strong><br>
+          <small class="text-secondary">${escapeHtml(member.phone || member.email || '—')}</small>
+        </span>
+        <strong>${money(row.totalOutstanding)}</strong>
+      </button>
+    `;
+  }).join('');
+
+  box.querySelectorAll('[data-loan-borrower-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const search = document.getElementById('cashierLoanRepaySearch');
+      if (search) search.value = btn.dataset.loanBorrowerName || '';
+      box.hidden = true;
+      void loadCashierLoanRepayDetail(btn.dataset.loanBorrowerId, {
+        memberId: btn.dataset.loanBorrowerId,
+        name: btn.dataset.loanBorrowerName,
+      });
+    });
+  });
+}
 
 async function loadLoansModule() {
   const tbody = document.getElementById('cashierLoansBody');
@@ -2549,28 +2737,40 @@ async function loadLoansModule() {
     }
 
     if (repaySelect) {
-      const previous = repaySelect.value;
+      const previous = repaySelect.value || cashierLoanRepayState?.memberId || '';
       repaySelect.innerHTML = `<option value="">Select active borrower…</option>${borrowers.map((row) => `
         <option value="${row.memberId || row.member?._id || ''}" data-outstanding="${Number(row.totalOutstanding || 0)}">
           ${escapeHtml(row.member?.name || row.name || 'Member')} — due ${money(row.totalOutstanding)}
         </option>
       `).join('')}`;
-      if (previous) repaySelect.value = previous;
+      if (previous && [...repaySelect.options].some((opt) => opt.value === String(previous))) {
+        repaySelect.value = String(previous);
+      }
+    }
+
+    if (cashierLoanRepayState?.memberId) {
+      void loadCashierLoanRepayDetail(cashierLoanRepayState.memberId, cashierLoanRepayState.meta);
     }
 
     if (tbody) {
       tbody.innerHTML = allLoans.length
-        ? allLoans.slice(0, 40).map((loan) => `
+        ? allLoans.slice(0, 40).map((loan) => {
+          const statusLabel = loan.status === 'completed' || loan.repaymentStatus === 'paid_off'
+            ? 'Completed / Paid'
+            : (loan.status || '—');
+          return `
           <tr>
             <td>${escapeHtml(loan.member?.name || 'Unknown')}</td>
             <td>${money(loan.amount)}</td>
             <td>${escapeHtml(loan.loanType || '—')}</td>
-            <td>${escapeHtml(translateStatus(loan.status || '—'))}</td>
+            <td>${escapeHtml(translateStatus(statusLabel))}</td>
             <td>${loan.status === 'disbursed'
               ? `${escapeHtml(formatLoanPaymentMethodLabel(loan.paymentMethod))}${loan.disbursementReference ? ` · ${escapeHtml(loan.disbursementReference)}` : ''}`
-              : loan.status === 'approved' ? 'Awaiting Cashier' : '—'}</td>
+              : loan.status === 'approved' ? 'Awaiting Cashier'
+                : loan.status === 'completed' ? 'Cleared' : '—'}</td>
           </tr>
-        `).join('')
+        `;
+        }).join('')
         : '<tr><td colspan="5">No loan applications yet.</td></tr>';
     }
 
@@ -2602,31 +2802,38 @@ function bindCashierLoansUi() {
   if (cashierLoansUiBound) return;
   cashierLoansUiBound = true;
 
+  let searchTimer = null;
+  document.getElementById('cashierLoanRepaySearch')?.addEventListener('input', (event) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      renderCashierLoanSearchResults(event.target.value);
+    }, 180);
+  });
+
   document.getElementById('cashierLoanRepayMember')?.addEventListener('change', (event) => {
+    const memberId = event.target.value;
+    if (!memberId) {
+      cashierLoanRepayState = null;
+      document.getElementById('cashierLoanRepayDetail')?.classList.add('hidden');
+      return;
+    }
     const option = event.target.selectedOptions?.[0];
-    const outstanding = Number(option?.dataset.outstanding || 0);
-    const amountInput = document.getElementById('cashierLoanRepayAmount');
-    const hint = document.getElementById('cashierLoanRepayHint');
-    const typeSelect = document.getElementById('cashierLoanRepayType');
-    if (amountInput && outstanding > 0) {
-      amountInput.max = outstanding;
-      if (typeSelect?.value === 'full' || !amountInput.value) {
-        amountInput.value = outstanding.toFixed(2);
-      }
-    }
-    if (hint) {
-      hint.textContent = option?.value
-        ? `Outstanding balance: ${money(outstanding)}`
-        : 'Select a borrower to load outstanding balance.';
-    }
+    void loadCashierLoanRepayDetail(memberId, {
+      memberId,
+      name: option?.textContent?.split('—')?.[0]?.trim() || 'Member',
+    });
   });
 
   document.getElementById('cashierLoanRepayType')?.addEventListener('change', (event) => {
-    if (event.target.value !== 'full') return;
-    const select = document.getElementById('cashierLoanRepayMember');
-    const outstanding = Number(select?.selectedOptions?.[0]?.dataset.outstanding || 0);
     const amountInput = document.getElementById('cashierLoanRepayAmount');
-    if (amountInput && outstanding > 0) amountInput.value = outstanding.toFixed(2);
+    const summary = cashierLoanRepayState?.summary;
+    if (!amountInput || !summary) return;
+    const remaining = Number(summary.availableToPay ?? summary.outstandingBalance ?? 0);
+    if (event.target.value === 'full' && remaining > 0) {
+      amountInput.value = remaining.toFixed(2);
+    } else if (summary.suggestedInstallment > 0) {
+      amountInput.value = Number(summary.suggestedInstallment).toFixed(2);
+    }
   });
 
   document.getElementById('cashierLoanDisburseQueue')?.addEventListener('submit', async (event) => {
@@ -2653,7 +2860,9 @@ function bindCashierLoansUi() {
         msg.classList.add('success');
         msg.textContent = 'Loan disbursed successfully.';
       }
+      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue']);
       await loadLoansModule();
+      markStaffViewCache?.('loans');
     } catch (error) {
       if (msg) {
         msg.classList.remove('success');
@@ -2666,13 +2875,24 @@ function bindCashierLoansUi() {
     event.preventDefault();
     const msg = document.getElementById('cashierLoanRepayMessage');
     if (msg) {
-      msg.classList.remove('success');
+      msg.classList.remove('success', 'error');
       msg.textContent = '';
     }
     const formData = new FormData(event.target);
-    const memberId = formData.get('memberId');
+    const memberId = formData.get('memberId') || document.getElementById('cashierLoanRepayMemberId')?.value;
+    if (!memberId) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = 'Select or search for a borrower first.';
+      }
+      return;
+    }
+
+    const submitBtn = document.getElementById('cashierLoanRepaySubmitBtn');
+    if (submitBtn) submitBtn.disabled = true;
+
     try {
-      const response = await fetch(`/api/loans/admin/member/${memberId}/repayments`, {
+      const response = await fetch(`/api/loans/admin/member/${encodeURIComponent(memberId)}/repayments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2684,14 +2904,30 @@ function bindCashierLoansUi() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to record loan payment.');
+
+      const summary = data.summary || {};
+      const remaining = Number(summary.outstandingBalance || 0);
       if (msg) {
         msg.classList.add('success');
-        msg.textContent = 'Loan payment recorded.';
+        msg.textContent = data.message
+          || (data.loanCleared || !summary.hasOutstandingLoan
+            ? 'Payment recorded. Loan is now Completed / Paid. Member dashboard will show the cleared balance.'
+            : `Payment recorded. Remaining due: ${money(remaining)}.`);
       }
+
       event.target.reset();
+      document.getElementById('cashierLoanRepayMemberId').value = memberId;
+      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue']);
       await loadLoansModule();
+      markStaffViewCache?.('loans');
+      await loadCashierLoanRepayDetail(memberId, cashierLoanRepayState?.meta);
     } catch (error) {
-      if (msg) msg.textContent = error.message;
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 }

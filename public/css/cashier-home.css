@@ -1160,6 +1160,49 @@ html[data-theme="dark"] .cashier-collection-ring {
   min-width: 5.5rem;
 }
 
+.cashier-loan-search-results {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.85rem;
+}
+
+.cashier-loan-search-results[hidden] {
+  display: none !important;
+}
+
+.cashier-loan-search-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  cursor: pointer;
+}
+
+.cashier-loan-search-item:hover,
+.cashier-loan-search-item:focus-visible {
+  border-color: #0f766e;
+  outline: none;
+}
+
+.cashier-loan-repay-detail.hidden {
+  display: none;
+}
+
+.cashier-loan-schedule-due {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.cashier-loan-schedule-paid {
+  color: #15803d;
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .audit-filter-form .form-row-3 {
     grid-template-columns: 1fr;

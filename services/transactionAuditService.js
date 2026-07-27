@@ -17,6 +17,8 @@ const AUDIT_CATEGORIES = Object.freeze([
   { key: 'project_payouts', label: 'Project payouts' },
   { key: 'profit_distribution', label: 'Profit distributions' },
   { key: 'monthly_profit', label: 'Monthly profits' },
+  { key: 'loan_repayments', label: 'Loan repayments' },
+  { key: 'loan_disbursements', label: 'Loan disbursements' },
   { key: 'adjustments', label: 'Adjustments' },
   { key: 'opening', label: 'Opening balance' },
 ]);
@@ -27,6 +29,8 @@ const LEDGER_TYPE_TO_CATEGORY = Object.freeze({
   project_payout: 'project_payouts',
   profit_distribution: 'profit_distribution',
   monthly_profit: 'monthly_profit',
+  loan_repayment: 'loan_repayments',
+  loan_disbursement: 'loan_disbursements',
   adjustment: 'adjustments',
   opening: 'opening',
 });
