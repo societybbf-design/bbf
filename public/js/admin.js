@@ -8,6 +8,39 @@
  * This file owns page navigation, KPI updates, members, deposits,
  * investments, loans, profit, sales, and CEO staff panels.
  */
+
+function t(key, fallback) {
+  return window.I18n?.t?.(key, fallback) ?? fallback;
+}
+
+function translateStatus(value) {
+  const raw = String(value || '').trim();
+  const key = raw.toLowerCase().replace(/\s+/g, '_');
+  const map = {
+    active: 'status.active',
+    inactive: 'status.inactive',
+    blocked: 'status.blocked',
+    deleted: 'status.deleted',
+    pending: 'status.pending',
+    approved: 'status.approved',
+    rejected: 'status.rejected',
+    paid: 'status.paid',
+    unpaid: 'status.unpaid',
+    partial: 'status.partial',
+    due: 'status.due',
+    completed: 'status.completed',
+    cancelled: 'status.cancelled',
+    canceled: 'status.cancelled',
+    running: 'status.running',
+    sold: 'status.sold',
+    profit: 'status.profit',
+    loss: 'status.loss',
+    success: 'status.success',
+    failed: 'status.failed',
+  };
+  return map[key] ? t(map[key], raw) : raw;
+}
+
 const logoutBtn = document.getElementById('logoutBtn');
 const logoutDropdown = document.getElementById('logoutDropdown');
 const profileBtn = document.getElementById('profileBtn');
@@ -773,7 +806,7 @@ function updateSellNetCalculation() {
     return;
   }
 
-  const label = net > 0 ? 'Profit' : net < 0 ? 'Loss' : 'Break even';
+  const label = net > 0 ? t('status.profit', 'Profit') : net < 0 ? t('status.loss', 'Loss') : t('status.breakEven', 'Break even');
   netEl.value = `${label}: ${formatMoney(Math.abs(net), 2)} (${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)})`;
   if (totalEl && !totalEl.value.includes('৳') && sellProjectState) {
     totalEl.value = `${formatMoney(totalInvestment, 2)}`;
@@ -2438,7 +2471,7 @@ function renderDepositsReport() {
       <td>${deposit.member?.email || 'Unknown'}</td>
       <td>${formatMoney(Number(deposit.amount || 0), 2)}</td>
       <td>${new Date(deposit.createdAt).toLocaleString()}</td>
-      <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Download</a></td>
+      <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank" rel="noopener">${t('memberUi.downloadContract', 'Download')}</a></td>
     </tr>
   `).join('');
 }
@@ -3524,7 +3557,7 @@ function bindProfileDepositForms(container, onDepositSuccess) {
             receiptLinkEl.hidden = true;
           }
           messageEl.classList.add('error');
-          messageEl.textContent = data.error || 'Unable to record deposit.';
+          messageEl.textContent = data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
           return;
         }
 
@@ -3550,7 +3583,7 @@ function bindProfileDepositForms(container, onDepositSuccess) {
           receiptLinkEl.hidden = true;
         }
         messageEl.classList.add('error');
-        messageEl.textContent = 'Unable to record deposit.';
+        messageEl.textContent = t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
       } finally {
         setDepositSubmitting(form, false);
       }
@@ -3685,7 +3718,7 @@ function bindProfileRefundForms(container, onRefundChanged) {
         form.reset();
         if (messageEl) {
           messageEl.classList.add('success');
-          messageEl.textContent = 'Refund recorded successfully.';
+          messageEl.textContent = t('adminUi.refundRecorded', 'Refund recorded successfully.');
         }
         if (typeof onRefundChanged === 'function') {
           await onRefundChanged();
@@ -3991,7 +4024,7 @@ function bindProfileChat(container, memberId, activeTab = 'overview') {
         await refreshEmbeddedMemberChat(container, memberId);
         if (messageEl) {
           messageEl.classList.add('success');
-          messageEl.textContent = 'Message sent.';
+          messageEl.textContent = t('adminUi.messageSent', 'Message sent.');
         }
       } catch (error) {
         if (messageEl) {
@@ -4152,7 +4185,7 @@ function bindAdminMessagesPage() {
         await openAdminChatConversation(memberId, document.getElementById('adminChatThreadHeader')?.querySelector('h3')?.textContent || 'Member');
         if (messageEl) {
           messageEl.classList.add('success');
-          messageEl.textContent = 'Message sent.';
+          messageEl.textContent = t('adminUi.messageSent', 'Message sent.');
         }
       } catch (error) {
         if (messageEl) {
@@ -4476,7 +4509,7 @@ async function fetchDepositHistory() {
         <td>${deposit.member?.email || 'Unknown'}</td>
         <td>${formatMoney(Number(deposit.amount || 0), 2)} <span class="kpi-footnote">(${typeLabel})</span></td>
         <td>${new Date(deposit.createdAt).toLocaleString()}</td>
-        <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank">Download</a></td>
+        <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank">${t('memberUi.downloadContract', 'Download')}</a></td>
       </tr>
     `;
       })
@@ -4520,7 +4553,7 @@ if (adminDepositForm) {
       if (!ok) {
         if (latestReceiptLink) latestReceiptLink.hidden = true;
         depositMessage?.classList.add('error');
-        if (depositMessage) depositMessage.textContent = data.error || 'Unable to record deposit.';
+        if (depositMessage) depositMessage.textContent = data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
         return;
       }
 
@@ -4554,7 +4587,7 @@ if (adminDepositForm) {
     } catch (error) {
       if (latestReceiptLink) latestReceiptLink.hidden = true;
       depositMessage?.classList.add('error');
-      if (depositMessage) depositMessage.textContent = 'Unable to record deposit.';
+      if (depositMessage) depositMessage.textContent = t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
     } finally {
       setDepositSubmitting(adminDepositForm, false);
     }

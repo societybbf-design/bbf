@@ -1,3 +1,7 @@
+function t(key, fallback) {
+  return window.I18n?.t?.(key, fallback) ?? fallback;
+}
+
 const createUserForm = document.getElementById('createUserForm');
 const roleSelect = document.getElementById('roleSelect');
 const permissionsGrid = document.getElementById('permissionsGrid');
@@ -59,7 +63,7 @@ async function loadStaff() {
   try {
     const { staff } = await api('/api/ceo/staff');
     if (!staff.length) {
-      staffTableBody.innerHTML = '<tr><td colspan="5">No staff users yet.</td></tr>';
+      staffTableBody.innerHTML = `<tr><td colspan="5">${t('ceo.noStaff', 'No staff users yet.')}</td></tr>`;
       return;
     }
     staffTableBody.innerHTML = staff.map((user) => `
@@ -100,7 +104,7 @@ async function init() {
     applyRoleDefaults();
     await loadStaff();
   } catch (error) {
-    createMessage.textContent = error.message || 'Unable to load CEO panel.';
+    createMessage.textContent = error.message || t('ceo.unableLoadStaff', 'Unable to load CEO panel.');
   }
 }
 
@@ -139,7 +143,7 @@ createUserForm.addEventListener('submit', async (event) => {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    createMessage.textContent = 'User created successfully.';
+    createMessage.textContent = t('ceo.userCreated', 'User created successfully.');
     createMessage.classList.add('success');
     createUserForm.reset();
     applyRoleDefaults();

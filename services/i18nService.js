@@ -43,7 +43,34 @@ function pdfText(lang, key) {
   return PDF_STRINGS[normalized][key] || PDF_STRINGS.en[key] || key;
 }
 
+const UI_STRINGS = {
+  en: {
+    depositRecorded: 'Deposit recorded',
+    withdrawalRequest: 'Withdrawal request',
+    profitCredited: 'Profit credited',
+    duesReminder: 'Monthly dues reminder',
+    invalidCredentials: 'Invalid credentials.',
+    accountLocked: 'Account locked for 24 hours due to too many failed attempts.',
+    accountBlocked: 'Your account is blocked. Please contact User Management.',
+  },
+  bn: {
+    depositRecorded: 'জমা রেকর্ড হয়েছে',
+    withdrawalRequest: 'উত্তোলনের অনুরোধ',
+    profitCredited: 'লাভ জমা হয়েছে',
+    duesReminder: 'মাসিক বকেয়া রিমাইন্ডার',
+    invalidCredentials: 'ভুল তথ্য।',
+    accountLocked: 'অনেকবার ব্যর্থ চেষ্টার কারণে অ্যাকাউন্ট ২৪ ঘণ্টা লক হয়েছে।',
+    accountBlocked: 'আপনার অ্যাকাউন্ট ব্লক করা হয়েছে। ব্যবহারকারী ব্যবস্থাপনার সাথে যোগাযোগ করুন।',
+  },
+};
+
+function uiText(lang, key, fallback = '') {
+  const normalized = lang === 'en' ? 'en' : 'bn';
+  return UI_STRINGS[normalized][key] || UI_STRINGS.en[key] || fallback || key;
+}
+
 module.exports = {
   resolveRequestLanguage,
   pdfText,
+  uiText,
 };

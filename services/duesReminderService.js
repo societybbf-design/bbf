@@ -1,3 +1,4 @@
+const { uiText } = require('./i18nService');
 const { formatMoney } = require('./moneyFormat');
 const { brandingSubjectSuffix } = require('./organizationBranding');
 const MonthlyContributionDue = require('../models/MonthlyContributionDue');
@@ -64,7 +65,7 @@ async function sendDuesReminders({
       await createMemberNotification({
         memberId: member._id,
         type: 'general',
-        title: 'Monthly dues reminder',
+        title: uiText('bn', 'duesReminder', 'Monthly dues reminder'),
         message,
         relatedId: target.dueId,
         relatedModel: 'MonthlyContributionDue',

@@ -1,3 +1,16 @@
+function t(key, fallback) {
+  return window.I18n?.t?.(key, fallback) ?? fallback;
+}
+
+function statusLabel(value) {
+  const key = String(value || '').toLowerCase();
+  const map = {
+    active: 'status.active', inactive: 'status.inactive', blocked: 'status.blocked',
+    deleted: 'status.deleted', pending: 'status.pending',
+  };
+  return map[key] ? t(map[key], value) : (value || '—');
+}
+
 /**
  * developer.js — User Management dashboard UI
  *
@@ -23,24 +36,33 @@ function formatDate(value) {
   }
 }
 
-const TAB_TITLES = {
-  overview: ['Overview', 'Account totals, locks, and OTP status at a glance.'],
-  create: ['Create Account', 'Create members, investors, project managers, staff, and CEOs.'],
-  users: ['All Accounts', 'Browse by role, search, manage lock/active states, passwords, and soft-delete/restore.'],
-  recovery: ['OTP Recovery', 'Verify user OTPs and set a new password safely.'],
-  audits: ['Security Audit', 'Login failures, lockouts, OTP requests, and account changes.'],
-  security: ['My Security', 'Update your own User Management password.'],
+const TAB_TITLE_KEYS = {
+  overview: ['um.overview', 'um.focusedNote'],
+  create: ['um.createAccount', 'um.createSubtitle'],
+  users: ['um.allAccounts', 'um.directoryNote'],
+  recovery: ['um.otpRecovery', 'um.otpNote'],
+  audits: ['um.securityAudit', 'um.auditNote'],
+  security: ['um.mySecurity', 'um.changePasswordTitle'],
 };
 
 const ROLE_DIRECTORY = [
-  { id: 'member', label: 'Members', roles: ['member'] },
-  { id: 'investor', label: 'Investors', roles: ['investor'] },
-  { id: 'ceo', label: 'CEOs', roles: ['ceo', 'admin'] },
-  { id: 'project_manager', label: 'Managers', roles: ['project_manager'] },
-  { id: 'cashier', label: 'Cashiers', roles: ['cashier'] },
-  { id: 'employee', label: 'Employees', roles: ['employee'] },
-  { id: 'developer', label: 'UM Admins', roles: ['developer'] },
+  { id: 'member', labelKey: 'um.members', label: 'Members', roles: ['member'] },
+  { id: 'investor', labelKey: 'um.investors', label: 'Investors', roles: ['investor'] },
+  { id: 'ceo', labelKey: 'um.ceos', label: 'CEOs', roles: ['ceo', 'admin'] },
+  { id: 'project_manager', labelKey: 'um.managers', label: 'Managers', roles: ['project_manager'] },
+  { id: 'cashier', labelKey: 'um.cashiers', label: 'Cashiers', roles: ['cashier'] },
+  { id: 'employee', labelKey: 'um.employees', label: 'Employees', roles: ['employee'] },
+  { id: 'developer', labelKey: 'um.umAdmins', label: 'UM Admins', roles: ['developer'] },
 ];
+
+function roleLabel(entry) {
+  return t(entry.labelKey || '', entry.label || entry.id);
+}
+
+function tabTitles(tab) {
+  const keys = TAB_TITLE_KEYS[tab] || TAB_TITLE_KEYS.overview;
+  return [t(keys[0], tab), t(keys[1], '')];
+}
 
 let cachedUsers = [];
 let activeRoleTab = 'member';
@@ -70,7 +92,7 @@ function showTab(tab) {
     el.classList.toggle('hidden', el.dataset.devPanel !== tab);
   });
 
-  const titles = TAB_TITLES[tab] || TAB_TITLES.overview;
+  const titles = tabTitles(tab);
   const pageTitle = document.getElementById('pageTitle');
   const pageNote = document.getElementById('pageNote');
   if (pageTitle) pageTitle.textContent = titles[0];
@@ -118,20 +140,20 @@ async function updateMemberBuyInUi(role) {
   }
 
   block.classList.remove('hidden');
-  box.innerHTML = '<p class="table-subtitle">Loading current share valuation…</p>';
+  box.innerHTML = `<p class="table-subtitle">${t('um.loadingValuation', 'Loading current share valuation…')}</p>`;
   try {
     const data = await api('/api/developer/entry-valuation');
     const v = data.valuation || {};
     const amount = Number(v.entryAmount || 0);
     box.innerHTML = `
-      <p><strong>Current share valuation: ${formatMoney(amount, 2)}</strong></p>
+      <p><strong>${t('um.currentShareValuation', 'Current share valuation')}: ${formatMoney(amount, 2)}</strong></p>
       <p class="table-subtitle">${escapeHtml(v.formula || '')}</p>
       <p class="table-subtitle">Active members: ${v.activeCount || 0} · Fund: Savings ${formatMoney(Number(v.totalSavings || 0), 2)} + Profit ${formatMoney(Number(v.totalProfit || 0), 2)} + Advance ${formatMoney(Number(v.totalAdvance || 0), 2)} = ${formatMoney(Number(v.totalFund || 0), 2)}</p>
     `;
     if (input) {
       input.placeholder = amount > 0
-        ? `Exact ${formatMoney(amount, 2)} to activate now, or leave blank`
-        : 'No buy-in required — activates immediately';
+        ? t('um.exactActivate', 'Exact {amount} to activate now, or leave blank').replace('{amount}', formatMoney(amount, 2))
+        : t('um.noBuyInRequired', 'No buy-in required — activates immediately');
       input.dataset.requiredAmount = String(amount);
     }
   } catch (error) {
@@ -194,7 +216,7 @@ async function ensureCreateForm() {
           const suffix = result.activated === false && required != null
             ? ` Pending exact buy-in of ${formatMoney(Number(required), 2)}.`
             : '';
-          messageEl.textContent = (result.message || 'Account created.') + suffix;
+          messageEl.textContent = (result.message || t('um.accountCreated', 'Account created.')) + suffix;
           messageEl.classList.add('success');
         }
         form.reset();
@@ -222,7 +244,7 @@ async function loadStats() {
     ['Active', stats.active],
     ['Inactive', stats.inactive],
     ['Blocked', stats.blocked],
-    ['Soft-deleted', stats.deleted || 0],
+    [t('um.softDelete', 'Soft-deleted'), stats.deleted || 0],
     ['Temporarily locked', stats.locked],
     ['Pending OTP', stats.pendingOtp],
   ];
@@ -283,7 +305,7 @@ function setActiveRoleTab(tabId) {
   });
 
   const label = document.getElementById('umRolePanelLabel');
-  if (label) label.textContent = `Showing ${entry.label}`;
+  if (label) label.textContent = t('um.showingRole', 'Showing {label}').replace('{label}', roleLabel(entry));
 
   renderActiveRoleDirectory();
 }
@@ -297,11 +319,11 @@ function lockBadge(user) {
     return `<span class="status-pill">Deleted ${formatDate(user.deletedAt)}</span>`;
   }
   if (user.pendingEntryBuyIn) {
-    return `<span class="status-pill">Buy-in ${formatMoney(Number(user.requiredEntryAmount || 0), 2)}</span>`;
+    return `<span class="status-pill">${t('um.pendingBuyIn', 'Buy-in {amount}').replace('{amount}', formatMoney(Number(user.requiredEntryAmount || 0), 2))}</span>`;
   }
-  if (user.isTemporarilyLocked) return '<span class="status-pill">Locked 24h</span>';
-  if (user.hasPendingOtp) return '<span class="status-pill">OTP pending</span>';
-  if (user.failedLoginAttempts) return `${user.failedLoginAttempts} fails`;
+  if (user.isTemporarilyLocked) return `<span class="status-pill">${t('um.locked24h', 'Locked 24h')}</span>`;
+  if (user.hasPendingOtp) return `<span class="status-pill">${t('um.otpPending', 'OTP pending')}</span>`;
+  if (user.failedLoginAttempts) return `${user.failedLoginAttempts} ${t('um.fails', 'fails')}`;
   return '—';
 }
 
@@ -310,7 +332,7 @@ function renderUsersTable(users) {
   if (!tbody) return;
   const entry = getRoleDirectoryEntry();
   if (!users.length) {
-    tbody.innerHTML = `<tr><td colspan="6">No ${escapeHtml(entry.label.toLowerCase())} found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">${t('um.noUsers', 'No accounts found.')} (${escapeHtml(roleLabel(entry))})</td></tr>`;
     return;
   }
 
@@ -319,10 +341,10 @@ function renderUsersTable(users) {
       <td>${escapeHtml(user.name)}</td>
       <td>${escapeHtml(user.email)}</td>
       <td>${escapeHtml(user.roleLabel || user.role)}</td>
-      <td>${escapeHtml(user.status)}</td>
+      <td>${escapeHtml(statusLabel(user.status))}</td>
       <td>${lockBadge(user)}</td>
       <td>
-        <button type="button" class="ghost-btn" data-manage-user="${user.id || user._id}">Manage</button>
+        <button type="button" class="ghost-btn" data-manage-user="${user.id || user._id}">${t('um.manageUser', 'Manage')}</button>
       </td>
     </tr>
   `).join('');
@@ -347,10 +369,10 @@ function openUserModal(userId) {
   const emailEl = document.getElementById('devUserModalEmail');
   const metaEl = document.getElementById('devUserModalMeta');
   const eyebrowEl = document.getElementById('devUserModalEyebrow');
-  if (eyebrowEl) eyebrowEl.textContent = 'Updating profile for';
+  if (eyebrowEl) eyebrowEl.textContent = t('um.updatingProfileFor', 'Updating profile for');
   if (titleEl) titleEl.textContent = displayName;
   if (emailEl) emailEl.textContent = displayEmail;
-  if (metaEl) metaEl.textContent = `${roleLabel} · Status: ${user.status || '—'}`;
+  if (metaEl) metaEl.textContent = `${roleLabel} · ${t('table.status', 'Status')}: ${statusLabel(user.status)}`;
 
   const isDeleted = user.status === 'deleted';
   document.getElementById('devUserModalBody').innerHTML = `
@@ -391,8 +413,8 @@ function openUserModal(userId) {
         <button type="button" class="primary-btn" data-status="active">Activate</button>
         <button type="button" class="ghost-btn" data-status="inactive">Deactivate</button>
         <button type="button" class="ghost-btn" data-status="blocked">Block</button>
-        <button type="button" class="ghost-btn" data-action="unlock">Clear lockout</button>
-        <button type="button" class="ghost-btn" data-action="soft-delete">Soft-delete</button>
+        <button type="button" class="ghost-btn" data-action="unlock">${t('um.clearLockout', 'Clear lockout')}</button>
+        <button type="button" class="ghost-btn" data-action="soft-delete">${t('um.softDelete', 'Soft-delete')}</button>
       </div>
     `}
     <p id="devModalMessage" class="message"></p>
@@ -432,7 +454,7 @@ function openUserModal(userId) {
         method: 'PATCH',
         body: JSON.stringify({ password }),
       });
-      msg.textContent = 'Password updated and lockout cleared.';
+      msg.textContent = t('um.passwordUpdated', 'Password updated.');
       event.target.reset();
       await loadUsers();
     } catch (error) {
@@ -465,7 +487,7 @@ function openUserModal(userId) {
     const msg = document.getElementById('devModalMessage');
     try {
       await api(`/api/developer/users/${selectedUserId}/unlock`, { method: 'POST', body: '{}' });
-      msg.textContent = 'Temporary lockout cleared.';
+      msg.textContent = t('um.clearLockout', 'Temporary lockout cleared.');
       await loadUsers();
     } catch (error) {
       msg.textContent = error.message;
@@ -481,7 +503,7 @@ function openUserModal(userId) {
         method: 'POST',
         body: JSON.stringify({ reason }),
       });
-      msg.textContent = 'Account soft-deleted. Financial records preserved.';
+      msg.textContent = t('um.softDelete', 'Account soft-deleted. Financial records preserved.');
       modal.classList.add('hidden');
       await loadUsers();
       await loadStats();
@@ -498,7 +520,7 @@ function openUserModal(userId) {
         method: 'POST',
         body: '{}',
       });
-      msg.textContent = 'Account restored.';
+      msg.textContent = t('um.restore', 'Account restored.');
       modal.classList.add('hidden');
       await loadUsers();
       await loadStats();
@@ -517,7 +539,7 @@ function loadRecoveryOptions() {
       ${escapeHtml(u.name)} (${escapeHtml(u.email)})${u.hasPendingOtp ? ' · OTP pending' : ''}
     </option>
   `).join('');
-  select.innerHTML = `<option value="">Select user…</option>${options}`;
+  select.innerHTML = `<option value="">${t('um.selectPendingOtp', 'Select user…')}</option>${options}`;
 }
 
 async function loadAudits() {
@@ -525,7 +547,7 @@ async function loadAudits() {
   if (!tbody) return;
   const { audits } = await api('/api/developer/audits?limit=100');
   if (!audits?.length) {
-    tbody.innerHTML = '<tr><td colspan="5">No audit events yet.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="5">${t('common.noRecords', 'No audit events yet.')}</td></tr>`;
     return;
   }
   tbody.innerHTML = audits.map((row) => `
@@ -578,7 +600,7 @@ function bindUi() {
           newPassword: formData.get('newPassword'),
         }),
       });
-      msg.textContent = 'OTP verified. New password set and account unlocked.';
+      msg.textContent = t('um.otpVerified', 'OTP verified. New password set and account unlocked.');
       event.target.reset();
       await loadUsers();
       await loadAudits();
@@ -600,7 +622,7 @@ function bindUi() {
         }),
         skipPasswordConfirm: true,
       });
-      msg.textContent = 'Password updated.';
+      msg.textContent = t('um.passwordUpdated', 'Password updated.');
       event.target.reset();
     } catch (error) {
       msg.textContent = error.message;

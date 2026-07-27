@@ -1,3 +1,4 @@
+const { uiText } = require('./i18nService');
 const { formatMoney } = require('./moneyFormat');
 const { createAdminNotification } = require('./adminNotificationService');
 const { createMemberNotification } = require('./memberNotificationService');
@@ -22,7 +23,7 @@ async function notifyDepositRecorded({
     createMemberNotification({
       memberId: member._id,
       type: 'deposit',
-      title: 'Deposit recorded',
+      title: uiText('bn', 'depositRecorded', 'Deposit recorded'),
       message: `Your deposit of ${amountLabel} via ${channelLabel} has been recorded.${receiptLabel}`,
       relatedId: deposit._id,
       relatedModel: 'Deposit',
@@ -119,7 +120,7 @@ async function notifyProfitDistribution({
     await createMemberNotification({
       memberId,
       type: 'dividend',
-      title: 'Profit credited',
+      title: uiText('bn', 'profitCredited', 'Profit credited'),
       message: `You received a profit distribution of ${formatMoney(shareAmount, 2)}.`,
       relatedId: distributionId,
       relatedModel: 'ProfitDistribution',

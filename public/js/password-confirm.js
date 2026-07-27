@@ -45,19 +45,20 @@
     overlay = document.createElement('div');
     overlay.id = 'pwConfirmOverlay';
     overlay.className = 'pw-confirm-overlay hidden';
+    const t = (key, fallback) => (global.I18n && global.I18n.t ? global.I18n.t(key, fallback) : fallback);
     overlay.innerHTML = `
       <div class="pw-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="pwConfirmTitle">
-        <h3 id="pwConfirmTitle">Confirm your password</h3>
-        <p id="pwConfirmHint">Re-enter your account password to authorize this sensitive action.</p>
+        <h3 id="pwConfirmTitle">${t('common.confirmPassword', 'Confirm your password')}</h3>
+        <p id="pwConfirmHint">${t('common.confirmPasswordHint', 'Re-enter your account password to authorize this sensitive action.')}</p>
         <p class="pw-confirm-error" id="pwConfirmError"></p>
         <form id="pwConfirmForm">
-          <label>
-            Account password
+          <label data-i18n="common.accountPassword">
+            ${t('common.accountPassword', 'Account password')}
             <input type="password" id="pwConfirmInput" name="password" autocomplete="current-password" required />
           </label>
           <div class="pw-confirm-actions">
-            <button type="button" class="ghost-btn" id="pwConfirmCancel">Cancel</button>
-            <button type="submit" class="primary-btn">Confirm</button>
+            <button type="button" class="ghost-btn" id="pwConfirmCancel">${t('common.cancel', 'Cancel')}</button>
+            <button type="submit" class="primary-btn">${t('common.confirm', 'Confirm')}</button>
           </div>
         </form>
       </div>
@@ -74,7 +75,8 @@
     const form = document.getElementById('pwConfirmForm');
     const cancelBtn = document.getElementById('pwConfirmCancel');
 
-    hint.textContent = message || 'Re-enter your account password to authorize this sensitive action.';
+    const t = (key, fallback) => (global.I18n && global.I18n.t ? global.I18n.t(key, fallback) : fallback);
+    hint.textContent = message || t('common.confirmPasswordHint', 'Re-enter your account password to authorize this sensitive action.');
     errorEl.textContent = '';
     input.value = '';
     overlay.classList.remove('hidden');
@@ -93,7 +95,7 @@
         event.preventDefault();
         const value = input.value;
         if (!value) {
-          errorEl.textContent = 'Password is required.';
+          errorEl.textContent = (global.I18n && global.I18n.t ? global.I18n.t('common.passwordRequired', 'Password is required.') : 'Password is required.');
           return;
         }
         cleanup(value);
