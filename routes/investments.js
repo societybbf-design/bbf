@@ -8,6 +8,10 @@ const {
   getGroupedSocietyInvestments,
   getInvestmentApprovalDetails,
   getInvestmentSummary,
+  buildInvestmentSummaryFromGrouped,
+  buildApprovalTracking,
+  buildApprovalTrackingBatch,
+  getSavingsPool,
   getInvestorPortfolio,
   getProjectManagerPortfolio,
   listCashierPaymentQueue,
@@ -260,19 +264,11 @@ router.get('/summary', requirePermission('can_manage_investments'), async (req, 
 router.get('/', requirePermission('can_manage_investments'), async (req, res) => {
   try {
     await ensureDefaultInvestmentTypes();
-    const [grouped, summary] = await Promise.all([
-      getGroupedSocietyInvestments(),
-      getInvestmentSummary(),
-    ]);
+    const grouped = await getGroupedSocietyInvestments();
+    const { totalSavings } = await getSavingsPool();
+    const summary = buildInvestmentSummaryFromGrouped(grouped, totalSavings);
 
-    const pendingWithTracking = [];
-    for (const item of grouped.pending) {
-      const details = await getInvestmentApprovalDetails(item._id);
-      pendingWithTracking.push({
-        ...item,
-        approvalTracking: details.approvalTracking,
-      });
-    }
+    const pendingWithTracking = await buildApprovalTrackingBatch(grouped.pending || []);
 
     res.json({
       investments: grouped.all,

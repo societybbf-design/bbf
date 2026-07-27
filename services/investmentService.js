@@ -168,7 +168,7 @@ async function fundInvestmentFromMembers(investmentId, amount) {
 
 const SOCIETY_INVESTMENT_FILTER = { member: null };
 
-async function enrichInvestmentsWithSaleData(investments) {
+async function enrichInvestmentsWithSaleData(investments, { syncSaleStatus = false } = {}) {
   if (!investments.length) {
     return {
       active: [],
@@ -194,6 +194,7 @@ async function enrichInvestmentsWithSaleData(investments) {
   }
 
   const enriched = [];
+  const statusSyncOps = [];
 
   for (const investment of investments) {
     const plain = investment.toObject ? investment.toObject() : { ...investment };
@@ -221,28 +222,30 @@ async function enrichInvestmentsWithSaleData(investments) {
       const saleAmount = Number(plain.saleAmount || record?.saleAmount || 0);
       const soldAt = plain.soldAt || record?.createdAt || null;
 
-      if (plain.status !== 'sold' && record) {
-        await Investment.updateOne(
-          { _id: plain._id },
-          {
-            $set: {
-              status: 'sold',
-              saleAmount,
-              outcomeType,
-              soldAt,
+      if (syncSaleStatus && plain.status !== 'sold' && record) {
+        statusSyncOps.push({
+          updateOne: {
+            filter: { _id: plain._id },
+            update: {
+              $set: {
+                status: 'sold',
+                saleAmount,
+                outcomeType,
+                soldAt,
+              },
             },
-          }
-        );
+          },
+        });
       }
 
       enriched.push({
         ...plain,
-        status: 'sold',
+        status: plain.status === 'closed' ? 'closed' : 'sold',
         saleAmount,
         outcomeType,
         soldAt,
         netProfitLoss: outcomeType === 'loss' ? -profitAmount : profitAmount,
-        displayStatus: 'Sold',
+        displayStatus: plain.status === 'closed' ? 'Closed' : 'Sold',
       });
       continue;
     }
@@ -256,6 +259,10 @@ async function enrichInvestmentsWithSaleData(investments) {
       netProfitLoss: 0,
       displayStatus: 'Successful',
     });
+  }
+
+  if (statusSyncOps.length) {
+    await Investment.bulkWrite(statusSyncOps, { ordered: false }).catch(() => {});
   }
 
   return {
@@ -289,17 +296,18 @@ function getInvestmentDisplayStatus(status) {
   }
 }
 
-async function getGroupedSocietyInvestments() {
+async function getGroupedSocietyInvestments({ syncSaleStatus = false } = {}) {
   const investments = await Investment.find(SOCIETY_INVESTMENT_FILTER)
     .populate('investor', 'name email role phone address dateOfBirth')
     .populate('projectManager', 'name email role')
     .sort({ createdAt: -1 });
 
-  for (const investment of investments) {
-    await ensureInvestmentCode(investment);
+  const missingCodes = investments.filter((investment) => !investment.investmentCode);
+  if (missingCodes.length) {
+    await Promise.all(missingCodes.map((investment) => ensureInvestmentCode(investment)));
   }
 
-  return enrichInvestmentsWithSaleData(investments);
+  return enrichInvestmentsWithSaleData(investments, { syncSaleStatus });
 }
 
 async function getAllInvestments() {
@@ -646,15 +654,18 @@ async function createSocietyInvestment({
   };
 }
 
-async function buildApprovalTracking(investment) {
-  const eligibleIds = (investment.eligibleMembers || []).map((id) => String(id));
+async function buildApprovalTracking(investment, memberByIdCache = null) {
+  const eligibleIds = (investment.eligibleMembers || []).map((id) => String(id?._id || id));
   const approvedIds = new Set((investment.approvals || []).map((item) => String(item.member)));
 
-  const members = await User.find({ _id: { $in: investment.eligibleMembers || [] } })
-    .select('name email status')
-    .lean();
+  let memberById = memberByIdCache;
+  if (!memberById) {
+    const members = await User.find({ _id: { $in: investment.eligibleMembers || [] } })
+      .select('name email status')
+      .lean();
+    memberById = new Map(members.map((member) => [String(member._id), member]));
+  }
 
-  const memberById = new Map(members.map((member) => [String(member._id), member]));
   const approvedMembers = [];
   const pendingMembers = [];
 
@@ -680,6 +691,29 @@ async function buildApprovalTracking(investment) {
     pendingMembers,
     displayStatus: getInvestmentDisplayStatus(investment.status),
   };
+}
+
+async function buildApprovalTrackingBatch(investments = []) {
+  const allEligibleIds = [];
+  for (const investment of investments) {
+    for (const id of investment.eligibleMembers || []) {
+      allEligibleIds.push(id?._id || id);
+    }
+  }
+  const uniqueIds = [...new Set(allEligibleIds.map((id) => String(id)))];
+  const members = uniqueIds.length
+    ? await User.find({ _id: { $in: uniqueIds } }).select('name email status').lean()
+    : [];
+  const memberById = new Map(members.map((member) => [String(member._id), member]));
+
+  const rows = [];
+  for (const item of investments) {
+    rows.push({
+      ...item,
+      approvalTracking: await buildApprovalTracking(item, memberById),
+    });
+  }
+  return rows;
 }
 
 async function getInvestmentApprovalDetails(investmentId) {
@@ -1179,9 +1213,13 @@ async function deleteInvestment(investmentId) {
   };
 }
 
-async function getInvestmentSummary() {
-  const grouped = await getGroupedSocietyInvestments();
-  const { members, totalSavings } = await getSavingsPool();
+async function getInvestmentSummary(groupedInvestments = null) {
+  const grouped = groupedInvestments || await getGroupedSocietyInvestments();
+  const { totalSavings } = await getSavingsPool();
+  return buildInvestmentSummaryFromGrouped(grouped, totalSavings);
+}
+
+function buildInvestmentSummaryFromGrouped(grouped, totalSavings = 0) {
   const activeInvested = grouped.active.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const soldInvested = grouped.sold.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalSoldProceeds = grouped.sold.reduce((sum, item) => sum + Number(item.saleAmount || 0), 0);
@@ -1211,6 +1249,7 @@ async function getInvestmentSummary() {
 module.exports = {
   approveInvestmentByMember,
   buildApprovalTracking,
+  buildApprovalTrackingBatch,
   completeCashierPayment,
   getInvestmentApprovalDetails,
   getInvestmentDisplayStatus,
@@ -1229,6 +1268,7 @@ module.exports = {
   getInvestmentByCode,
   getInvestmentById,
   getInvestmentSummary,
+  buildInvestmentSummaryFromGrouped,
   getInvestorPortfolio,
   getMemberInvestments,
   getProjectManagerPortfolio,
