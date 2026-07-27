@@ -79,10 +79,10 @@ const UserSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
-  /** How the exit was funded: replacement buy-in or society bank / fund payout */
+  /** How the exit was funded: replacement buy-in, direct society fund, or multi-approval exit */
   exitSettlementSource: {
     type: String,
-    enum: ['', 'replacement', 'society_fund'],
+    enum: ['', 'replacement', 'society_fund', 'approved_exit'],
     default: '',
   },
   /** Historical savings migrated from pre-digital operations */

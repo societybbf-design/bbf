@@ -136,10 +136,12 @@ function navigateMemberPage(page) {
     if (page === 'dashboard') {
       void loadLoanDashboardSummary();
       void loadMemberInvestmentRequests();
+      void loadMemberExitRequests();
     }
   }
   if (page === 'investment-requests') {
     void loadMemberInvestmentRequests();
+    void loadMemberExitRequests();
   }
   if (page === 'messages') {
     void loadMemberChat();
@@ -845,6 +847,104 @@ async function loadSocietyInvestments() {
     }
   } catch (error) {
     console.error('Failed to load society investments:', error);
+  }
+}
+
+async function loadMemberExitRequests() {
+  const container = document.getElementById('memberExitRequestsList');
+  const messageEl = document.getElementById('memberExitRequestMessage');
+  if (!container) return;
+
+  try {
+    const response = await fetch('/api/member/exit-requests');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load exit requests.');
+
+    const requests = data.requests || [];
+    if (!requests.length) {
+      container.innerHTML = '<p class="table-subtitle">No member-exit requests waiting for your approval.</p>';
+      return;
+    }
+
+    container.innerHTML = requests.map((item) => {
+      const tracking = item.approvalTracking || {};
+      const isDepartingStep = item.status === 'pending_departing_approval';
+      const plan = (item.redistributionPlan || []).slice(0, 8).map((row) => `
+        <li>${row.memberName || 'Member'}: ${formatMoney(Number(row.totalCredit || 0), 2)}</li>
+      `).join('') || '<li>No redistribution rows.</li>';
+
+      return `
+        <article class="panel-card" style="margin-bottom: 0.85rem;">
+          <h3 style="margin:0 0 0.35rem;">Exit · ${item.departingMemberName || item.departingMember?.name || 'Member'}</h3>
+          <p class="table-subtitle">
+            Settlement: ${formatMoney(Number(item.settlementAmount || 0), 2)} ·
+            ${isDepartingStep
+              ? 'Waiting for your exit approval'
+              : `Redistribution approvals ${tracking.approvedCount || 0}/${tracking.totalMembers || 0}`}
+          </p>
+          <p>${item.notes || 'No notes provided.'}</p>
+          <h4>Redistribution preview</h4>
+          <ul>${plan}</ul>
+          <div class="member-status-actions">
+            <button type="button" class="primary-btn" data-approve-exit="${item._id}">
+              ${isDepartingStep ? 'Approve My Exit' : 'Approve Redistribution'}
+            </button>
+            ${isDepartingStep ? `<button type="button" class="secondary-btn" data-reject-exit="${item._id}">Reject Exit</button>` : ''}
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    container.querySelectorAll('[data-approve-exit]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (messageEl) messageEl.textContent = '';
+        try {
+          const approveRes = await fetch(`/api/member/exit-requests/${btn.dataset.approveExit}/approve`, {
+            method: 'POST',
+          });
+          const approveData = await approveRes.json();
+          if (!approveRes.ok) throw new Error(approveData.error || 'Unable to approve.');
+          if (messageEl) {
+            messageEl.classList.add('success');
+            messageEl.textContent = approveData.message || 'Approved.';
+          }
+          await loadMemberExitRequests();
+        } catch (error) {
+          if (messageEl) {
+            messageEl.classList.remove('success');
+            messageEl.textContent = error.message;
+          }
+        }
+      });
+    });
+
+    container.querySelectorAll('[data-reject-exit]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const reason = window.prompt('Optional rejection reason:', '') || '';
+        if (messageEl) messageEl.textContent = '';
+        try {
+          const rejectRes = await fetch(`/api/member/exit-requests/${btn.dataset.rejectExit}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason }),
+          });
+          const rejectData = await rejectRes.json();
+          if (!rejectRes.ok) throw new Error(rejectData.error || 'Unable to reject.');
+          if (messageEl) {
+            messageEl.classList.add('success');
+            messageEl.textContent = rejectData.message || 'Rejected.';
+          }
+          await loadMemberExitRequests();
+        } catch (error) {
+          if (messageEl) {
+            messageEl.classList.remove('success');
+            messageEl.textContent = error.message;
+          }
+        }
+      });
+    });
+  } catch (error) {
+    container.innerHTML = `<p class="message">${error.message}</p>`;
   }
 }
 
@@ -1926,6 +2026,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadKycDocuments();
   loadSocietyInvestments();
   void loadMemberInvestmentRequests();
+  void loadMemberExitRequests();
   void loadLoanEligibility();
   void loadMemberDepositTrend();
   void loadMemberCashierTrackingTeaser();

@@ -1939,28 +1939,97 @@ async function loadSocietyFundExitValuation(memberId) {
   const amountInput = document.getElementById('societyExitAmountInput');
   if (!box) return;
   if (!memberId) {
-    box.innerHTML = '<p class="table-subtitle">Select a member to load the society-fund exit settlement.</p>';
+    box.innerHTML = '<p class="table-subtitle">Select a member to preview settlement and redistribution.</p>';
     if (amountInput) amountInput.value = '';
     return;
   }
 
   try {
-    const response = await fetch(`/api/admin/members/entry-valuation?replaceMemberId=${encodeURIComponent(memberId)}`);
+    const response = await fetch(`/api/admin/member-exits/preview?memberId=${encodeURIComponent(memberId)}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to calculate valuation.');
-    const v = data.valuation || {};
-    const d = v.departing || {};
+    if (!response.ok) throw new Error(data.error || 'Unable to preview exit.');
+    const preview = data.preview || {};
+    const breakdown = preview.settlementBreakdown || {};
+    const plan = preview.redistributionPlan || [];
+    const planRows = plan.length
+      ? `<div class="table-wrapper"><table class="data-table"><thead><tr><th>Member</th><th>Weight</th><th>Savings+</th><th>Profit+</th><th>Advance+</th><th>Total</th></tr></thead><tbody>${
+        plan.map((row) => `
+          <tr>
+            <td>${escapeCeoHtml(row.memberName || '')}</td>
+            <td>${(Number(row.weight || 0) * 100).toFixed(1)}%</td>
+            <td>${formatMoney(Number(row.savingsCredit || 0), 2)}</td>
+            <td>${formatMoney(Number(row.profitCredit || 0), 2)}</td>
+            <td>${formatMoney(Number(row.advanceCredit || 0), 2)}</td>
+            <td>${formatMoney(Number(row.totalCredit || 0), 2)}</td>
+          </tr>
+        `).join('')
+      }</tbody></table></div>`
+      : '<p class="table-subtitle">No remaining members available for redistribution.</p>';
+
     box.innerHTML = `
-      <p><strong>Society-fund exit settlement: ${formatMoney(Number(v.entryAmount || 0), 2)}</strong></p>
-      <p class="table-subtitle">${escapeCeoHtml(v.formula || '')}</p>
-      <p class="table-subtitle">Departing: ${escapeCeoHtml(d.name || '')} — Savings ${formatMoney(Number(d.savings || 0), 2)} + Profit ${formatMoney(Number(d.profit || 0), 2)} + Advance ${formatMoney(Number(d.advanceBalance || 0), 2)}</p>
-      <p class="table-subtitle">Paid from society bank ledger. Member balances are cleared and the seat returns to the remaining pool. Requires enough book cash and no outstanding loans.</p>
-      <p class="table-subtitle">Society fund (all active): Savings ${formatMoney(Number(v.totalSavings || 0), 2)} · Profit ${formatMoney(Number(v.totalProfit || 0), 2)} · Advance ${formatMoney(Number(v.totalAdvance || 0), 2)} · Members ${v.activeCount || 0}</p>
+      <p><strong>Exit settlement: ${formatMoney(Number(preview.settlementAmount || 0), 2)}</strong></p>
+      <p class="table-subtitle">${escapeCeoHtml(preview.formula || '')}</p>
+      <p class="table-subtitle">Breakdown — Savings ${formatMoney(Number(breakdown.savings || 0), 2)} · Profit ${formatMoney(Number(breakdown.profit || 0), 2)} · Advance ${formatMoney(Number(breakdown.advance || 0), 2)}</p>
+      <p class="table-subtitle">Remaining members: ${preview.remainingMemberCount || 0}. After departing + unanimous member approvals, Cashier pays this amount.</p>
+      <h4>Redistribution preview</h4>
+      ${planRows}
     `;
     if (amountInput) {
-      amountInput.value = Number(v.entryAmount || 0).toFixed(2);
+      amountInput.value = Number(preview.settlementAmount || 0).toFixed(2);
       amountInput.readOnly = true;
     }
+  } catch (error) {
+    box.innerHTML = `<p class="message">${escapeCeoHtml(error.message)}</p>`;
+  }
+}
+
+async function loadOpenMemberExitRequests() {
+  const box = document.getElementById('openMemberExitRequests');
+  if (!box) return;
+  try {
+    const response = await fetch('/api/admin/member-exits');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load exit requests.');
+    const exits = data.exits || [];
+    if (!exits.length) {
+      box.innerHTML = '<p class="table-subtitle">No open exit requests.</p>';
+      return;
+    }
+    box.innerHTML = exits.map((item) => {
+      const tracking = item.approvalTracking || {};
+      const statusLabel = {
+        pending_departing_approval: 'Awaiting departing member',
+        pending_member_approval: `Member approvals ${tracking.approvedCount || 0}/${tracking.totalMembers || 0}`,
+        pending_cashier_payment: 'Awaiting Cashier payout',
+      }[item.status] || item.status;
+      const canCancel = item.status === 'pending_departing_approval' || item.status === 'pending_member_approval';
+      return `
+        <article class="panel-card u-mb-1">
+          <strong>${escapeCeoHtml(item.departingMemberName || item.departingMember?.name || 'Member')}</strong>
+          — ${formatMoney(Number(item.settlementAmount || 0), 2)}
+          <p class="table-subtitle">${escapeCeoHtml(statusLabel)}</p>
+          ${canCancel ? `<button type="button" class="secondary-btn" data-cancel-exit="${item._id}">Cancel exit</button>` : '<p class="table-subtitle">With Cashier — CEO cannot disburse or cancel payout.</p>'}
+        </article>
+      `;
+    }).join('');
+
+    box.querySelectorAll('[data-cancel-exit]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!window.confirm('Cancel this exit request?')) return;
+        try {
+          const res = await fetch(`/api/admin/member-exits/${btn.dataset.cancelExit}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'Cancelled by CEO' }),
+          });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.error || 'Unable to cancel.');
+          await loadOpenMemberExitRequests();
+        } catch (error) {
+          window.alert(error.message);
+        }
+      });
+    });
   } catch (error) {
     box.innerHTML = `<p class="message">${escapeCeoHtml(error.message)}</p>`;
   }
@@ -1969,6 +2038,7 @@ async function loadSocietyFundExitValuation(memberId) {
 async function initMemberMigrationUi() {
   await populateMigrationMemberSelects();
   await loadMigrationOverview();
+  await loadOpenMemberExitRequests();
 
   if (memberMigrationUiBound) return;
   memberMigrationUiBound = true;
@@ -2061,12 +2131,12 @@ async function initMemberMigrationUi() {
     const memberName = document.getElementById('societyExitMemberSelect')?.selectedOptions?.[0]?.textContent || 'this member';
     const amount = formData.get('confirmSettlementAmount');
     const confirmed = window.confirm(
-      `Pay exit settlement of ${formatMoney(Number(amount || 0))} from the society fund for ${memberName}? This soft-deletes the member and cannot be undone from this screen.`
+      `Initiate exit for ${memberName} with settlement ${formatMoney(Number(amount || 0))}? This sends approval requests to the departing member, then remaining members. Cashier pays only after all approvals — you cannot disburse from CEO panel.`
     );
     if (!confirmed) return;
 
     try {
-      const response = await fetch('/api/admin/members/exit-society-fund', {
+      const response = await fetch('/api/admin/member-exits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2076,15 +2146,16 @@ async function initMemberMigrationUi() {
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to process society-fund exit.');
+      if (!response.ok) throw new Error(data.error || 'Unable to initiate member exit.');
       if (msg) {
         msg.textContent = data.message
-          || `Society-fund exit completed for ${data.departingMember?.name || 'member'}.`;
+          || `Exit initiated for ${data.exitRequest?.departingMemberName || 'member'}.`;
       }
       event.target.reset();
-      document.getElementById('societyExitValuationBox').innerHTML = '<p class="table-subtitle">Select a member to load the society-fund exit settlement.</p>';
+      document.getElementById('societyExitValuationBox').innerHTML = '<p class="table-subtitle">Select a member to preview settlement and redistribution.</p>';
       await populateMigrationMemberSelects();
       await loadMigrationOverview();
+      await loadOpenMemberExitRequests();
       await loadCeoStaffDirectory();
       await fetchSummary();
       await fetchMembers();
