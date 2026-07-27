@@ -1,5 +1,5 @@
 /**
- * admin.js — CEO / Admin dashboard behavior for SocietyHub.
+ * admin.js — CEO / Admin dashboard behavior for Bondhutto-er Bandhon Foundation.
  *
  * Markup:  views/admin.html
  * Styles:  public/css/styles.css, admin-dashboard.css, utilities.css
@@ -1342,7 +1342,13 @@ async function loadAdminProfile() {
 
     const eyebrow = document.querySelector('.topbar-eyebrow');
     if (eyebrow) {
-      eyebrow.textContent = fullAccess ? 'SocietyHub CEO' : `SocietyHub ${roleLabel}`;
+      if (window.OrganizationBranding) {
+        eyebrow.textContent = fullAccess
+          ? window.OrganizationBranding.eyebrowText('ceo')
+          : `${window.OrganizationBranding.branding?.name || ''} ${roleLabel}`.trim();
+      } else {
+        eyebrow.textContent = fullAccess ? 'Bondhutto-er Bandhon Foundation CEO' : `Bondhutto-er Bandhon Foundation ${roleLabel}`;
+      }
     }
 
     applyOpsPermissionGate(data.user);

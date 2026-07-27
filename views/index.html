@@ -3,14 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Society Management Login</title>
+  <title data-page-title="Sign In">Sign In</title>
   <script src="/static/js/theme-boot.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
 </head>
 <body>
   <main class="login-container">
     <div class="login-theme-slot">
+      <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language">EN</button>
       <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
         <span class="theme-icon-sun" aria-hidden="true">☀️</span>
         <span class="theme-icon-moon" aria-hidden="true">🌙</span>
@@ -18,8 +23,8 @@
     </div>
     <div class="centered-card">
       <header class="login-header">
-        <h1>SocietyHub</h1>
-        <p class="login-subtitle">Society Management System</p>
+        <h1 data-brand-name>বন্ধুত্বের বন্ধন ফাউন্ডেশন</h1>
+        <p class="login-subtitle" data-brand-login-subtitle>সদস্য ও আর্থিক ব্যবস্থাপনা প্ল্যাটফর্ম</p>
       </header>
 
       <form id="loginForm" class="form-card">
@@ -59,6 +64,7 @@
     </div>
   </main>
 
+  <script src="/static/js/branding.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/login.js"></script>
 </body>

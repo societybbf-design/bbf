@@ -8,7 +8,7 @@ function randomTempPassword() {
 
 async function seedDefaultUsers() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const developerEmail = process.env.DEVELOPER_EMAIL || 'developer@societyhub.local';
+  const developerEmail = process.env.DEVELOPER_EMAIL || 'developer@bondhutto-bandhon.foundation';
   const developerPassword = process.env.DEVELOPER_PASSWORD
     || (isProduction ? null : 'devSecure2003');
   const ceoEmail = process.env.CEO_EMAIL || 'mdsamim62003@gmail.com';

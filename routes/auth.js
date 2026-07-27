@@ -71,6 +71,7 @@ router.post('/login', async (req, res) => {
       role: payload.role,
       name: payload.name,
       permissions: payload.permissions,
+      preferredLanguage: payload.preferredLanguage || 'bn',
     };
 
     // Rotate session ID on login to prevent session fixation.

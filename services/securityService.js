@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const SecurityAudit = require('../models/SecurityAudit');
 const { sendTransactionalEmail } = require('./notificationService');
+const { getOrganizationName } = require('./organizationBranding');
 const { ROLE_LABELS, isDeveloperRole, isFullAccessRole, ASSIGNABLE_ROLES, getDefaultPermissions, sanitizePermissions } = require('./rbac');
 
 const MAX_FAILED_ATTEMPTS = Number(process.env.MAX_FAILED_LOGIN_ATTEMPTS) || 5;
@@ -184,14 +185,15 @@ async function requestPasswordOtp(email, meta = {}) {
   user.passwordResetVerifiedAt = null;
   await user.save();
 
-  const subject = 'SocietyHub password recovery OTP';
+  const orgName = getOrganizationName('en');
+  const subject = `${orgName} password recovery OTP`;
   const text = [
     `Hello ${user.name},`,
     '',
     `Your password recovery OTP is: ${otp}`,
     `This code expires in ${Math.round(OTP_TTL_MS / 60000)} minutes.`,
     '',
-    'Share this OTP only with SocietyHub User Management so they can verify your identity and set a new password.',
+    `Share this OTP only with ${orgName} User Management so they can verify your identity and set a new password.`,
     'If you did not request this, ignore this email.',
   ].join('\n');
 
@@ -199,7 +201,7 @@ async function requestPasswordOtp(email, meta = {}) {
     to: user.email,
     subject,
     text,
-    html: `<p>Hello ${user.name},</p><p>Your password recovery OTP is: <strong>${otp}</strong></p><p>This code expires in ${Math.round(OTP_TTL_MS / 60000)} minutes.</p><p>Share this OTP only with SocietyHub User Management to restore access.</p>`,
+    html: `<p>Hello ${user.name},</p><p>Your password recovery OTP is: <strong>${otp}</strong></p><p>This code expires in ${Math.round(OTP_TTL_MS / 60000)} minutes.</p><p>Share this OTP only with ${orgName} User Management to restore access.</p>`,
   });
 
   if (!sendResult?.sent) {

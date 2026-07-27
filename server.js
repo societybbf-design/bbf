@@ -30,6 +30,8 @@ const transactionAuditRoutes = require('./routes/transactionAudit');
 const analyticsRoutes = require('./routes/analytics');
 const duesRemindersRoutes = require('./routes/duesReminders');
 const activityLogRoutes = require('./routes/activityLog');
+const brandingRoutes = require('./routes/branding');
+const { ensureOrganizationSettings } = require('./services/organizationSettingsService');
 const { seedDefaultUsers } = require('./services/seedService');
 const { ensureDefaultInvestmentTypes } = require('./services/investmentTypeService');
 const { isFullAccessRole, isDeveloperRole, canAccessDeveloperModule, dashboardPathForRole } = require('./services/rbac');
@@ -277,6 +279,8 @@ function buildApp(sessionStore) {
     });
   });
 
+  app.use('/api/branding', brandingRoutes);
+
   app.get('/api/session', (req, res) => {
     const sessionUser = req.session.user;
     if (!sessionUser) {
@@ -290,6 +294,7 @@ function buildApp(sessionStore) {
         role: sessionUser.role,
         name: sessionUser.name,
         permissions: sessionUser.permissions || [],
+        preferredLanguage: sessionUser.preferredLanguage || 'bn',
         redirectTo: dashboardPathForRole(sessionUser.role),
       },
     });
@@ -301,7 +306,7 @@ function buildApp(sessionStore) {
       return res.status(404).type('html').send(
         '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Not found</title></head>'
         + '<body style="font-family:system-ui;padding:2rem"><h1>Page not found</h1>'
-        + '<p><a href="/">Return to SocietyHub</a></p></body></html>'
+        + '<p><a href="/">Return to Bondhutto-er Bandhon Foundation</a></p></body></html>'
       );
     }
     return res.status(404).json({ error: 'Not found' });
@@ -343,6 +348,7 @@ async function connectMongo() {
   console.log(`MongoDB connected (${maskMongoUri(mongoUri)})`);
   await seedDefaultUsers();
   await ensureDefaultInvestmentTypes();
+  await ensureOrganizationSettings();
 }
 
 function createSessionStore() {

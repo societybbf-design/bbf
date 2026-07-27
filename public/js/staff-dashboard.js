@@ -2388,7 +2388,9 @@ async function init() {
 
     document.getElementById('dashboardTitle').textContent = meta.title;
     document.getElementById('dashboardSubtitle').textContent = `${meta.subtitle} · ${user.email}`;
-    document.getElementById('roleTagline').textContent = (user.role || 'staff').replace(/_/g, ' ');
+    document.getElementById('roleTagline').textContent = window.OrganizationBranding?.portalLabel(
+      user.role === 'cashier' ? 'cashier' : 'staff'
+    ) || roleLabel;
 
     const initials = initialsFromName(user.name);
     const roleLabel = (user.role || 'staff').replace(/_/g, ' ');
@@ -2487,7 +2489,14 @@ async function init() {
       void loadCashierHomeKpis();
     });
 
-    bindStaffNavigation();
+    document.addEventListener('bbbf:languagechange', () => {
+      const tagline = document.getElementById('roleTagline');
+      if (tagline && staffSessionUser) {
+        tagline.textContent = window.OrganizationBranding?.portalLabel(
+          staffSessionUser.role === 'cashier' ? 'cashier' : 'staff'
+        ) || (staffSessionUser.role || 'staff').replace(/_/g, ' ');
+      }
+    });
     bindLedgerForms();
     bindProfitPoolForms();
     bindModuleForms();

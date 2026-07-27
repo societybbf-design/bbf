@@ -1,3 +1,4 @@
+const { brandingSubjectSuffix } = require('./organizationBranding');
 const MonthlyContributionDue = require('../models/MonthlyContributionDue');
 const User = require('../models/User');
 const { yearMonthFromDate } = require('./monthlyTargetService');
@@ -71,7 +72,7 @@ async function sendDuesReminders({
 
     if (channel === 'all' || channel === 'sms_email') {
       await notifyMemberByEmailAndSms(member, {
-        subject: 'Monthly dues reminder — SocietyHub',
+        subject: `Monthly dues reminder — ${brandingSubjectSuffix('en')}`,
         message: `Dear ${member.name}, ${message}`,
       });
     }

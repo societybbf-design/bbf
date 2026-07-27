@@ -1,27 +1,27 @@
-{
-  "name": "society-management",
-  "version": "1.0.0",
-  "description": "Society management system with role-based access using Node.js, MongoDB, and vanilla HTML/CSS/JS.",
-  "main": "server.js",
-  "engines": {
-    "node": ">=18"
-  },
-  "scripts": {
-    "start": "node server.js",
-    "start:direct": "node server.js",
-    "restart": "node scripts/start-server.js",
-    "check:production": "node scripts/check-production.js",
-    "test": "node --test tests/*.test.js"
-  },
-  "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "connect-mongo": "^5.0.0",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.3",
-    "express-session": "^1.17.3",
-    "mongoose": "^7.5.0",
-    "nodemailer": "^6.9.4",
-    "pdfkit": "^0.14.0"
-  }
-}
+{
+  "name": "society-management",
+  "version": "1.0.0",
+  "description": "Bondhutto-er Bandhon Foundation (বন্ধুত্বের বন্ধন ফাউন্ডেশন) — cooperative financial management with role-based access.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:direct": "node server.js",
+    "restart": "node scripts/start-server.js",
+    "check:production": "node scripts/check-production.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "connect-mongo": "^5.0.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.3",
+    "express-session": "^1.17.3",
+    "mongoose": "^7.5.0",
+    "nodemailer": "^6.9.4",
+    "pdfkit": "^0.14.0"
+  }
+}
 

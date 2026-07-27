@@ -1,6 +1,12 @@
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { formatInvestmentProfitWindow } = require('./societyConfig');
+const {
+  brandingEmailFromFallback,
+  drawPdfOrganizationHeader,
+  getOrganizationSettings,
+  registerPdfBengaliFont,
+} = require('./organizationBranding');
 
 let cachedTransporter = null;
 let emailUnavailable = false;
@@ -69,11 +75,17 @@ function createReceiptPdf(member, deposit, adminName) {
     const receiptNumber = deposit.receiptNumber || `DEP-${String(deposit._id || '').slice(-8).toUpperCase()}`;
     const channelLabel = paymentChannelLabel(deposit.paymentMethod || 'cash');
 
-    doc.fontSize(20).fillColor('#0f766e').text('SocietyHub Official Receipt', { align: 'center' });
-    doc.moveDown(0.3);
-    doc.fontSize(11).fillColor('#64748b').text('Digital money receipt / invoice', { align: 'center' });
-    doc.moveDown(1);
-    doc.fontSize(12).fillColor('#1f2937');
+    const settings = getOrganizationSettings();
+    registerPdfBengaliFont(doc);
+
+    drawPdfOrganizationHeader(doc, {
+      title: 'Official Receipt',
+      subtitle: 'Digital money receipt / invoice',
+      align: 'center',
+      titleSize: 16,
+      issuerSize: 18,
+    });
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Transaction ID: ${receiptNumber}`);
     doc.text(`Member: ${member.name}`);
     doc.text(`Email: ${member.email}`);
@@ -92,7 +104,7 @@ function createReceiptPdf(member, deposit, adminName) {
       doc.text(`Contribution month: ${deposit.yearMonth}`);
     }
     doc.moveDown(1);
-    doc.fontSize(12).fillColor('#374151').text('This official digital receipt confirms that the payment has been recorded in the society ledger.');
+    doc.font('Helvetica').fontSize(12).fillColor('#374151').text(`This official digital receipt confirms that the payment has been recorded in the ${settings.nameEn} ledger.`);
     doc.end();
   });
 }
@@ -130,7 +142,7 @@ function createInvestmentReceiptPdf(investment, adminName = 'Admin') {
     doc.moveDown(1.2);
     doc.fontSize(20).fillColor('#0f172a').text('Society Investment Receipt', { align: 'center' });
     doc.moveDown(1);
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Investor Name: ${investorName}`);
     doc.text(`Date of Birth: ${dateOfBirth}`);
     doc.text(`Location: ${investorLocation}`);
@@ -184,7 +196,7 @@ function createIouReceiptPdf(iou, adminName = 'Admin') {
     doc.moveDown(1.2);
     doc.fontSize(20).fillColor('#0f172a').text('Society Investment IOU', { align: 'center' });
     doc.moveDown(1);
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Investor Name: ${investorName}`);
     doc.text(`Date of Birth: ${dateOfBirth}`);
     doc.text(`Location: ${investorLocation}`);
@@ -211,7 +223,7 @@ async function sendDepositReceipt(member, deposit, adminName) {
   }
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || 'Society Management <no-reply@societymanagement.com>',
+    from: process.env.EMAIL_FROM || brandingEmailFromFallback(),
     to: member.email,
     subject: 'Deposit Receipt',
     text: `Dear ${member.name},\n\nA deposit of $${deposit.amount.toFixed(2)} was recorded on ${deposit.createdAt.toISOString().slice(0, 10)}.\n\nThank you,\n${adminName}`,
@@ -243,7 +255,7 @@ async function sendTransactionalEmail({ to, subject, text, html }) {
   }
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || 'Society Management <no-reply@societymanagement.com>',
+    from: process.env.EMAIL_FROM || brandingEmailFromFallback(),
     to,
     subject,
     text,
@@ -299,7 +311,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.fontSize(11).fillColor('#64748b').text('Official Loan Contract', { align: 'center' });
     doc.moveDown(1.5);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Contract Reference: ${loan._id}`);
     doc.text(`Application Date: ${applicationDate}`);
     doc.text(`Approval Date: ${approvalDate}`);
@@ -333,7 +345,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text(`Relation: ${loan.witnessRelation || 'N/A'}`);
     doc.moveDown(1.5);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text('Terms and Conditions:', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(11).fillColor('#374151');
@@ -381,7 +393,7 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
     doc.fontSize(11).fillColor('#64748b').text(repayment.receiptNumber || 'Payment Receipt', { align: 'center' });
     doc.moveDown(1.5);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Member: ${member?.name || 'N/A'}`);
     doc.text(`Email: ${member?.email || 'N/A'}`);
     doc.text(`Payment Date: ${paymentDate}`);
@@ -426,12 +438,12 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    doc.fontSize(22).fillColor('#0f172a').text('SocietyHub Sale Report', { align: 'center' });
+    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Sale Report`, { align: 'center' });
     doc.moveDown(0.3);
     doc.fontSize(11).fillColor('#64748b').text(sale.saleCode || 'SALE', { align: 'center' });
     doc.moveDown(1.2);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Product / Project: ${sale.productName || sale.projectLabel || 'N/A'}`);
     doc.text(`Project Label: ${sale.projectLabel || 'N/A'}`);
     doc.text(`Investment ID: ${sale.investmentCode || 'N/A'}`);
@@ -498,12 +510,12 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
       ? new Date(investment.cashierProcessedAt).toLocaleString()
       : new Date().toLocaleString();
 
-    doc.fontSize(20).fillColor('#0f172a').text('SocietyHub Payment Voucher', { align: 'center' });
+    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Payment Voucher`, { align: 'center' });
     doc.moveDown(0.4);
     doc.fontSize(11).fillColor('#64748b').text('Project payout from society bank ledger', { align: 'center' });
     doc.moveDown(1.2);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Voucher date: ${paidAt}`);
     doc.text(`Processed by: ${cashierName || investment.cashierProcessedBy || 'Cashier'}`);
     doc.text(`Investment code: ${investment.investmentCode || '—'}`);
@@ -512,7 +524,7 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
 
     doc.fontSize(13).fillColor('#0f172a').text('Payee', { underline: true });
     doc.moveDown(0.3);
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Name: ${investment.payoutReceiverName || investment.investorName || '—'}`);
     doc.text(`Role: ${investment.payoutReceiverRole || '—'}`);
     doc.text(`Email: ${investment.payoutReceiverEmail || '—'}`);
@@ -549,12 +561,12 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
     doc.on('error', reject);
 
     const totals = summary.totals || {};
-    doc.fontSize(20).fillColor('#0f172a').text('SocietyHub Daily Cash Closing (Z-Report)', { align: 'center' });
+    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Daily Cash Closing (Z-Report)`, { align: 'center' });
     doc.moveDown(0.4);
     doc.fontSize(11).fillColor('#64748b').text(`Business day: ${summary.date}`, { align: 'center' });
     doc.moveDown(1);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Generated by: ${generatedBy}`);
     doc.text(`Generated at: ${new Date().toLocaleString()}`);
     doc.text(`Book bank balance: $${Number(summary.bookBalance || 0).toFixed(2)}`);
@@ -566,7 +578,7 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
 
     doc.fontSize(13).fillColor('#0f172a').text('Daily totals', { underline: true });
     doc.moveDown(0.4);
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Deposits (cash-in): $${Number(totals.deposits || 0).toFixed(2)}`);
     doc.text(`Project sales / returns: $${Number(totals.sales || 0).toFixed(2)}`);
     doc.text(`Monthly profits logged: $${Number(totals.monthlyProfits || 0).toFixed(2)}`);
@@ -604,12 +616,12 @@ function createProfitDistributionPdf(distribution) {
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    doc.fontSize(20).fillColor('#0f172a').text('SocietyHub Profit Distribution Report', { align: 'center' });
+    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Profit Distribution Report`, { align: 'center' });
     doc.moveDown(0.4);
     doc.fontSize(11).fillColor('#64748b').text('Equal split among active members', { align: 'center' });
     doc.moveDown(1);
 
-    doc.fontSize(12).fillColor('#1f2937');
+    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Distributed by: ${distribution.distributedBy || '—'}`);
     doc.text(`Date: ${new Date(distribution.createdAt || Date.now()).toLocaleString()}`);
     doc.text(`Total amount: $${Number(distribution.totalAmount || 0).toFixed(2)}`);

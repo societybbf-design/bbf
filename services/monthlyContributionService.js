@@ -2,6 +2,7 @@ const PDFDocument = require('pdfkit');
 const Deposit = require('../models/Deposit');
 const User = require('../models/User');
 const MonthlyContributionDue = require('../models/MonthlyContributionDue');
+const { drawPdfOrganizationHeader } = require('./organizationBranding');
 const {
   yearMonthFromDate,
   parseYearMonth,
@@ -150,11 +151,15 @@ function generateMonthlyContributionReportPdf(report = {}, type = 'paid') {
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    doc.fontSize(20).fillColor('#0f172a').text('Society Monthly Contribution Report', { align: 'center' });
+    drawPdfOrganizationHeader(doc, {
+      title: 'Monthly Contribution Report',
+      subtitle: report.monthLabel || 'Current Month',
+      align: 'center',
+      titleSize: 16,
+      issuerSize: 18,
+    });
     doc.moveDown(0.5);
-    doc.fontSize(12).fillColor('#475569').text(report.monthLabel || 'Current Month', { align: 'center' });
-    doc.moveDown(1);
-    doc.fontSize(16).fillColor('#111827').text(title);
+    doc.font('Helvetica').fontSize(16).fillColor('#111827').text(title);
     doc.moveDown(0.5);
 
     if (report.expectedAmount != null) {

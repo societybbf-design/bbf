@@ -1,5 +1,5 @@
 /**
- * Role-Based Access Control catalog and helpers for SocietyHub.
+ * Role-Based Access Control catalog and helpers for Bondhutto-er Bandhon Foundation.
  */
 
 const ROLES = Object.freeze({
@@ -243,6 +243,7 @@ function publicUserPayload(userDoc) {
     role,
     name: userDoc.name,
     permissions,
+    preferredLanguage: userDoc.preferredLanguage || 'bn',
     redirectTo: dashboardPathForRole(role),
   };
 }

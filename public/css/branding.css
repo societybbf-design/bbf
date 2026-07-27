@@ -1,0 +1,47 @@
+/* Foundation branding + Bengali typography */
+
+html[lang='bn'] body,
+html[lang='bn'] [data-brand-name],
+html[lang='bn'] [data-brand-tagline],
+html[lang='bn'] [data-brand-eyebrow],
+html[lang='bn'] [data-brand-login-subtitle] {
+  font-family: 'Noto Sans Bengali', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.language-toggle-btn {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0.35rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-input);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.language-toggle-btn:hover {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.login-theme-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.brand-copy h2,
+.login-header h1[data-brand-name] {
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+@media (max-width: 480px) {
+  .brand-copy h2,
+  .login-header h1[data-brand-name] {
+    font-size: 1.05rem;
+  }
+}
