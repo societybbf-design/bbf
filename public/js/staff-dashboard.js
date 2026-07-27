@@ -2,6 +2,39 @@
  * staff-dashboard.js — Cashier / staff workspace
  * All sidebar modules stay on /dashboard/* — never redirect to /admin (CEO panel).
  */
+
+function t(key, fallback) {
+  return window.I18n?.t?.(key, fallback) ?? fallback;
+}
+
+function translateStatus(value) {
+  const raw = String(value || '').trim();
+  const key = raw.toLowerCase().replace(/\s+/g, '_');
+  const map = {
+    active: 'status.active',
+    inactive: 'status.inactive',
+    blocked: 'status.blocked',
+    deleted: 'status.deleted',
+    pending: 'status.pending',
+    approved: 'status.approved',
+    rejected: 'status.rejected',
+    paid: 'status.paid',
+    unpaid: 'status.unpaid',
+    partial: 'status.partial',
+    due: 'status.due',
+    completed: 'status.completed',
+    cancelled: 'status.cancelled',
+    canceled: 'status.cancelled',
+    running: 'status.running',
+    sold: 'status.sold',
+    profit: 'status.profit',
+    loss: 'status.loss',
+    success: 'status.success',
+    failed: 'status.failed',
+  };
+  return map[key] ? t(map[key], raw) : raw;
+}
+
 const ROLE_META = {
   project_manager: {
     title: 'Project Manager Dashboard',
@@ -315,7 +348,7 @@ function shortMemberId(id) {
 
 function renderMemberStatusList(rows, type) {
   if (!rows.length) {
-    return `<li class="text-secondary">${type === 'paid' ? 'No members fully paid yet.' : 'Everyone is paid up.'}</li>`;
+    return `<li class="text-secondary">${type === 'paid' ? t('staffUi.noMembersPaid', 'No members fully paid yet.') : t('staffUi.everyonePaid', 'Everyone is paid up.')}</li>`;
   }
   return rows.slice(0, 12).map((row) => {
     const member = row.member || {};
@@ -347,8 +380,8 @@ function renderCashierContributionSummary(report, errorMessage) {
   if (!paidList || !unpaidList) return;
 
   if (!report) {
-    paidList.innerHTML = `<li class="text-secondary">${escapeHtml(errorMessage || 'Unable to load.')}</li>`;
-    unpaidList.innerHTML = `<li class="text-secondary">${escapeHtml(errorMessage || 'Unable to load.')}</li>`;
+    paidList.innerHTML = `<li class="text-secondary">${escapeHtml(errorMessage || t('staffUi.unableToLoad', 'Unable to load.'))}</li>`;
+    unpaidList.innerHTML = `<li class="text-secondary">${escapeHtml(errorMessage || t('staffUi.unableToLoad', 'Unable to load.'))}</li>`;
     return;
   }
 
@@ -2194,7 +2227,7 @@ function bindProfitPoolForms() {
     const msg = document.getElementById('profitPoolMessage');
     const formData = new FormData(event.target);
     const amount = formData.get('amount');
-    if (!window.confirm('Distribute profit pool equally to all active members?')) return;
+    if (!window.confirm(t('staffUi.confirmDistribute', 'Distribute profit pool equally to all active members?'))) return;
     try {
       const body = { note: formData.get('note') || '' };
       if (amount) body.amount = amount;
@@ -2255,7 +2288,7 @@ function bindModuleForms() {
     } finally {
       if (button) {
         button.disabled = false;
-        button.textContent = 'Send dues reminders to all unpaid';
+        button.textContent = t('staffUi.sendDuesReminders', 'Send dues reminders to all unpaid');
       }
     }
   });
@@ -2278,7 +2311,7 @@ function bindModuleForms() {
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to record deposit.');
+      if (!response.ok) throw new Error(data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.'));
       if (msg) {
         msg.classList.add('success');
         msg.textContent = data.message || 'Deposit recorded.';
@@ -2566,7 +2599,7 @@ async function init() {
     const initial = (window.location.hash || '#home').replace(/^#/, '') || 'home';
     showStaffView(initial);
   } catch (error) {
-    document.getElementById('dashMessage').textContent = 'Unable to load dashboard.';
+    document.getElementById('dashMessage').textContent = t('staffUi.unableLoadDashboard', 'Unable to load dashboard.');
   }
 }
 

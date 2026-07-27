@@ -3,6 +3,10 @@
  * Loaded before page-specific scripts.
  */
 (function (global) {
+  function chatT(key, fallback) {
+    return window.I18n?.t?.(key, fallback) ?? fallback;
+  }
+
   function escapeChatHtml(value = '') {
     return String(value)
       .replace(/&/g, '&amp;')
@@ -60,7 +64,7 @@
     if (!threadEl) return;
 
     if (!messages.length) {
-      threadEl.innerHTML = `<p class="table-subtitle chat-empty-state">${escapeChatHtml(options.emptyText || 'No messages yet. Start the conversation below.')}</p>`;
+      threadEl.innerHTML = `<p class="table-subtitle chat-empty-state">${escapeChatHtml(options.emptyText || chatT('common.noRecords', 'No messages yet. Start the conversation below.'))}</p>`;
       return;
     }
 
@@ -86,7 +90,7 @@
             <button type="button" class="chat-reply-btn" data-reply-to="${escapeChatHtml(String(id))}"
               data-reply-preview="${escapeChatHtml((message.body || 'Attachment').slice(0, 80))}"
               data-reply-name="${escapeChatHtml(message.senderName || '')}">
-              Reply
+              ${chatT('common.message', 'Reply')}
             </button>
           </div>
         </article>

@@ -47,15 +47,15 @@
   <div class="main-container">
     <header class="topbar cashier-topbar">
       <div class="topbar-left">
-        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu" data-i18n-aria-label="common.openNav">☰</button>
         <div class="topbar-heading">
           <h1 id="dashboardTitle">Dashboard</h1>
-          <p class="topbar-note text-secondary" id="dashboardSubtitle">Loading your workspace…</p>
+          <p class="topbar-note text-secondary" id="dashboardSubtitle" data-i18n="page.staff.loadingWorkspace">Loading your workspace…</p>
         </div>
       </div>
       <div class="topbar-right cashier-topbar-right">
-        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language">EN</button>
-        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language" data-i18n-aria-label="common.switchLanguage">EN</button>
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme" data-i18n-aria-label="common.toggleTheme">
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
@@ -77,8 +77,8 @@
             <div class="cashier-home-main">
               <div class="cashier-hero-banner">
                 <div>
-                  <p class="cashier-eyebrow" id="cashierGreeting">Welcome back</p>
-                  <h2 id="cashierHeroTitle">Cashier workspace</h2>
+                  <p class="cashier-eyebrow" id="cashierGreeting" data-i18n="page.staff.welcomeBack">Welcome back</p>
+                  <h2 id="cashierHeroTitle" data-i18n="staffUi.cashierWorkspace">Cashier workspace</h2>
                   <p class="text-secondary" id="cashierHeroNote">Track this month’s collections, open member portfolios, and use the sidebar for all modules.</p>
                 </div>
                 <div class="cashier-hero-pills" id="permissionStats"></div>
@@ -90,15 +90,15 @@
                     <div>
                       <p class="cashier-summary-label">Paid members</p>
                       <h3 id="cashierPaidCount">—</h3>
-                      <p class="text-secondary" id="cashierPaidSubtitle">Current month</p>
+                      <p class="text-secondary" id="cashierPaidSubtitle" data-i18n="common.currentMonth">Current month</p>
                     </div>
                     <div class="cashier-summary-amount">
-                      <span class="text-secondary">Collected</span>
+                      <span class="text-secondary" data-i18n="common.collected">Collected</span>
                       <strong id="cashierPaidTotal">—</strong>
                     </div>
                   </div>
                   <ul class="cashier-member-status-list" id="cashierPaidList">
-                    <li class="text-secondary">Loading…</li>
+                    <li class="text-secondary" data-i18n="common.loading">Loading…</li>
                   </ul>
                 </article>
 
@@ -107,30 +107,30 @@
                     <div>
                       <p class="cashier-summary-label">Unpaid members</p>
                       <h3 id="cashierUnpaidCount">—</h3>
-                      <p class="text-secondary" id="cashierUnpaidSubtitle">Still due this month</p>
+                      <p class="text-secondary" id="cashierUnpaidSubtitle" data-i18n="common.stillDueThisMonth">Still due this month</p>
                     </div>
                     <div class="cashier-summary-amount">
-                      <span class="text-secondary">Outstanding</span>
+                      <span class="text-secondary" data-i18n="common.outstanding">Outstanding</span>
                       <strong id="cashierUnpaidTotal">—</strong>
                     </div>
                   </div>
                   <ul class="cashier-member-status-list" id="cashierUnpaidList">
-                    <li class="text-secondary">Loading…</li>
+                    <li class="text-secondary" data-i18n="common.loading">Loading…</li>
                   </ul>
                 </article>
               </section>
 
               <section class="cashier-analytics-card" aria-label="Monthly collection analytics">
                 <div class="cashier-section-head">
-                  <h3>Collection analytics</h3>
-                  <p class="text-secondary" id="cashierAnalyticsNote">Paid vs unpaid for the current month</p>
+                  <h3 data-i18n="common.collectionAnalytics">Collection analytics</h3>
+                  <p class="text-secondary" id="cashierAnalyticsNote" data-i18n="common.paidVsUnpaid">Paid vs unpaid for the current month</p>
                 </div>
                 <div class="cashier-analytics-grid">
                   <div class="cashier-analytics-chart">
                     <div class="cashier-collection-ring" id="cashierCollectionRing" style="--paid-pct: 0">
                       <div class="cashier-collection-ring-center">
                         <strong id="cashierCollectionRate">0%</strong>
-                        <span>collected</span>
+                        <span data-i18n="common.collected">collected</span>
                       </div>
                     </div>
                     <div class="cashier-chart-legend">
@@ -141,7 +141,7 @@
                   <div class="cashier-analytics-bars">
                     <div class="cashier-bar-row">
                       <div class="cashier-bar-meta">
-                        <span>Paid amount</span>
+                        <span data-i18n="common.paidAmount">Paid amount</span>
                         <strong id="cashierBarPaidLabel">৳0</strong>
                       </div>
                       <div class="cashier-bar-track">
@@ -150,7 +150,7 @@
                     </div>
                     <div class="cashier-bar-row">
                       <div class="cashier-bar-meta">
-                        <span>Outstanding</span>
+                        <span data-i18n="common.outstanding">Outstanding</span>
                         <strong id="cashierBarUnpaidLabel">৳0</strong>
                       </div>
                       <div class="cashier-bar-track">
@@ -158,7 +158,7 @@
                       </div>
                     </div>
                     <div class="cashier-target-chip">
-                      <span class="text-secondary">Month target / member</span>
+                      <span class="text-secondary" data-i18n="common.monthTargetPerMember">Month target / member</span>
                       <strong id="cashierMonthTarget">—</strong>
                     </div>
                   </div>
@@ -167,8 +167,8 @@
 
               <section class="cashier-analytics-card" aria-label="Financial trend analytics">
                 <div class="cashier-section-head">
-                  <h3>Revenue &amp; profit trends</h3>
-                  <p class="text-secondary">12-month cash-in, payouts, and profit pool movement</p>
+                  <h3 data-i18n="common.revenueProfitTrends">Revenue &amp; profit trends</h3>
+                  <p class="text-secondary" data-i18n="common.trendsHelp">12-month cash-in, payouts, and profit pool movement</p>
                 </div>
                 <div class="dashboard-chart-wrap">
                   <canvas id="cashierFinancialTrendChart" height="220"></canvas>
@@ -182,32 +182,32 @@
                     <strong>Members</strong>
                     <span>Open the full member directory — names, IDs, and contact details. Select anyone to view their portfolio ledger.</span>
                   </span>
-                  <span class="cashier-members-card-cta">Open list →</span>
+                  <span class="cashier-members-card-cta" data-i18n="common.openList">Open list →</span>
                 </button>
                 <p class="message" id="dashMessage"></p>
               </section>
 
               <section class="panel-card cashier-security-card">
                 <div class="panel-card-header">
-                  <h2>Account security</h2>
+                  <h2 data-i18n="common.accountSecurity">Account security</h2>
                   <p class="text-secondary">Update your password. Sensitive payment actions will ask you to confirm your password again.</p>
                 </div>
                 <form id="staffSelfPasswordForm" class="add-member-form">
                   <div class="form-row-2">
                     <div class="form-group">
-                      <label>
+                      <label data-i18n="common.currentPassword">
                         Current password
                         <input type="password" name="currentPassword" required autocomplete="current-password" />
                       </label>
                     </div>
                     <div class="form-group">
-                      <label>
+                      <label data-i18n="common.newPassword">
                         New password
                         <input type="password" name="newPassword" minlength="6" required autocomplete="new-password" />
                       </label>
                     </div>
                   </div>
-                  <button type="submit" class="primary-btn">Update password</button>
+                  <button type="submit" class="primary-btn" data-i18n="common.updatePassword">Update password</button>
                   <p id="staffSelfPasswordMessage" class="message"></p>
                 </form>
               </section>
@@ -216,8 +216,8 @@
             <aside class="cashier-home-rail" aria-label="Society KPIs">
               <section class="cashier-kpi-card">
                 <div class="cashier-kpi-head">
-                  <h3>Society pulse</h3>
-                  <button type="button" class="cashier-link-btn" id="cashierRefreshKpis">Refresh</button>
+                  <h3 data-i18n="common.societyPulse">Society pulse</h3>
+                  <button type="button" class="cashier-link-btn" id="cashierRefreshKpis" data-i18n="common.refresh">Refresh</button>
                 </div>
                 <div class="cashier-kpi-rings" id="cashierKpiRings">
                   <div class="cashier-ring-item">
@@ -265,11 +265,11 @@
 
               <section class="cashier-kpi-card">
                 <div class="cashier-kpi-head">
-                  <h3>Recent ledger</h3>
+                  <h3 data-i18n="common.recentLedger">Recent ledger</h3>
                   <a href="#ledger" class="cashier-link-btn" data-staff-nav="ledger">View all</a>
                 </div>
                 <ul class="cashier-history-list" id="cashierRecentLedger">
-                  <li class="text-secondary">Loading…</li>
+                  <li class="text-secondary" data-i18n="common.loading">Loading…</li>
                 </ul>
               </section>
             </aside>
@@ -279,7 +279,7 @@
         <!-- BANK LEDGER -->
         <div class="panel-card hidden" data-staff-view="ledger" id="bankLedgerPanel">
           <div class="panel-card-header">
-            <h2>Banking Ledger</h2>
+            <h2 data-i18n="staffUi.bankingLedger">Banking Ledger</h2>
             <p class="text-secondary">Society central bank balance. Set an opening balance once, then new deposits and payouts update the book balance automatically.</p>
           </div>
           <div class="stats-grid" id="bankLedgerStats">
@@ -292,13 +292,13 @@
             <form id="ledgerOpeningForm" class="add-member-form">
               <div class="form-row-2">
                 <div class="form-group">
-                  <label>
+                  <label data-i18n="staffUi.openingBankBalance">
                     Opening bank balance
                     <input type="number" name="amount" min="0" step="0.01" required placeholder="0.00" />
                   </label>
                 </div>
                 <div class="form-group" style="display:flex;align-items:flex-end;">
-                  <button type="submit" class="primary-btn">Set opening balance</button>
+                  <button type="submit" class="primary-btn" data-i18n="staffUi.setOpeningBalance">Set opening balance</button>
                 </div>
               </div>
             </form>
@@ -306,26 +306,26 @@
           <form id="ledgerReconcileForm" class="add-member-form ledger-admin-only">
             <div class="form-row-2">
               <div class="form-group">
-                <label>
+                <label data-i18n="staffUi.actualBankBalance">
                   Actual bank / physical balance
-                  <input type="number" name="actualBalance" step="0.01" required placeholder="Enter statement balance" />
+                  <input data-i18n-placeholder="staffUi.enterStatementBalance" type="number" name="actualBalance" step="0.01" required placeholder="Enter statement balance" />
                 </label>
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
-                <button type="submit" class="primary-btn">Reconcile</button>
+                <button type="submit" class="primary-btn" data-i18n="staffUi.reconcile">Reconcile</button>
                 <button type="button" class="secondary-btn" id="zReportBtn" data-i18n="pdf.downloadZReport">Download Z-report PDF</button>
-                <button type="button" class="ghost-btn" data-staff-nav="audit">Transaction Audit</button>
+                <button type="button" class="ghost-btn" data-staff-nav="audit" data-i18n="staffUi.transactionAudit">Transaction Audit</button>
               </div>
             </div>
           </form>
           <p id="ledgerMessage" class="message"></p>
-          <h3 class="u-mt-1">Recent ledger entries</h3>
+          <h3 class="u-mt-1" data-i18n="staffUi.recentLedgerEntries">Recent ledger entries</h3>
           <div class="table-wrapper">
             <table class="data-table table-cards">
               <thead>
-                <tr><th>When</th><th>Type</th><th>Dir</th><th>Amount</th><th>Balance</th><th>Note</th></tr>
+                <tr><th data-i18n="table.when">When</th><th data-i18n="table.type">Type</th><th data-i18n="staffUi.dir">Dir</th><th data-i18n="table.amount">Amount</th><th data-i18n="staffUi.balance">Balance</th><th data-i18n="staffUi.note">Note</th></tr>
               </thead>
-              <tbody id="ledgerEntriesBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+              <tbody id="ledgerEntriesBody"><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -333,7 +333,7 @@
         <!-- PAYMENT QUEUE -->
         <div class="panel-card hidden" data-staff-view="queue" id="cashierQueuePanel">
           <div class="panel-card-header">
-            <h2>Investment Payment Queue</h2>
+            <h2 data-i18n="staffUi.investmentPaymentQueue">Investment Payment Queue</h2>
             <p class="text-secondary">Approved project payouts. Completing payment deducts society savings and the central bank ledger, then issues a payment voucher.</p>
           </div>
           <div id="cashierQueueList"></div>
@@ -343,7 +343,7 @@
         <!-- PROFIT POOL -->
         <div class="panel-card hidden" data-staff-view="profit" id="profitPoolPanel">
           <div class="panel-card-header">
-            <h2>Profit &amp; Dividends</h2>
+            <h2 data-i18n="staffUi.profitDividends">Profit &amp; Dividends</h2>
             <p class="text-secondary">Log monthly project profits and distribute equally to all active members. Credits/debits the bank ledger and generates a PDF report.</p>
           </div>
           <div class="stats-grid">
@@ -353,27 +353,27 @@
           <form id="monthlyProfitForm" class="add-member-form">
             <div class="form-row-2">
               <div class="form-group">
-                <label>Monthly profit / dividend amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
+                <label data-i18n="staffUi.monthlyProfitAmount">Monthly profit / dividend amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
               </div>
               <div class="form-group">
-                <label>Source (optional)<input type="text" name="source" placeholder="Project or month label" /></label>
+                <label data-i18n="staffUi.sourceOptional">Source (optional)<input type="text" name="source" placeholder="Project or month label" /></label>
               </div>
             </div>
             <div class="form-group">
               <label>Note<input type="text" name="note" placeholder="Optional note" /></label>
             </div>
-            <button type="submit" class="primary-btn">Log monthly profit</button>
+            <button type="submit" class="primary-btn" data-i18n="staffUi.logMonthlyProfit">Log monthly profit</button>
           </form>
           <form id="distributeProfitForm" class="add-member-form u-mt-1">
             <div class="form-row-2">
               <div class="form-group">
-                <label>Distribute amount (blank = full pool)<input type="number" name="amount" min="0.01" step="0.01" placeholder="Full pool" /></label>
+                <label data-i18n="staffUi.distributeAmount">Distribute amount (blank = full pool)<input type="number" name="amount" min="0.01" step="0.01" placeholder="Full pool" /></label>
               </div>
               <div class="form-group">
                 <label>Note<input type="text" name="note" placeholder="Equal distribution to members" /></label>
               </div>
             </div>
-            <button type="submit" class="primary-btn">Distribute equally to members</button>
+            <button type="submit" class="primary-btn" data-i18n="staffUi.distributeEqually">Distribute equally to members</button>
           </form>
           <p id="profitPoolMessage" class="message"></p>
           <div id="profitPoolRecent" class="u-mt-1"></div>
@@ -382,7 +382,7 @@
         <!-- ADVANCES & INTERNAL BORROWING -->
         <div class="panel-card hidden" data-staff-view="funding" id="moduleFunding">
           <div class="panel-card-header">
-            <h2>Advances, Buy-ins &amp; Internal Borrowing</h2>
+            <h2 data-i18n="staffUi.advancesBorrowing">Advances, Buy-ins &amp; Internal Borrowing</h2>
             <p class="text-secondary">Record advance balances, complete new-member buy-ins at current share valuation, cover unpaid project shares, and settle repayments (credits the bank ledger).</p>
           </div>
 
@@ -393,8 +393,8 @@
           </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th>Required</th><th>Status</th><th>Record exact payment</th></tr></thead>
-              <tbody id="cashierPendingBuyInBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+              <thead><tr><th>Member</th><th>Required</th><th data-i18n="table.status">Status</th><th>Record exact payment</th></tr></thead>
+              <tbody id="cashierPendingBuyInBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
           <p id="cashierBuyInMessage" class="message"></p>
@@ -424,7 +424,7 @@
           <div class="table-wrapper">
             <table class="data-table table-cards">
               <thead><tr><th>Member</th><th>Savings</th><th>Advance</th><th>Profit</th></tr></thead>
-              <tbody id="cashierAdvanceBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+              <tbody id="cashierAdvanceBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
 
@@ -432,8 +432,8 @@
           <p class="text-secondary">Flagged when a member could not cover their equal share. Project still proceeds — cover via borrow or record repayment.</p>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Investment</th><th>Member</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody id="cashierUnpaidBody"><tr><td colspan="5">Loading…</td></tr></tbody>
+              <thead><tr><th>Investment</th><th>Member</th><th>Due</th><th data-i18n="table.status">Status</th><th data-i18n="table.actions">Actions</th></tr></thead>
+              <tbody id="cashierUnpaidBody"><tr><td colspan="5" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
           <p id="cashierUnpaidMessage" class="message"></p>
@@ -471,8 +471,8 @@
           <h3 class="u-mt-1">Open borrowings — settle repayment</h3>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>When</th><th>Borrower</th><th>Lender</th><th>Amount</th><th>Outstanding</th><th>Settle</th></tr></thead>
-              <tbody id="cashierBorrowingsBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+              <thead><tr><th data-i18n="table.when">When</th><th>Borrower</th><th>Lender</th><th data-i18n="table.amount">Amount</th><th data-i18n="common.outstanding">Outstanding</th><th>Settle</th></tr></thead>
+              <tbody id="cashierBorrowingsBody"><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
           <p id="cashierSettleMessage" class="message"></p>
@@ -528,20 +528,20 @@
           </form>
           <h3 class="u-mt-1">Unpaid monthly dues</h3>
           <div class="form-row-2 u-mb-1">
-            <button type="button" class="secondary-btn" id="cashierSendDuesRemindersBtn">Send dues reminders to all unpaid</button>
+            <button type="button" class="secondary-btn" id="cashierSendDuesRemindersBtn" data-i18n="staffUi.sendDuesReminders">Send dues reminders to all unpaid</button>
             <p id="cashierDuesReminderMessage" class="message"></p>
           </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th>Month</th><th>Expected</th><th>Paid</th><th>Still due</th><th>Status</th></tr></thead>
-              <tbody id="cashierMonthlyDuesBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+              <thead><tr><th>Member</th><th>Month</th><th>Expected</th><th data-i18n="status.paid">Paid</th><th>Still due</th><th data-i18n="table.status">Status</th></tr></thead>
+              <tbody id="cashierMonthlyDuesBody"><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
           <h3 class="u-mt-1">Recent deposits</h3>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Date</th><th>Member</th><th>Amount</th><th>Channel</th><th>Receipt ID</th><th>Receipt</th></tr></thead>
-              <tbody id="cashierDepositsBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+              <thead><tr><th data-i18n="table.date">Date</th><th>Member</th><th data-i18n="table.amount">Amount</th><th>Channel</th><th>Receipt ID</th><th data-i18n="table.receipt">Receipt</th></tr></thead>
+              <tbody id="cashierDepositsBody"><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -554,8 +554,8 @@
           </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th>Amount</th><th>Status</th><th>Reason</th><th>Actions</th></tr></thead>
-              <tbody id="cashierWithdrawalsBody"><tr><td colspan="5">Loading…</td></tr></tbody>
+              <thead><tr><th>Member</th><th data-i18n="table.amount">Amount</th><th data-i18n="table.status">Status</th><th>Reason</th><th data-i18n="table.actions">Actions</th></tr></thead>
+              <tbody id="cashierWithdrawalsBody"><tr><td colspan="5" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
           <p id="cashierWithdrawalsMessage" class="message"></p>
@@ -606,7 +606,7 @@
         <!-- TRANSACTION AUDIT -->
         <div class="panel-card hidden" data-staff-view="audit" id="moduleAudit">
           <div class="panel-card-header">
-            <h2>Transaction Audit Trail</h2>
+            <h2 data-i18n="staffUi.transactionAuditTrail">Transaction Audit Trail</h2>
             <p class="text-secondary">Track all society-wide money flows — deposits, withdrawals, refunds, project returns, payouts, and ledger movements. Filter by date and category, then export an official PDF.</p>
           </div>
           <form id="auditFilterForm" class="add-member-form audit-filter-form">
@@ -632,12 +632,12 @@
             <table class="data-table table-cards" id="auditTransactionsTable">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th data-i18n="table.date">Date</th>
                   <th>Category</th>
                   <th>Direction</th>
-                  <th>Amount</th>
+                  <th data-i18n="table.amount">Amount</th>
                   <th>Description</th>
-                  <th>Actor</th>
+                  <th data-i18n="table.actor">Actor</th>
                   <th>Balance after</th>
                 </tr>
               </thead>
@@ -732,9 +732,9 @@
                   <h3>Members</h3>
                   <p class="table-subtitle">Select a member to open their thread</p>
                 </div>
-                <button type="button" class="secondary-btn" id="cashierChatRefreshBtn">Refresh</button>
+                <button type="button" class="secondary-btn" id="cashierChatRefreshBtn" data-i18n="common.refresh">Refresh</button>
               </div>
-              <input type="search" id="cashierChatSearch" class="chat-member-search" placeholder="Search members…" />
+              <input data-i18n-placeholder="staffUi.searchMembers" type="search" id="cashierChatSearch" class="chat-member-search" placeholder="Search members…" />
               <div class="chat-inbox-list" id="cashierChatInboxList">
                 <p class="table-subtitle">Loading members…</p>
               </div>
@@ -755,7 +755,7 @@
                 <button type="button" class="modal-close" id="cashierChatReplyClear" aria-label="Cancel reply">&times;</button>
               </div>
               <form class="chat-compose-form hidden" id="cashierChatComposeForm">
-                <textarea name="body" rows="3" maxlength="2000" placeholder="Write a message…"></textarea>
+                <textarea data-i18n-placeholder="common.writeMessage" name="body" rows="3" maxlength="2000" placeholder="Write a message…"></textarea>
                 <div class="chat-compose-actions">
                   <label class="secondary-btn chat-attach-btn">
                     Attach
@@ -786,16 +786,16 @@
               <table class="data-table table-cards" id="cashierMembersTable">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th data-i18n="table.name">Name</th>
                     <th>Member ID</th>
-                    <th>Email</th>
+                    <th data-i18n="table.email">Email</th>
                     <th>Phone</th>
-                    <th>Status</th>
+                    <th data-i18n="table.status">Status</th>
                     <th>Savings</th>
                     <th>Profile</th>
                   </tr>
                 </thead>
-                <tbody id="cashierMembersBody"><tr><td colspan="7">Loading…</td></tr></tbody>
+                <tbody id="cashierMembersBody"><tr><td colspan="7" data-i18n="common.loading">Loading…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -804,14 +804,14 @@
               <table class="data-table table-cards" id="cashierInvestorsTable">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Email</th>
+                    <th data-i18n="table.name">Name</th>
+                    <th data-i18n="table.email">Email</th>
                     <th>Phone</th>
-                    <th>Status</th>
+                    <th data-i18n="table.status">Status</th>
                     <th>Portfolio</th>
                   </tr>
                 </thead>
-                <tbody id="cashierInvestorsBody"><tr><td colspan="5">Loading…</td></tr></tbody>
+                <tbody id="cashierInvestorsBody"><tr><td colspan="5" data-i18n="common.loading">Loading…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -824,8 +824,8 @@
           </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th>Amount</th><th>Type</th><th>Status</th></tr></thead>
-              <tbody id="cashierLoansBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+              <thead><tr><th>Member</th><th data-i18n="table.amount">Amount</th><th data-i18n="table.type">Type</th><th data-i18n="table.status">Status</th></tr></thead>
+              <tbody id="cashierLoansBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -835,7 +835,7 @@
             <h2>Investments</h2>
             <p class="text-secondary">Use Payment Queue for payouts. Summary of recent investments:</p>
           </div>
-          <div id="cashierInvestmentsList"><p class="text-secondary">Loading…</p></div>
+          <div id="cashierInvestmentsList"><p class="text-secondary" data-i18n="common.loading">Loading…</p></div>
           <button type="button" class="secondary-btn u-mt-1" data-staff-nav="queue">Open Payment Queue</button>
         </div>
       </section>
@@ -853,7 +853,7 @@
           <button type="button" class="secondary-btn pdf-export-btn hidden" id="cashierMemberPdfBtn" data-loading-label-key="pdf.generating">
             <span data-i18n="pdf.downloadOfficial">Download official PDF</span>
           </button>
-          <button type="button" class="modal-close" id="cashierMemberProfileClose" aria-label="Close">&times;</button>
+          <button type="button" class="modal-close" id="cashierMemberProfileClose" aria-label="Close" data-i18n-aria-label="common.closeModal">&times;</button>
         </div>
       </div>
       <div id="cashierMemberProfileContent" class="member-profile-content">
@@ -873,7 +873,7 @@
           <button type="button" class="secondary-btn pdf-export-btn hidden" id="cashierInvestorPdfBtn" data-loading-label-key="pdf.generating">
             <span data-i18n="pdf.downloadOfficial">Download official PDF</span>
           </button>
-          <button type="button" class="modal-close" id="cashierInvestorProfileClose" aria-label="Close">&times;</button>
+          <button type="button" class="modal-close" id="cashierInvestorProfileClose" aria-label="Close" data-i18n-aria-label="common.closeModal">&times;</button>
         </div>
       </div>
       <div id="cashierInvestorProfileContent" class="member-profile-content">

@@ -1,3 +1,36 @@
+
+function t(key, fallback) {
+  return window.I18n?.t?.(key, fallback) ?? fallback;
+}
+
+function translateStatus(value) {
+  const raw = String(value || '').trim();
+  const key = raw.toLowerCase().replace(/\s+/g, '_');
+  const map = {
+    active: 'status.active',
+    inactive: 'status.inactive',
+    blocked: 'status.blocked',
+    deleted: 'status.deleted',
+    pending: 'status.pending',
+    approved: 'status.approved',
+    rejected: 'status.rejected',
+    paid: 'status.paid',
+    unpaid: 'status.unpaid',
+    partial: 'status.partial',
+    due: 'status.due',
+    completed: 'status.completed',
+    cancelled: 'status.cancelled',
+    canceled: 'status.cancelled',
+    running: 'status.running',
+    sold: 'status.sold',
+    profit: 'status.profit',
+    loss: 'status.loss',
+    success: 'status.success',
+    failed: 'status.failed',
+  };
+  return map[key] ? t(map[key], raw) : raw;
+}
+
 const logoutBtn = document.getElementById('logoutBtn');
 const memberName = document.getElementById('memberName');
 const fullName = document.getElementById('fullName');
@@ -211,7 +244,7 @@ function renderMemberSelfProfile(user = {}) {
         </div>
         <div class="member-self-stat">
           <span>Status</span>
-          <strong>${(user.status || 'active') === 'active' ? 'Active' : 'Inactive'}</strong>
+          <strong>${(user.status || 'active') === 'active' ? t('status.active', 'Active') : t('status.inactive', 'Inactive')}</strong>
         </div>
         <div class="member-self-stat">
           <span>Phone</span>
@@ -383,10 +416,10 @@ function buildLoanContractActions(loan = {}) {
     return '-';
   }
 
-  const downloadLink = `<a href="/api/loans/member/${loan._id}/contract" class="receipt-button" target="_blank" rel="noopener">Download</a>`;
+  const downloadLink = `<a href="/api/loans/member/${loan._id}/contract" class="receipt-button" target="_blank" rel="noopener">${t('memberUi.downloadContract', 'Download')}</a>`;
   const signedStatus = loan.signedContractPath
     ? '<span class="status-badge status-completed">Signed copy submitted</span>'
-    : `<label class="signed-contract-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png" data-signed-contract-loan="${loan._id}" hidden /><span class="secondary-btn">Upload Signed</span></label>`;
+    : `<label class="signed-contract-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png" data-signed-contract-loan="${loan._id}" hidden /><span class="secondary-btn">${t('memberUi.uploadSigned', 'Upload Signed')}</span></label>`;
 
   return `${downloadLink} ${signedStatus}`;
 }
@@ -491,7 +524,7 @@ async function loadFinancialData(userId) {
       memberProfit.textContent = `${formatMoney(Number(data.memberProfit || currentUser?.profit || 0), 2)}`;
 
       if (distributionRate) {
-        distributionRate.textContent = 'Equal Share (Everyone Same)';
+        distributionRate.textContent = t('memberUi.equalShare', 'Equal Share (Everyone Same)');
       }
 
       if (refundTableBody) {
@@ -982,7 +1015,7 @@ if (withdrawalForm) {
       await loadWithdrawalRequests();
       await loadFinancialData();
       withdrawalMessage.classList.add('success');
-      withdrawalMessage.textContent = 'Withdrawal request submitted.';
+      withdrawalMessage.textContent = t('memberUi.withdrawalSubmitted', 'Withdrawal request submitted.');
     } catch (error) {
       withdrawalMessage.classList.add('error');
       withdrawalMessage.textContent = 'Unable to submit request.';
@@ -1273,7 +1306,7 @@ async function submitLoanApplication(form, loanType) {
     form.reset();
     if (messageEl) {
       messageEl.classList.add('success');
-      messageEl.textContent = 'Loan application submitted. Admin has been notified.';
+      messageEl.textContent = t('memberUi.loanSubmitted', 'Loan application submitted. Admin has been notified.');
     }
     await loadLoanApplications();
     await loadLoanDashboardSummary();
@@ -1802,7 +1835,7 @@ function bindMemberChatUi() {
       await loadMemberChat();
       if (messageEl) {
         messageEl.classList.add('success');
-        messageEl.textContent = 'Message sent.';
+        messageEl.textContent = t('adminUi.messageSent', 'Message sent.');
       }
     } catch (error) {
       if (messageEl) {

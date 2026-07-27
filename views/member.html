@@ -98,7 +98,7 @@
     <!-- Top Bar -->
     <div class="topbar">
       <div class="topbar-left">
-        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu" data-i18n-aria-label="common.openNav">☰</button>
         <div class="topbar-heading">
           <p class="topbar-eyebrow" data-brand-eyebrow data-brand-portal="member">Member Portal</p>
           <h1 id="pageTitle">Dashboard</h1>
@@ -106,8 +106,8 @@
         </div>
       </div>
       <div class="topbar-right">
-        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language">EN</button>
-        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language" data-i18n-aria-label="common.switchLanguage">EN</button>
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme" data-i18n-aria-label="common.toggleTheme">
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
@@ -116,11 +116,11 @@
         </button>
         <div id="memberNotificationPanel" class="notification-panel hidden" hidden>
           <div class="notification-panel-header">
-            <strong>Notifications</strong>
-            <button type="button" class="secondary-btn" id="markAllMemberNotificationsReadBtn">Mark all read</button>
+            <strong data-i18n="common.notifications">Notifications</strong>
+            <button type="button" class="secondary-btn" id="markAllMemberNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
           </div>
           <div id="memberNotificationList" class="notification-list">
-            <p class="table-subtitle notification-empty-state">Click "View Notifications" to load updates.</p>
+            <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
           </div>
         </div>
         <div class="user-profile" title="Profile">
@@ -137,41 +137,41 @@
           <div class="metric-card metric-card-3">
             <div class="metric-icon">💰</div>
             <div class="metric-content">
-              <span class="metric-label">Total Society Savings</span>
+              <span class="metric-label" data-i18n="memberUi.totalSocietySavings">Total Society Savings</span>
               <strong class="metric-value" id="memberTotalSavings">৳0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-1">
             <div class="metric-icon">🟢</div>
             <div class="metric-content">
-              <span class="metric-label">Running Investments</span>
+              <span class="metric-label" data-i18n="memberUi.runningInvestments">Running Investments</span>
               <strong class="metric-value" id="memberActiveCount">0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-4">
             <div class="metric-icon">✅</div>
             <div class="metric-content">
-              <span class="metric-label">Sold Investments</span>
+              <span class="metric-label" data-i18n="memberUi.soldInvestments">Sold Investments</span>
               <strong class="metric-value" id="memberSoldCount">0</strong>
             </div>
           </div>
         </div>
 
         <section class="panel-card table-card-wide investment-panel-running">
-          <h2>Running Investments</h2>
-          <p class="table-subtitle">এখনো চলমান society investments</p>
+          <h2 data-i18n="memberUi.runningInvestments">Running Investments</h2>
+          <p class="table-subtitle" data-i18n="memberUi.runningInvestmentsNote">Investments still running in the society</p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Investment ID</th>
-                  <th>Name</th>
-                  <th>Location</th>
-                  <th>Amount</th>
-                  <th>Date of Birth</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th>Receipt</th>
+                  <th data-i18n="table.investmentId">Investment ID</th>
+                  <th data-i18n="table.name">Name</th>
+                  <th data-i18n="table.location">Location</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.dateOfBirth">Date of Birth</th>
+                  <th data-i18n="table.date">Date</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.receipt">Receipt</th>
                 </tr>
               </thead>
               <tbody id="memberActiveInvestmentsBody"></tbody>
@@ -180,20 +180,20 @@
         </section>
 
         <section class="panel-card table-card-wide investment-panel-sold">
-          <h2>Sold Investments</h2>
-          <p class="table-subtitle">বিক্রি হয়ে যাওয়া investments — profit বা loss সহ</p>
+          <h2 data-i18n="memberUi.soldInvestments">Sold Investments</h2>
+          <p class="table-subtitle" data-i18n="memberUi.soldInvestmentsNote">Sold investments with profit or loss</p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Investment ID</th>
-                  <th>Name</th>
-                  <th>Location</th>
-                  <th>Invested</th>
-                  <th>Sale Amount</th>
-                  <th>Profit / Loss</th>
-                  <th>Sold Date</th>
-                  <th>Receipt</th>
+                  <th data-i18n="table.investmentId">Investment ID</th>
+                  <th data-i18n="table.name">Name</th>
+                  <th data-i18n="table.location">Location</th>
+                  <th data-i18n="table.invested">Invested</th>
+                  <th data-i18n="table.saleAmount">Sale Amount</th>
+                  <th data-i18n="table.profitLoss">Profit / Loss</th>
+                  <th data-i18n="table.soldDate">Sold Date</th>
+                  <th data-i18n="table.receipt">Receipt</th>
                 </tr>
               </thead>
               <tbody id="memberSoldInvestmentsBody"></tbody>
@@ -204,7 +204,7 @@
 
       <section class="page-section active" data-page-section="dashboard">
       <section class="panel-card member-self-profile-card" id="memberSelfProfileCard">
-        <p class="table-subtitle">Loading your profile...</p>
+        <p class="table-subtitle" data-i18n="memberUi.loadingProfile">Loading your profile...</p>
       </section>
 
       <!-- Metric Cards -->
@@ -212,7 +212,7 @@
         <button type="button" class="metric-card metric-card-1 report-metric-card member-metric-card" data-member-report-type="savings" aria-pressed="false">
           <div class="metric-icon">💰</div>
           <div class="metric-content">
-            <span class="metric-label">Total Savings</span>
+            <span class="metric-label" data-i18n="admin.kpi.totalSavings">Total Savings</span>
             <strong class="metric-value" id="memberSavings">৳0</strong>
           </div>
         </button>
@@ -220,7 +220,7 @@
         <button type="button" class="metric-card metric-card-2 report-metric-card member-metric-card" data-member-report-type="profit" aria-pressed="false">
           <div class="metric-icon">📈</div>
           <div class="metric-content">
-            <span class="metric-label">Your Profit Share</span>
+            <span class="metric-label" data-i18n="memberUi.yourProfitShare">Your Profit Share</span>
             <strong class="metric-value" id="memberProfit">৳0</strong>
           </div>
         </button>
@@ -228,7 +228,7 @@
         <button type="button" class="metric-card metric-card-3 report-metric-card member-metric-card" data-member-report-type="investments" aria-pressed="false">
           <div class="metric-icon">💼</div>
           <div class="metric-content">
-            <span class="metric-label">Total Investment</span>
+            <span class="metric-label" data-i18n="admin.kpi.totalInvestment">Total Investment</span>
             <strong class="metric-value" id="investmentValue">৳0</strong>
           </div>
         </button>
@@ -236,7 +236,7 @@
         <button type="button" class="metric-card metric-card-4 report-metric-card member-metric-card" data-member-report-type="withdrawals" aria-pressed="false">
           <div class="metric-icon">📊</div>
           <div class="metric-content">
-            <span class="metric-label">Total Withdrawn</span>
+            <span class="metric-label" data-i18n="memberUi.totalWithdrawn">Total Withdrawn</span>
             <strong class="metric-value" id="totalWithdrawn">৳0</strong>
           </div>
         </button>
@@ -244,9 +244,9 @@
         <button type="button" class="metric-card metric-card-5 report-metric-card member-metric-card" id="dashboardMaxLoanCard">
           <div class="metric-icon">🏛️</div>
           <div class="metric-content">
-            <span class="metric-label">Max Loan (80%)</span>
+            <span class="metric-label" data-i18n="memberUi.maxLoan80">Max Loan (80%)</span>
             <strong class="metric-value" id="dashboardMaxLoan">৳0</strong>
-            <span class="kpi-footnote" id="dashboardLoanUsedNote">Available now</span>
+            <span class="kpi-footnote" id="dashboardLoanUsedNote" data-i18n="memberUi.availableNow">Available now</span>
           </div>
         </button>
       </div>
@@ -254,10 +254,10 @@
       <section class="panel-card table-card-wide" id="loanRepaymentDashboardPanel">
         <div class="member-profile-section-header">
           <div>
-            <h2>Loan Payment Status</h2>
-            <p class="table-subtitle">Payments are recorded manually by admin at the society office.</p>
+            <h2 data-i18n="memberUi.loanPaymentStatus">Loan Payment Status</h2>
+            <p class="table-subtitle" data-i18n="memberUi.loanPaymentHelp">Payments are recorded manually by admin at the society office.</p>
           </div>
-          <button type="button" class="primary-btn" id="goToLoansPageBtn">View Loans</button>
+          <button type="button" class="primary-btn" id="goToLoansPageBtn" data-i18n="memberUi.viewLoans">View Loans</button>
         </div>
         <div id="dashboardOutstandingLoanContent">
           <p class="table-subtitle">Loading outstanding loan...</p>
@@ -365,7 +365,7 @@
 
       <section class="page-section" data-page-section="withdrawals">
         <section class="panel-card card-form-wide">
-          <h2>Submit a Withdrawal Request</h2>
+          <h2 data-i18n="memberUi.submitWithdrawal">Submit a Withdrawal Request</h2>
           <form id="withdrawalForm" class="add-member-form">
             <div class="form-row-2">
               <div class="form-group">
@@ -381,7 +381,7 @@
                 </label>
               </div>
             </div>
-            <button type="submit" class="primary-btn">Submit Request</button>
+            <button type="submit" class="primary-btn" data-i18n="memberUi.submitRequest">Submit Request</button>
             <p id="withdrawalMessage" class="message"></p>
           </form>
         </section>
@@ -392,10 +392,10 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Amount</th>
+                  <th data-i18n="table.amount">Amount</th>
                   <th>Reason</th>
-                  <th>Status</th>
-                  <th>Date</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.date">Date</th>
                 </tr>
               </thead>
               <tbody id="withdrawalTableBody"></tbody>
@@ -409,14 +409,14 @@
           <div class="metric-card metric-card-3">
             <div class="metric-icon">💰</div>
             <div class="metric-content">
-              <span class="metric-label">Total Savings</span>
+              <span class="metric-label" data-i18n="admin.kpi.totalSavings">Total Savings</span>
               <strong class="metric-value" id="loanTotalSavings">৳0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-1">
             <div class="metric-icon">📊</div>
             <div class="metric-content">
-              <span class="metric-label">Max Loan (80%)</span>
+              <span class="metric-label" data-i18n="memberUi.maxLoan80">Max Loan (80%)</span>
               <strong class="metric-value" id="loanMaxEligible">৳0</strong>
               <span class="kpi-footnote" id="loanMaxEligibleNote">Available for general loan</span>
             </div>
@@ -455,7 +455,7 @@
             <div class="form-group">
               <label>Supporting Documents <input type="file" name="documents" accept=".jpg,.jpeg,.png,.pdf,.webp" multiple required /></label>
             </div>
-            <button type="submit" class="primary-btn">Submit General Loan</button>
+            <button type="submit" class="primary-btn" data-i18n="memberUi.submitGeneralLoan">Submit General Loan</button>
             <p class="message loan-form-message"></p>
           </form>
         </section>
@@ -518,13 +518,13 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Amount</th>
-                  <th>Type</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.type">Type</th>
                   <th>Payment</th>
-                  <th>Status</th>
+                  <th data-i18n="table.status">Status</th>
                   <th>Balance After</th>
-                  <th>Date</th>
-                  <th>Receipt</th>
+                  <th data-i18n="table.date">Date</th>
+                  <th data-i18n="table.receipt">Receipt</th>
                 </tr>
               </thead>
               <tbody id="loanRepaymentsBody">
@@ -540,15 +540,15 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Type</th>
-                  <th>Amount</th>
+                  <th data-i18n="table.type">Type</th>
+                  <th data-i18n="table.amount">Amount</th>
                   <th>Reason</th>
-                  <th>Status</th>
+                  <th data-i18n="table.status">Status</th>
                   <th>Decision / Note</th>
                   <th>Transfer</th>
                   <th>Payment</th>
                   <th>Contract</th>
-                  <th>Date</th>
+                  <th data-i18n="table.date">Date</th>
                 </tr>
               </thead>
               <tbody id="loanApplicationsBody"></tbody>
@@ -565,9 +565,9 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Amount</th>
+                  <th data-i18n="table.amount">Amount</th>
                   <th>Reason</th>
-                  <th>Status</th>
+                  <th data-i18n="table.status">Status</th>
                   <th>Admin Note</th>
                   <th>Requested</th>
                   <th>Updated</th>
@@ -583,7 +583,7 @@
 
       <section class="page-section" data-page-section="documents">
         <section class="panel-card card-form-wide">
-          <h2>Digital KYC Onboarding</h2>
+          <h2 data-i18n="memberUi.digitalKyc">Digital KYC Onboarding</h2>
           <p class="table-subtitle">নতুন সদস্য অনবোর্ডিংয়ের জন্য আপনার তথ্য ও ডকুমেন্ট আপলোড করুন।</p>
           <form id="kycProfileForm" class="add-member-form">
             <div class="form-grid-2">
@@ -597,7 +597,7 @@
             <div class="form-group">
               <label>Address <input type="text" name="address" required /></label>
             </div>
-            <button type="submit" class="secondary-btn">Save KYC Profile</button>
+            <button type="submit" class="secondary-btn" data-i18n="memberUi.saveKyc">Save KYC Profile</button>
             <p id="kycProfileMessage" class="message"></p>
           </form>
           <form id="kycDocumentForm" class="add-member-form">
@@ -626,10 +626,10 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Type</th>
+                  <th data-i18n="table.type">Type</th>
                   <th>File</th>
-                  <th>Status</th>
-                  <th>Date</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.date">Date</th>
                 </tr>
               </thead>
               <tbody id="kycDocumentsBody"></tbody>
@@ -666,7 +666,7 @@
                 <input type="file" name="files" id="memberChatFiles" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden />
               </label>
               <span id="memberChatFileLabel" class="text-secondary"></span>
-              <button type="submit" class="primary-btn">Send Message</button>
+              <button type="submit" class="primary-btn" data-i18n="memberUi.sendMessage">Send Message</button>
             </div>
             <p class="message chat-compose-message"></p>
           </form>
@@ -756,24 +756,24 @@
 
       <section class="page-section" data-page-section="settings">
         <section class="panel-card">
-          <h2>Account Settings</h2>
+          <h2 data-i18n="memberUi.accountSettings">Account Settings</h2>
           <p class="table-subtitle">Manage your account preferences and password.</p>
           <form id="memberSelfPasswordForm" class="add-member-form">
             <div class="form-row-2">
               <div class="form-group">
-                <label>
+                <label data-i18n="common.currentPassword">
                   Current password
                   <input type="password" name="currentPassword" required autocomplete="current-password" />
                 </label>
               </div>
               <div class="form-group">
-                <label>
+                <label data-i18n="common.newPassword">
                   New password
                   <input type="password" name="newPassword" minlength="6" required autocomplete="new-password" />
                 </label>
               </div>
             </div>
-            <button type="submit" class="primary-btn">Update password</button>
+            <button type="submit" class="primary-btn" data-i18n="common.updatePassword">Update password</button>
             <p id="memberSelfPasswordMessage" class="message"></p>
           </form>
         </section>
@@ -816,11 +816,11 @@
             <thead>
               <tr>
                 <th>Source</th>
-                <th>Investment ID</th>
+                <th data-i18n="table.investmentId">Investment ID</th>
                 <th>Share Received</th>
                 <th>Total Profit After</th>
-                <th>Type</th>
-                <th>Date</th>
+                <th data-i18n="table.type">Type</th>
+                <th data-i18n="table.date">Date</th>
               </tr>
             </thead>
             <tbody id="profitHistoryTableBody"></tbody>

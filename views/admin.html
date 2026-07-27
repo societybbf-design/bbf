@@ -150,7 +150,7 @@
     <!-- Top Bar -->
     <div class="topbar">
       <div class="topbar-left">
-        <button type="button" class="sidebar-toggle" id="sidebarToggle" data-i18n-aria-label="common.openNav" aria-label="Open navigation menu">☰</button>
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" data-i18n-aria-label="common.openNav" aria-label="Open navigation menu" data-i18n-aria-label="common.openNav">☰</button>
         <div class="topbar-heading">
           <p class="topbar-eyebrow" data-brand-eyebrow data-brand-portal="ceo">CEO Dashboard</p>
           <h1 id="pageTitle">Dashboard</h1>
@@ -158,8 +158,8 @@
         </div>
       </div>
       <div class="topbar-right">
-        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language">EN</button>
-        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language" data-i18n-aria-label="common.switchLanguage">EN</button>
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme" data-i18n-aria-label="common.toggleTheme">
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
@@ -172,12 +172,12 @@
             <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
           </div>
           <div id="adminNotificationList" class="notification-list">
-            <p class="table-subtitle notification-empty-state">Click "View Notifications" to load updates.</p>
+            <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
           </div>
         </div>
         <div class="search-wrapper">
           <span class="search-icon" aria-hidden="true">🔍</span>
-          <input type="search" class="search-input" id="memberSearch" placeholder="Search members by name..." aria-label="Search members" />
+          <input data-i18n-placeholder="common.searchMembers" type="search" class="search-input" id="memberSearch" placeholder="Search members by name..." aria-label="Search members" />
           <div id="searchMemberDetails" class="search-member-details hidden"></div>
         </div>
         <div class="user-profile-menu">
@@ -188,7 +188,7 @@
             <div class="profile-header">
               <div class="profile-avatar">👤</div>
               <div>
-                <p id="adminName">Administrator</p>
+                <p id="adminName" data-i18n="common.administrator">Administrator</p>
                 <p id="adminEmail">admin@example.com</p>
               </div>
             </div>
@@ -238,15 +238,15 @@
               <div>
                 <span class="metric-label" data-i18n="admin.kpi.depositedThisMonth">Deposited This Month</span>
                 <strong class="metric-value kpi-one-number" id="monthlyGivenCountNumber">0</strong>
-                <span class="kpi-footnote" id="monthlyGivenSubtitle">members paid</span>
+                <span class="kpi-footnote" id="monthlyGivenSubtitle" data-i18n="common.membersPaid">members paid</span>
               </div>
               <div class="monthly-kpi-side">
                 <strong class="monthly-kpi-amount" id="monthlyGivenTotal">৳0</strong>
-                <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="paid">PDF</button>
+                <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="paid" data-i18n="common.downloadPdf">PDF</button>
               </div>
             </div>
             <ul class="monthly-contribution-list monthly-contribution-list-compact" id="monthlyGivenList">
-              <li class="table-subtitle">Loading...</li>
+              <li class="table-subtitle" data-i18n="common.loadingEllipsis">Loading...</li>
             </ul>
           </div>
         </article>
@@ -258,15 +258,15 @@
               <div>
                 <span class="metric-label" data-i18n="admin.kpi.notDepositedThisMonth">Not Deposited This Month</span>
                 <strong class="metric-value kpi-one-number" id="monthlyNotGivenCountNumber">0</strong>
-                <span class="kpi-footnote" id="monthlyNotGivenSubtitle">members not paid</span>
+                <span class="kpi-footnote" id="monthlyNotGivenSubtitle" data-i18n="common.membersNotPaid">members not paid</span>
               </div>
               <div class="monthly-kpi-side">
                 <strong class="monthly-kpi-amount monthly-kpi-amount-warn" id="monthlyNotGivenTotal">৳0</strong>
-                <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="unpaid">PDF</button>
+                <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="unpaid" data-i18n="common.downloadPdf">PDF</button>
               </div>
             </div>
             <ul class="monthly-contribution-list monthly-contribution-list-compact" id="monthlyNotGivenList">
-              <li class="table-subtitle">Loading...</li>
+              <li class="table-subtitle" data-i18n="common.loadingEllipsis">Loading...</li>
             </ul>
           </div>
         </article>
@@ -285,7 +285,7 @@
           <div class="metric-content">
             <span class="metric-label" data-i18n="admin.kpi.totalDeposits">Total Deposits</span>
             <strong class="metric-value kpi-one-number" id="totalDeposits">0</strong>
-            <span class="kpi-footnote">Recorded payments</span>
+            <span class="kpi-footnote" data-i18n="common.recordedPayments">Recorded payments</span>
           </div>
         </button>
 
@@ -294,7 +294,7 @@
           <div class="metric-content">
             <span class="metric-label" data-i18n="admin.kpi.totalSavings">Total Savings</span>
             <strong class="metric-value kpi-one-number" id="totalSavings">৳0</strong>
-            <span class="kpi-footnote">Society fund</span>
+            <span class="kpi-footnote" data-i18n="common.societyFund">Society fund</span>
           </div>
         </button>
 
@@ -303,7 +303,7 @@
           <div class="metric-content">
             <span class="metric-label" data-i18n="admin.kpi.totalProfit">Total Profit</span>
             <strong class="metric-value kpi-one-number" id="totalProfit">৳0</strong>
-            <span class="kpi-footnote">Distributed earnings</span>
+            <span class="kpi-footnote" data-i18n="common.distributedEarnings">Distributed earnings</span>
           </div>
         </button>
 
@@ -337,7 +337,7 @@
           <div class="metric-content">
             <span class="metric-label" data-i18n="admin.kpi.loanTakers">Loan Takers</span>
             <strong class="metric-value kpi-one-number" id="dashboardLoanTakersCount">0</strong>
-            <span class="kpi-footnote" id="dashboardLoanTakersNote">Members who received loan money</span>
+            <span class="kpi-footnote" id="dashboardLoanTakersNote" data-i18n="common.loanMoneyReceived">Members who received loan money</span>
           </div>
         </button>
 
@@ -356,7 +356,7 @@
           <div class="member-profile-section-header">
             <div>
               <h2 data-i18n="admin.sections.societyFinances">Society Finances</h2>
-              <p class="table-subtitle">Savings, profit, and deposit overview at a glance.</p>
+              <p class="table-subtitle" data-i18n="adminUi.financesOverview">Savings, profit, and deposit overview at a glance.</p>
             </div>
           </div>
           <div class="dashboard-finance-body">
@@ -414,7 +414,7 @@
                 </tr>
               </thead>
               <tbody id="dashboardLiveLoansBody">
-                <tr><td colspan="3">Loading...</td></tr>
+                <tr><td colspan="3" data-i18n="common.loadingEllipsis">Loading...</td></tr>
               </tbody>
             </table>
           </div>
@@ -433,7 +433,7 @@
             <button type="button" class="dashboard-nav-bar" data-dashboard-nav="profit" data-dashboard-section="profit-member-status" data-i18n="admin.buttons.memberProfitStatus">Member Profit Status</button>
             <div class="dashboard-nav-bar dashboard-nav-bar-empty">
               <label for="dashboardNotesInput" data-i18n="admin.forms.yourNotes">Your Notes</label>
-              <textarea id="dashboardNotesInput" class="dashboard-notes-input" rows="4" placeholder="Write anything here..."></textarea>
+              <textarea data-i18n-placeholder="adminUi.writeAnything" id="dashboardNotesInput" class="dashboard-notes-input" rows="4" placeholder="Write anything here..."></textarea>
             </div>
           </nav>
         </section>
@@ -488,7 +488,7 @@
           <div class="table-wrapper u-mt-1">
             <table class="data-table">
               <thead><tr><th data-i18n="table.month">Month</th><th data-i18n="table.target">Target</th><th data-i18n="table.setBy">Set by</th><th data-i18n="table.notes">Notes</th></tr></thead>
-              <tbody id="monthlyTargetsBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+              <tbody id="monthlyTargetsBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -671,7 +671,7 @@
                 This Month
                 <select id="loanActiveBorrowerMonthFilter">
                   <option value="">All active borrowers</option>
-                  <option value="paid">Paid this month</option>
+                  <option data-i18n="adminUi.paidThisMonth" value="paid">Paid this month</option>
                   <option value="not_paid">Not paid this month</option>
                 </select>
               </label>
@@ -708,9 +708,9 @@
                 Status
               <select id="loanFilterStatus">
                 <option value="">All</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
+                <option data-i18n="status.pending" value="pending">Pending</option>
+                <option data-i18n="status.approved" value="approved">Approved</option>
+                <option data-i18n="status.rejected" value="rejected">Rejected</option>
                 <option value="disbursed">Disbursed</option>
               </select>
             </label>
@@ -758,9 +758,9 @@
                 Status
               <select id="loanRepaymentFilterStatus">
                 <option value="">All</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
+                <option data-i18n="status.pending" value="pending">Pending</option>
+                <option data-i18n="status.approved" value="approved">Approved</option>
+                <option data-i18n="status.rejected" value="rejected">Rejected</option>
               </select>
             </label>
             <button type="button" class="secondary-btn" id="refreshLoanRepaymentsBtn" data-i18n="admin.buttons.refresh">Refresh</button>
@@ -1443,7 +1443,7 @@
               <button type="button" class="modal-close" id="adminChatReplyClear" aria-label="Cancel reply">&times;</button>
             </div>
             <form class="chat-compose-form hidden" id="adminChatComposeForm">
-              <textarea name="body" rows="3" maxlength="2000" placeholder="Type your message to the member..."></textarea>
+              <textarea data-i18n-placeholder="adminUi.typeMessageToMember" name="body" rows="3" maxlength="2000" placeholder="Type your message to the member..."></textarea>
               <div class="chat-compose-actions">
                 <label data-i18n="admin.forms.attach" class="secondary-btn chat-attach-btn">
                 Attach
@@ -1765,7 +1765,7 @@
       </div>
       <div class="investment-code-banner">
         <span class="investment-code-label">IOU ID (Auto Generated)</span>
-        <strong id="nextIouCode" class="investment-code-value">Loading...</strong>
+        <strong id="nextIouCode" class="investment-code-value" data-i18n="common.loadingEllipsis">Loading...</strong>
         <p class="table-subtitle">IOU records a commitment. It does not deduct society savings until converted to a full investment.</p>
       </div>
       <form id="iouForm" class="add-member-form">
@@ -1815,7 +1815,7 @@
       </div>
       <div class="investment-code-banner">
         <span class="investment-code-label">Investment ID (Auto Generated)</span>
-        <strong id="nextInvestmentCode" class="investment-code-value">Loading...</strong>
+        <strong id="nextInvestmentCode" class="investment-code-value" data-i18n="common.loadingEllipsis">Loading...</strong>
         <p class="table-subtitle">Link an existing investor account, choose a type, and optionally assign a project manager. One investor can hold many investments.</p>
       </div>
       <form id="investmentForm" class="add-member-form">
