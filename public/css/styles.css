@@ -2914,14 +2914,15 @@ html:not([data-theme="light"]) .theme-toggle-btn .theme-icon-sun,
   }
 
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .topbar-right {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-end;
   }
 
   .search-input {
@@ -3352,7 +3353,7 @@ html:not([data-theme="light"]) .theme-toggle-btn .theme-icon-sun,
 @media (max-width: 640px) {
   .dashboard-quick-actions,
   .dashboard-snapshot-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
