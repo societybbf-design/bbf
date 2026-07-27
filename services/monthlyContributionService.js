@@ -1,9 +1,15 @@
-const { formatMoney } = require('./moneyFormat');
 const PDFDocument = require('pdfkit');
 const Deposit = require('../models/Deposit');
 const User = require('../models/User');
 const MonthlyContributionDue = require('../models/MonthlyContributionDue');
-const { drawPdfOrganizationHeader } = require('./organizationBranding');
+const {
+  drawPdfOrganizationHeader,
+  usePdfBodyFont,
+  usePdfLatinFont,
+  writePdfMoney,
+  writePdfLabeledMoney,
+  preparePdfDocument,
+} = require('./organizationBranding');
 const {
   yearMonthFromDate,
   parseYearMonth,
@@ -146,6 +152,7 @@ function generateMonthlyContributionReportPdf(report = {}, type = 'paid') {
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    preparePdfDocument(doc);
     const buffers = [];
 
     doc.on('data', (chunk) => buffers.push(chunk));
@@ -160,20 +167,21 @@ function generateMonthlyContributionReportPdf(report = {}, type = 'paid') {
       issuerSize: 18,
     });
     doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(16).fillColor('#111827').text(title);
+    usePdfLatinFont(doc).fontSize(16).fillColor('#111827').text(title);
     doc.moveDown(0.5);
 
     if (report.expectedAmount != null) {
-      doc.fontSize(12).fillColor('#334155').text(
-        `Month target per member: ${formatMoney(Number(report.expectedAmount), 2)}`
-      );
+      usePdfLatinFont(doc).fontSize(12).fillColor('#334155');
+      writePdfLabeledMoney(doc, 'Month target per member: ', Number(report.expectedAmount), { digits: 2 });
     }
 
     if (type === 'paid') {
-      doc.fontSize(12).fillColor('#334155').text(`Total applied to target: ${formatMoney(Number(report.paidTotal || 0), 2)}`);
+      usePdfLatinFont(doc).fontSize(12).fillColor('#334155');
+      writePdfLabeledMoney(doc, 'Total applied to target: ', Number(report.paidTotal || 0), { digits: 2 });
       doc.text(`Members fully paid: ${report.paidCount || 0}`);
     } else {
-      doc.fontSize(12).fillColor('#334155').text(`Outstanding: ${formatMoney(Number(report.unpaidTotal || 0), 2)}`);
+      usePdfLatinFont(doc).fontSize(12).fillColor('#334155');
+      writePdfLabeledMoney(doc, 'Outstanding: ', Number(report.unpaidTotal || 0), { digits: 2 });
       doc.text(`Members with dues: ${report.unpaidCount || 0}`);
     }
 
@@ -185,22 +193,22 @@ function generateMonthlyContributionReportPdf(report = {}, type = 'paid') {
     } else {
       rows.forEach((row, index) => {
         const member = row.member || {};
-        doc.font('Helvetica-Bold').text(`${index + 1}. ${member.name || 'Unknown Member'}`);
-        doc.font('Helvetica').fillColor('#334155');
+        usePdfLatinFont(doc, { bold: true }).text(`${index + 1}. ${member.name || 'Unknown Member'}`);
+        usePdfLatinFont(doc).fillColor('#334155');
         doc.text(`Email: ${member.email || 'N/A'}`);
         if (type === 'paid') {
-          doc.text(`Paid toward target: ${formatMoney(Number(row.amount || 0), 2)}`);
+          writePdfLabeledMoney(doc, 'Paid toward target: ', Number(row.amount || 0), { digits: 2 });
           if (row.surplusToAdvance > 0) {
-            doc.text(`Surplus to advance: ${formatMoney(Number(row.surplusToAdvance || 0), 2)}`);
+            writePdfLabeledMoney(doc, 'Surplus to advance: ', Number(row.surplusToAdvance || 0), { digits: 2 });
           }
           doc.text(`Deposits: ${row.depositCount || 0}`);
           if (row.lastDepositDate) {
             doc.text(`Last payment: ${new Date(row.lastDepositDate).toLocaleString()}`);
           }
         } else {
-          doc.text(`Expected: ${formatMoney(Number(row.expectedAmount || report.expectedAmount || 0), 2)}`);
-          doc.text(`Paid: ${formatMoney(Number(row.amount || 0), 2)}`);
-          doc.text(`Still due: ${formatMoney(Number(row.unpaidAmount || 0), 2)}`);
+          writePdfLabeledMoney(doc, 'Expected: ', Number(row.expectedAmount || report.expectedAmount || 0), { digits: 2 });
+          writePdfLabeledMoney(doc, 'Paid: ', Number(row.amount || 0), { digits: 2 });
+          writePdfLabeledMoney(doc, 'Still due: ', Number(row.unpaidAmount || 0), { digits: 2 });
           doc.text(`Status: ${row.status || 'unpaid'}`);
         }
         doc.moveDown(0.6);

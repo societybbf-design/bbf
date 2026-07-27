@@ -4,6 +4,11 @@ const {
   drawPdfOrganizationHeader,
   getOrganizationSettings,
   registerPdfBengaliFont,
+  usePdfBodyFont,
+  usePdfLatinFont,
+  writePdfMoney,
+  writePdfLabeledMoney,
+  preparePdfDocument,
 } = require('./organizationBranding');
 const { pdfText } = require('./i18nService');
 
@@ -43,6 +48,7 @@ function formatShortDate(value) {
 function createPdfBuffer(buildFn) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
+    preparePdfDocument(doc);
     const buffers = [];
     doc.on('data', (chunk) => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
@@ -59,10 +65,25 @@ function drawBrandHeader(doc, { title, subtitle, generatedBy, lang = 'bn' }) {
   doc.restore();
 
   drawPdfOrganizationHeader(doc, { title, subtitle, align: 'left', titleSize: 16, issuerSize: 18, lang });
-  doc.font('Helvetica').fontSize(10).fillColor(BRAND.muted);
+  usePdfLatinFont(doc).fontSize(10).fillColor(BRAND.muted);
   doc.text(`${pdfText(lang, 'generatedBy')}: ${generatedBy || 'Cashier'}`);
   doc.text(`${pdfText(lang, 'generatedAt')}: ${formatDate(new Date())}`);
   doc.moveDown(0.8);
+}
+
+function drawPdfValue(doc, value, x, y, options = {}) {
+  const text = value == null ? '—' : String(value);
+  if (text.includes('৳') || /[\u0980-\u09FF]/.test(text)) {
+    usePdfBodyFont(doc);
+  } else {
+    usePdfLatinFont(doc);
+  }
+  if (options.size) doc.fontSize(options.size);
+  if (options.color) doc.fillColor(options.color);
+  if (x != null && y != null) doc.text(text, x, y, options);
+  else doc.text(text, options);
+  usePdfLatinFont(doc);
+  return doc;
 }
 
 function drawSummaryCards(doc, cards = []) {
@@ -74,8 +95,8 @@ function drawSummaryCards(doc, cards = []) {
     const x = startX + index * (cardWidth + 8);
     doc.save();
     doc.roundedRect(x, y, cardWidth, 52, 6).fillAndStroke(BRAND.accent, BRAND.border);
-    doc.fillColor(BRAND.muted).fontSize(9).text(card.label, x + 10, y + 10, { width: cardWidth - 20 });
-    doc.fillColor(BRAND.dark).fontSize(13).text(card.value, x + 10, y + 26, { width: cardWidth - 20 });
+    usePdfLatinFont(doc).fillColor(BRAND.muted).fontSize(9).text(card.label, x + 10, y + 10, { width: cardWidth - 20 });
+    drawPdfValue(doc, card.value, x + 10, y + 26, { size: 13, color: BRAND.dark, width: cardWidth - 20 });
     doc.restore();
   });
 
@@ -98,8 +119,14 @@ function drawSectionTitle(doc, title) {
 function drawKeyValueTable(doc, rows = []) {
   rows.forEach(([label, value]) => {
     ensureSpace(doc, 18);
-    doc.fontSize(10).fillColor(BRAND.muted).text(`${label}:`, { continued: true });
-    doc.fillColor(BRAND.text).text(` ${value}`);
+    usePdfLatinFont(doc).fontSize(10).fillColor(BRAND.muted).text(`${label}:`, { continued: true });
+    const text = value == null ? '—' : String(value);
+    if (text.includes('৳') || /[\u0980-\u09FF]/.test(text)) {
+      usePdfBodyFont(doc).fillColor(BRAND.text).text(` ${text}`);
+      usePdfLatinFont(doc);
+    } else {
+      doc.fillColor(BRAND.text).text(` ${text}`);
+    }
   });
   doc.moveDown(0.6);
 }
@@ -146,12 +173,11 @@ function drawDataTable(doc, { columns, rows, emptyText = 'No records.' }) {
       const value = typeof column.format === 'function'
         ? column.format(row)
         : String(row[column.key] ?? '—');
-      doc.fontSize(8.5).fillColor(BRAND.text).text(
-        value,
-        tableLeft + index * colWidth + 6,
-        rowY,
-        { width: colWidth - 10 }
-      );
+      drawPdfValue(doc, value, tableLeft + index * colWidth + 6, rowY, {
+        size: 8.5,
+        color: BRAND.text,
+        width: colWidth - 10,
+      });
     });
     doc.y = rowY + 18;
   });
@@ -163,9 +189,8 @@ function addPageNumbers(doc) {
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    registerPdfBengaliFont(doc);
-    const footerFont = doc._bbbfBengaliFont ? 'NotoSansBengali' : 'Helvetica';
-    doc.font(footerFont).fontSize(8).fillColor(BRAND.muted).text(
+    preparePdfDocument(doc);
+    usePdfBodyFont(doc).fontSize(8).fillColor(BRAND.muted).text(
       `Page ${i - range.start + 1} of ${range.count} · Official ${settings.nameBn} document`,
       doc.page.margins.left,
       doc.page.height - doc.page.margins.bottom + 12,
@@ -240,7 +265,7 @@ async function generateMemberLedgerPdf(data, generatedBy = 'Cashier', lang = 'bn
       emptyText: 'No transactions recorded.',
     });
 
-    doc.font('Helvetica').fontSize(9).fillColor(BRAND.muted).text(
+    usePdfLatinFont(doc).fontSize(9).fillColor(BRAND.muted).text(
       `This is an official financial statement of ${settings.nameBn} (${settings.nameEn}) generated for auditing and record-keeping. Deposit receipts are available individually via the cashier portal.`,
       { align: 'center' }
     );

@@ -7,6 +7,11 @@ const {
   drawPdfOrganizationHeader,
   getOrganizationSettings,
   registerPdfBengaliFont,
+  usePdfBodyFont,
+  usePdfLatinFont,
+  writePdfMoney,
+  writePdfLabeledMoney,
+  preparePdfDocument,
 } = require('./organizationBranding');
 
 let cachedTransporter = null;
@@ -66,6 +71,7 @@ async function createTransporter() {
 function createReceiptPdf(member, deposit, adminName) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    preparePdfDocument(doc);
     const buffers = [];
     const { paymentChannelLabel } = require('./paymentChannelService');
 
@@ -77,7 +83,7 @@ function createReceiptPdf(member, deposit, adminName) {
     const channelLabel = paymentChannelLabel(deposit.paymentMethod || 'cash');
 
     const settings = getOrganizationSettings();
-    registerPdfBengaliFont(doc);
+    preparePdfDocument(doc);
 
     drawPdfOrganizationHeader(doc, {
       title: 'Official Receipt',
@@ -86,7 +92,7 @@ function createReceiptPdf(member, deposit, adminName) {
       titleSize: 16,
       issuerSize: 18,
     });
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Transaction ID: ${receiptNumber}`);
     doc.text(`Member: ${member.name}`);
     doc.text(`Email: ${member.email}`);
@@ -97,7 +103,8 @@ function createReceiptPdf(member, deposit, adminName) {
       doc.text(`Payment reference: ${deposit.paymentReference}`);
     }
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Amount: ${formatMoney(deposit.amount, 2)}`);
+    usePdfLatinFont(doc).fontSize(14).fillColor('#111827');
+    writePdfLabeledMoney(doc, 'Amount: ', deposit.amount, { digits: 2 });
     if (deposit.type && deposit.type !== 'regular') {
       doc.fontSize(11).fillColor('#374151').text(`Type: ${deposit.type}`);
     }
@@ -105,7 +112,7 @@ function createReceiptPdf(member, deposit, adminName) {
       doc.text(`Contribution month: ${deposit.yearMonth}`);
     }
     doc.moveDown(1);
-    doc.font('Helvetica').fontSize(12).fillColor('#374151').text(`This official digital receipt confirms that the payment has been recorded in the ${settings.nameEn} ledger.`);
+    usePdfLatinFont(doc).fontSize(12).fillColor('#374151').text(`This official digital receipt confirms that the payment has been recorded in the ${settings.nameEn} ledger.`);
     doc.end();
   });
 }
@@ -113,6 +120,7 @@ function createReceiptPdf(member, deposit, adminName) {
 function createInvestmentReceiptPdf(investment, adminName = 'Admin') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    preparePdfDocument(doc);
     const buffers = [];
     const amount = Number(investment.amount || 0);
     const profit = Number(investment.profit || 0);
@@ -143,7 +151,7 @@ function createInvestmentReceiptPdf(investment, adminName = 'Admin') {
     doc.moveDown(1.2);
     doc.fontSize(20).fillColor('#0f172a').text('Society Investment Receipt', { align: 'center' });
     doc.moveDown(1);
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Investor Name: ${investorName}`);
     doc.text(`Date of Birth: ${dateOfBirth}`);
     doc.text(`Location: ${investorLocation}`);
@@ -151,14 +159,15 @@ function createInvestmentReceiptPdf(investment, adminName = 'Admin') {
     doc.text(`Record Profit Between: ${formatInvestmentProfitWindow(investment.createdAt)} (10-12 months)`);
     doc.text(`Recorded By: ${investment.createdBy || adminName}`);
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Investment Amount: ${formatMoney(amount, 2)}`);
+    usePdfLatinFont(doc).fontSize(14).fillColor('#111827');
+    writePdfLabeledMoney(doc, 'Investment Amount: ', amount, { digits: 2 });
     doc.moveDown(1);
     doc.fontSize(13).fillColor('#0f766e').text('Profit Details', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#374151');
-    doc.text(`Profit Earned From This Investment: ${formatMoney(profit, 2)}`);
-    doc.text(`Withdrawals From This Investment: ${formatMoney(withdrawals, 2)}`);
-    doc.text(`Current Net Balance: ${formatMoney(netBalance, 2)}`);
+    writePdfLabeledMoney(doc, 'Profit Earned From This Investment: ', profit, { digits: 2 });
+    writePdfLabeledMoney(doc, 'Withdrawals From This Investment: ', withdrawals, { digits: 2 });
+    writePdfLabeledMoney(doc, 'Current Net Balance: ', netBalance, { digits: 2 });
     doc.moveDown(1);
     doc.text(`Notes: ${investment.notes || 'N/A'}`);
     doc.moveDown(1);
@@ -170,6 +179,7 @@ function createInvestmentReceiptPdf(investment, adminName = 'Admin') {
 function createIouReceiptPdf(iou, adminName = 'Admin') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    preparePdfDocument(doc);
     const buffers = [];
     const amount = Number(iou.amount || 0);
     const iouCode = iou.iouCode || String(iou._id || '');
@@ -197,7 +207,7 @@ function createIouReceiptPdf(iou, adminName = 'Admin') {
     doc.moveDown(1.2);
     doc.fontSize(20).fillColor('#0f172a').text('Society Investment IOU', { align: 'center' });
     doc.moveDown(1);
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Investor Name: ${investorName}`);
     doc.text(`Date of Birth: ${dateOfBirth}`);
     doc.text(`Location: ${investorLocation}`);
@@ -205,7 +215,8 @@ function createIouReceiptPdf(iou, adminName = 'Admin') {
     doc.text(`Status: ${(iou.status || 'pending').toUpperCase()}`);
     doc.text(`Recorded By: ${iou.createdBy || adminName}`);
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Committed Amount: ${formatMoney(amount, 2)}`);
+    usePdfLatinFont(doc).fontSize(14).fillColor('#111827');
+    writePdfLabeledMoney(doc, 'Committed Amount: ', amount, { digits: 2 });
     doc.moveDown(1);
     doc.fontSize(12).fillColor('#374151');
     doc.text(`Notes: ${iou.notes || 'N/A'}`);
@@ -289,6 +300,7 @@ function formatPaymentMethodLabel(method = '') {
 function createLoanContractPdf(loan, member, adminName = 'Admin') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    preparePdfDocument(doc);
     const buffers = [];
     const amount = Number(loan.amount || 0);
     const loanType = loan.loanType === 'emergency' ? 'Emergency' : 'General';
@@ -312,7 +324,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.fontSize(11).fillColor('#64748b').text('Official Loan Contract', { align: 'center' });
     doc.moveDown(1.5);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Contract Reference: ${loan._id}`);
     doc.text(`Application Date: ${applicationDate}`);
     doc.text(`Approval Date: ${approvalDate}`);
@@ -326,16 +338,16 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text(`Name: ${member.name || 'N/A'}`);
     doc.text(`Email: ${member.email || 'N/A'}`);
     doc.text(`Phone: ${member.phone || 'N/A'}`);
-    doc.text(`Savings at Application: ${formatMoney(Number(loan.memberSavingsAtApply || member.savings || 0), 2)}`);
+    writePdfLabeledMoney(doc, 'Savings at Application: ', Number(loan.memberSavingsAtApply || member.savings || 0), { digits: 2 });
     doc.moveDown(1);
 
     doc.fontSize(14).fillColor('#111827').text('Loan Terms', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#374151');
     doc.text(`Loan Type: ${loanType}`);
-    doc.text(`Loan Amount: ${formatMoney(amount, 2)}`);
+    writePdfLabeledMoney(doc, 'Loan Amount: ', amount, { digits: 2 });
     doc.text(`Purpose: ${loan.reason || 'N/A'}`);
-    doc.text(`Maximum Eligible (80% of savings): ${formatMoney(Number(loan.maxEligibleAmount || 0), 2)}`);
+    writePdfLabeledMoney(doc, 'Maximum Eligible (80% of savings): ', Number(loan.maxEligibleAmount || 0), { digits: 2 });
     doc.moveDown(1);
 
     doc.fontSize(14).fillColor('#111827').text('Witness', { underline: true });
@@ -346,7 +358,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text(`Relation: ${loan.witnessRelation || 'N/A'}`);
     doc.moveDown(1.5);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text('Terms and Conditions:', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(11).fillColor('#374151');
@@ -377,6 +389,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
 function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'Admin' }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    preparePdfDocument(doc);
     const buffers = [];
     const amount = Number(repayment.amount || 0);
     const paymentDate = new Date(repayment.approvedAt || Date.now()).toLocaleDateString('en-US', {
@@ -394,7 +407,7 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
     doc.fontSize(11).fillColor('#64748b').text(repayment.receiptNumber || 'Payment Receipt', { align: 'center' });
     doc.moveDown(1.5);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Member: ${member?.name || 'N/A'}`);
     doc.text(`Email: ${member?.email || 'N/A'}`);
     doc.text(`Payment Date: ${paymentDate}`);
@@ -403,13 +416,15 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
     doc.text(`Repayment Type: ${repayment.repaymentType === 'full' ? 'Full Payment' : 'Installment'}`);
     doc.moveDown(1);
 
-    doc.fontSize(14).fillColor('#111827').text(`Amount Paid: ${formatMoney(amount, 2)}`, { underline: true });
+    usePdfLatinFont(doc).fontSize(14).fillColor('#111827');
+    writePdfLabeledMoney(doc, 'Amount Paid: ', amount, { digits: 2 });
+    // underline applied to following latin context
     doc.moveDown(0.75);
     doc.fontSize(12).fillColor('#374151');
     doc.text(`Loan Type: ${loan?.loanType === 'emergency' ? 'Emergency' : 'General'}`);
-    doc.text(`Original Loan Amount: ${formatMoney(Number(loan?.amount || 0), 2)}`);
-    doc.text(`Balance Before Payment: ${formatMoney(Number(repayment.balanceBefore || 0), 2)}`);
-    doc.text(`Remaining Outstanding Loan: ${formatMoney(Number(repayment.balanceAfter || 0), 2)}`);
+    writePdfLabeledMoney(doc, 'Original Loan Amount: ', Number(loan?.amount || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Balance Before Payment: ', Number(repayment.balanceBefore || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Remaining Outstanding Loan: ', Number(repayment.balanceAfter || 0), { digits: 2 });
     if (repayment.memberNote) {
       doc.text(`Member Note: ${repayment.memberNote}`);
     }
@@ -422,6 +437,7 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
 function createSaleReportPdf(sale, adminName = 'Admin') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    preparePdfDocument(doc);
     const buffers = [];
     const saleAmount = Number(sale.saleAmount || 0);
     const totalInvestment = Number(sale.totalInvestment || 0);
@@ -444,7 +460,7 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
     doc.fontSize(11).fillColor('#64748b').text(sale.saleCode || 'SALE', { align: 'center' });
     doc.moveDown(1.2);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Product / Project: ${sale.productName || sale.projectLabel || 'N/A'}`);
     doc.text(`Project Label: ${sale.projectLabel || 'N/A'}`);
     doc.text(`Investment ID: ${sale.investmentCode || 'N/A'}`);
@@ -458,17 +474,22 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
     doc.fontSize(14).fillColor('#0f766e').text('Financial Breakdown', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#111827');
-    doc.text(`Sale Amount (manual): ${formatMoney(saleAmount, 2)}`);
-    doc.text(`Total Historical Investments (auto-fetched): ${formatMoney(totalInvestment, 2)}`);
-    doc.text(`Additional Costs (manual): ${formatMoney(additionalCosts, 2)}`);
-    doc.text(`Tax (manual): ${formatMoney(tax, 2)}`);
+    writePdfLabeledMoney(doc, 'Sale Amount (manual): ', saleAmount, { digits: 2 });
+    writePdfLabeledMoney(doc, 'Total Historical Investments (auto-fetched): ', totalInvestment, { digits: 2 });
+    writePdfLabeledMoney(doc, 'Additional Costs (manual): ', additionalCosts, { digits: 2 });
+    writePdfLabeledMoney(doc, 'Tax (manual): ', tax, { digits: 2 });
     doc.moveDown(0.6);
 
     const netLabel = outcome === 'loss' ? 'Net Loss' : outcome === 'profit' ? 'Net Profit' : 'Break Even';
     const netColor = outcome === 'loss' ? '#b91c1c' : outcome === 'profit' ? '#047857' : '#334155';
-    doc.fontSize(14).fillColor(netColor).text(
-      `${netLabel}: ${formatMoney(Math.abs(net), 2)}  (${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)})`
-    );
+    usePdfLatinFont(doc).fontSize(14).fillColor(netColor);
+    doc.text(`${netLabel}: `, { continued: true });
+    writePdfMoney(doc, Math.abs(net), { digits: 2, continued: true });
+    usePdfLatinFont(doc).fontSize(14).fillColor(netColor);
+    doc.text(`  (${net >= 0 ? '+' : '-'}`, { continued: true });
+    writePdfMoney(doc, Math.abs(net), { digits: 2, continued: true });
+    usePdfLatinFont(doc).fontSize(14).fillColor(netColor);
+    doc.text(')');
     doc.moveDown(0.4);
     doc.fontSize(10).fillColor('#64748b').text(
       'Formula: Sale Amount − Total Investments − Additional Costs − Tax'
@@ -481,9 +502,9 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
       doc.moveDown(0.4);
       doc.fontSize(11).fillColor('#374151');
       lines.forEach((line, index) => {
-        doc.text(
-          `${index + 1}. ${line.investmentCode || 'INV'} — ${formatMoney(Number(line.amount || 0), 2)}`
-        );
+        usePdfLatinFont(doc).fontSize(11).fillColor('#374151');
+        doc.text(`${index + 1}. ${line.investmentCode || 'INV'} — `, { continued: true });
+        writePdfMoney(doc, Number(line.amount || 0), { digits: 2 });
       });
       doc.moveDown(1);
     }
@@ -501,6 +522,7 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
 function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'Cashier') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    preparePdfDocument(doc);
     const buffers = [];
     doc.on('data', (chunk) => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
@@ -516,7 +538,7 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
     doc.fontSize(11).fillColor('#64748b').text('Project payout from society bank ledger', { align: 'center' });
     doc.moveDown(1.2);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Voucher date: ${paidAt}`);
     doc.text(`Processed by: ${cashierName || investment.cashierProcessedBy || 'Cashier'}`);
     doc.text(`Investment code: ${investment.investmentCode || '—'}`);
@@ -525,7 +547,7 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
 
     doc.fontSize(13).fillColor('#0f172a').text('Payee', { underline: true });
     doc.moveDown(0.3);
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Name: ${investment.payoutReceiverName || investment.investorName || '—'}`);
     doc.text(`Role: ${investment.payoutReceiverRole || '—'}`);
     doc.text(`Email: ${investment.payoutReceiverEmail || '—'}`);
@@ -534,11 +556,12 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
     doc.text(`Bank: ${investment.payoutBankName || '—'}`);
     doc.moveDown(0.8);
 
-    doc.fontSize(14).fillColor('#111827').text(`Amount paid: ${formatMoney(amount, 2)}`);
+    usePdfLatinFont(doc).fontSize(14).fillColor('#111827');
+    writePdfLabeledMoney(doc, 'Amount paid: ', amount, { digits: 2 });
     if (ledgerEntry) {
       doc.fontSize(11).fillColor('#374151');
       doc.text(`Ledger entry: ${ledgerEntry._id}`);
-      doc.text(`Book balance after: ${formatMoney(Number(ledgerEntry.balanceAfter || 0), 2)}`);
+      writePdfLabeledMoney(doc, 'Book balance after: ', Number(ledgerEntry.balanceAfter || 0), { digits: 2 });
     }
     if (investment.cashierNote) {
       doc.moveDown(0.5);
@@ -556,6 +579,7 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
 function createZReportPdf(summary, generatedBy = 'Cashier') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    preparePdfDocument(doc);
     const buffers = [];
     doc.on('data', (chunk) => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
@@ -567,27 +591,32 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
     doc.fontSize(11).fillColor('#64748b').text(`Business day: ${summary.date}`, { align: 'center' });
     doc.moveDown(1);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Generated by: ${generatedBy}`);
     doc.text(`Generated at: ${new Date().toLocaleString()}`);
-    doc.text(`Book bank balance: ${formatMoney(Number(summary.bookBalance || 0), 2)}`);
+    writePdfLabeledMoney(doc, 'Book bank balance: ', Number(summary.bookBalance || 0), { digits: 2 });
     if (summary.actualBalance !== null && summary.actualBalance !== undefined) {
-      doc.text(`Last reconciled actual: ${formatMoney(Number(summary.actualBalance), 2)}`);
-      doc.text(`Difference: ${formatMoney(Number(summary.difference || 0), 2)}${summary.mismatched ? ' ⚠ MISMATCH' : ''}`);
+      writePdfLabeledMoney(doc, 'Last reconciled actual: ', Number(summary.actualBalance), { digits: 2 });
+      usePdfLatinFont(doc);
+      writePdfLabeledMoney(doc, 'Difference: ', Number(summary.difference || 0), { digits: 2 });
+      if (summary.mismatched) {
+        usePdfLatinFont(doc);
+        doc.text(' ⚠ MISMATCH');
+      }
     }
     doc.moveDown(1);
 
     doc.fontSize(13).fillColor('#0f172a').text('Daily totals', { underline: true });
     doc.moveDown(0.4);
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
-    doc.text(`Deposits (cash-in): ${formatMoney(Number(totals.deposits || 0), 2)}`);
-    doc.text(`Project sales / returns: ${formatMoney(Number(totals.sales || 0), 2)}`);
-    doc.text(`Monthly profits logged: ${formatMoney(Number(totals.monthlyProfits || 0), 2)}`);
-    doc.text(`Project payouts (cash-out): ${formatMoney(Number(totals.payouts || 0), 2)}`);
-    doc.text(`Profit distributions: ${formatMoney(Number(totals.distributions || 0), 2)}`);
-    doc.text(`Total in: ${formatMoney(Number(totals.totalIn || 0), 2)}`);
-    doc.text(`Total out: ${formatMoney(Number(totals.totalOut || 0), 2)}`);
-    doc.text(`Net for day: ${formatMoney(Number(totals.net || 0), 2)}`);
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
+    writePdfLabeledMoney(doc, 'Deposits (cash-in): ', Number(totals.deposits || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Project sales / returns: ', Number(totals.sales || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Monthly profits logged: ', Number(totals.monthlyProfits || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Project payouts (cash-out): ', Number(totals.payouts || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Profit distributions: ', Number(totals.distributions || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Total in: ', Number(totals.totalIn || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Total out: ', Number(totals.totalOut || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Net for day: ', Number(totals.net || 0), { digits: 2 });
     doc.moveDown(1);
 
     const entries = summary.entries || [];
@@ -597,9 +626,12 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
       doc.fontSize(10).fillColor('#374151');
       entries.forEach((entry, index) => {
         const when = new Date(entry.createdAt).toLocaleTimeString();
-        doc.text(
-          `${index + 1}. ${when} · ${entry.type} · ${entry.direction} ${formatMoney(Number(entry.amount), 2)} · bal ${formatMoney(Number(entry.balanceAfter), 2)}`
-        );
+        usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
+        doc.text(`${index + 1}. ${when} · ${entry.type} · ${entry.direction} `, { continued: true });
+        writePdfMoney(doc, Number(entry.amount), { digits: 2, continued: true });
+        usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
+        doc.text(' · bal ', { continued: true });
+        writePdfMoney(doc, Number(entry.balanceAfter), { digits: 2 });
       });
     } else {
       doc.fontSize(11).fillColor('#64748b').text('No ledger movements on this day.');
@@ -612,6 +644,7 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
 function createProfitDistributionPdf(distribution) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    preparePdfDocument(doc);
     const buffers = [];
     doc.on('data', (chunk) => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
@@ -622,10 +655,10 @@ function createProfitDistributionPdf(distribution) {
     doc.fontSize(11).fillColor('#64748b').text('Equal split among active members', { align: 'center' });
     doc.moveDown(1);
 
-    doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
+    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
     doc.text(`Distributed by: ${distribution.distributedBy || '—'}`);
     doc.text(`Date: ${new Date(distribution.createdAt || Date.now()).toLocaleString()}`);
-    doc.text(`Total amount: ${formatMoney(Number(distribution.totalAmount || 0), 2)}`);
+    writePdfLabeledMoney(doc, 'Total amount: ', Number(distribution.totalAmount || 0), { digits: 2 });
     doc.text(`Members: ${distribution.memberCount || 0}`);
     doc.text(`Type: ${distribution.distributionType || 'equal'}`);
     if (distribution.notes) doc.text(`Notes: ${distribution.notes}`);
@@ -635,8 +668,12 @@ function createProfitDistributionPdf(distribution) {
     doc.moveDown(0.4);
     doc.fontSize(10).fillColor('#374151');
     (distribution.shares || []).forEach((share, index) => {
+      usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
+      doc.text(`${index + 1}. ${share.memberName || 'Member'} — `, { continued: true });
+      writePdfMoney(doc, Number(share.amount || 0), { digits: 2, continued: true });
+      usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
       doc.text(
-        `${index + 1}. ${share.memberName || 'Member'} — ${formatMoney(Number(share.amount || 0), 2)} (profit ${Number(share.previousProfit || 0).toFixed(2)} → ${Number(share.newProfit || 0).toFixed(2)})`
+        ` (profit ${Number(share.previousProfit || 0).toFixed(2)} → ${Number(share.newProfit || 0).toFixed(2)})`
       );
     });
 

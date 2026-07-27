@@ -20,8 +20,14 @@ function formatMoney(value, digits = 2) {
   })}`;
 }
 
+/** PDF-safe money label. Prefer calling after preparePdfDocument/usePdfBodyFont so ৳ embeds. */
+function formatPdfMoney(value, digits = 2) {
+  return formatMoney(value, digits);
+}
+
 module.exports = {
   CURRENCY_SYMBOL,
   formatMoney,
+  formatPdfMoney,
   toNumber,
 };
