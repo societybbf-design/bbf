@@ -1375,6 +1375,7 @@ function applyOpsPermissionGate(user) {
   if (fullAccess) {
     document.querySelectorAll('[data-requires-permission]').forEach((el) => el.classList.remove('hidden'));
     document.querySelectorAll('.nav-section-label').forEach((el) => el.classList.remove('hidden'));
+    window.SocietyHubMobileMenu?.refreshSections?.();
     return;
   }
 
@@ -1387,23 +1388,7 @@ function applyOpsPermissionGate(user) {
     el.classList.toggle('hidden', !allowed);
   });
 
-  // Hide empty nav section labels (no visible sibling nav items until next label)
-  const nav = document.querySelector('.sidebar-nav');
-  if (!nav) return;
-  const children = [...nav.children];
-  children.forEach((child, index) => {
-    if (!child.classList.contains('nav-section-label')) return;
-    let hasVisibleItem = false;
-    for (let i = index + 1; i < children.length; i += 1) {
-      const next = children[i];
-      if (next.classList.contains('nav-section-label')) break;
-      if (next.classList.contains('nav-item') && !next.classList.contains('hidden')) {
-        hasVisibleItem = true;
-        break;
-      }
-    }
-    child.classList.toggle('hidden', !hasVisibleItem);
-  });
+  window.SocietyHubMobileMenu?.refreshSections?.();
 }
 
 function firstAllowedOpsPage() {

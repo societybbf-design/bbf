@@ -2433,32 +2433,50 @@ async function init() {
       <div class="cashier-pill"><strong>${escapeHtml(roleLabel)}</strong><span>Role</span></div>
     `;
 
-    const navParts = [
-      '<p class="nav-section-label">Workspace</p>',
-      navItemHtml({ title: 'Dashboard', icon: '🏠', active: true, panel: 'home' }),
-    ];
-    if (showMembers) navParts.push(navItemHtml({ title: 'Members', icon: '👥', panel: 'members' }));
-    if (showLedger) navParts.push(navItemHtml({ title: 'Bank Ledger', icon: '🏛️', panel: 'ledger' }));
-    if (showLedger) navParts.push(navItemHtml({ title: 'Transaction Audit', icon: '📋', panel: 'audit' }));
-    if (showQueue) navParts.push(navItemHtml({ title: 'Payment Queue', icon: '⏳', panel: 'queue' }));
-    if (showQueue) navParts.push(navItemHtml({ title: 'Advances & Borrow', icon: '🔄', panel: 'funding' }));
-    if (showProfit) navParts.push(navItemHtml({ title: 'Profit Pool', icon: '💹', panel: 'profit' }));
+    const navParts = [];
+    const addedPanels = new Set();
 
-    if (features.length) {
-      navParts.push('<p class="nav-section-label">Modules</p>');
-      features.forEach((feature) => {
-        if (feature.panel === 'members' && showMembers) return;
-        if (feature.panel === 'funding' && showQueue) return;
-        if (feature.panel === 'profit' && showProfit) return;
-        const copy = HOME_MODULE_COPY[feature.panel] || {};
-        navParts.push(navItemHtml({
-          title: copy.title || feature.title,
-          icon: copy.icon || feature.icon || '•',
-          panel: feature.panel,
-        }));
+    const pushNav = (opts) => {
+      if (addedPanels.has(opts.panel)) return;
+      addedPanels.add(opts.panel);
+      navParts.push(navItemHtml(opts));
+    };
+
+    navParts.push('<p class="nav-section-label">Overview</p>');
+    pushNav({ title: 'Dashboard', icon: '🏠', active: true, panel: 'home' });
+
+    navParts.push('<p class="nav-section-label">Finance</p>');
+    if (showLedger) pushNav({ title: 'Bank Ledger', icon: '🏛️', panel: 'ledger' });
+    if (showLedger) pushNav({ title: 'Transaction Audit', icon: '📋', panel: 'audit' });
+    if (showQueue) pushNav({ title: 'Payment Queue', icon: '⏳', panel: 'queue' });
+    if (showQueue) pushNav({ title: 'Advances & Borrow', icon: '🔄', panel: 'funding' });
+    if (showProfit) pushNav({ title: 'Profit Pool', icon: '💹', panel: 'profit' });
+
+    const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding']);
+    features.forEach((feature) => {
+      if (!financePanels.has(feature.panel)) return;
+      const copy = HOME_MODULE_COPY[feature.panel] || {};
+      pushNav({
+        title: copy.title || feature.title,
+        icon: copy.icon || feature.icon || '•',
+        panel: feature.panel,
       });
-    }
+    });
+
+    navParts.push('<p class="nav-section-label">Management</p>');
+    if (showMembers) pushNav({ title: 'Members', icon: '👥', panel: 'members' });
+
+    features.forEach((feature) => {
+      if (financePanels.has(feature.panel) || feature.panel === 'home') return;
+      const copy = HOME_MODULE_COPY[feature.panel] || {};
+      pushNav({
+        title: copy.title || feature.title,
+        icon: copy.icon || feature.icon || '•',
+        panel: feature.panel,
+      });
+    });
     document.getElementById('featureNav').innerHTML = navParts.join('');
+    window.SocietyHubMobileMenu?.enhanceNav?.(document.getElementById('featureNav'));
 
     const membersLaunch = document.getElementById('cashierOpenMembers');
     if (membersLaunch) {
