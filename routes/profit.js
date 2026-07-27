@@ -128,6 +128,25 @@ router.post('/distribute', manageProfit, requirePasswordConfirmation, async (req
       });
     }));
 
+    const { notifyProfitDistribution } = require('../services/financialNotificationService');
+    const { recordAdminActivity } = require('../services/activityLogService');
+    await notifyProfitDistribution({
+      members: result.updatedMembers,
+      totalAmount,
+      distributedBy: req.session?.user?.name || 'Admin',
+      distributionId: result.distribution?._id,
+    });
+    await recordAdminActivity({
+      action: 'profit_distributed',
+      actor: req.session?.user || null,
+      details: {
+        totalAmount,
+        memberCount: result.updatedMembers?.length || 0,
+        distributionId: result.distribution?._id,
+      },
+      ip: require('../services/securityService').clientIp(req),
+    });
+
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.status || 500).json({
@@ -171,6 +190,26 @@ router.post('/dividend/distribute', manageProfit, requirePasswordConfirmation, a
         message: `Dear ${item.memberName}, your dividend share of $${item.share.toFixed(2)} has been credited.`,
       });
     }));
+
+    const { notifyProfitDistribution } = require('../services/financialNotificationService');
+    const { recordAdminActivity } = require('../services/activityLogService');
+    await notifyProfitDistribution({
+      members: result.updatedMembers,
+      totalAmount,
+      distributedBy: req.session?.user?.name || 'Admin',
+      distributionId: result.distribution?._id,
+    });
+    await recordAdminActivity({
+      action: 'profit_distributed',
+      actor: req.session?.user || null,
+      details: {
+        totalAmount,
+        type: 'automatic_dividend',
+        memberCount: result.updatedMembers?.length || 0,
+        distributionId: result.distribution?._id,
+      },
+      ip: require('../services/securityService').clientIp(req),
+    });
 
     return res.status(201).json(result);
   } catch (error) {

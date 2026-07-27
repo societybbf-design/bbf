@@ -1071,6 +1071,18 @@ html[data-theme="dark"] .cashier-collection-ring {
   font-weight: 600;
 }
 
+.withdrawal-process-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.withdrawal-process-row select,
+.withdrawal-process-row input {
+  min-width: 5.5rem;
+}
+
 @media (max-width: 768px) {
   .audit-filter-form .form-row-3 {
     grid-template-columns: 1fr;

@@ -1,6 +1,9 @@
 const Refund = require('../models/Refund');
 const User = require('../models/User');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
+const { createMemberNotification } = require('./memberNotificationService');
+const { createAdminNotification } = require('./adminNotificationService');
+const { recordAdminActivity } = require('./activityLogService');
 
 async function getRefundsByMember(memberId) {
   return Refund.find({ member: memberId }).sort({ createdAt: -1 }).lean();
@@ -63,12 +66,46 @@ async function updateRefundStatus(refundId, status, adminNote = '') {
 
   const member = await User.findById(refund.member).select('name email phone');
   if (member) {
+    await createMemberNotification({
+      memberId: member._id,
+      type: 'refund',
+      title: `Refund ${status}`,
+      message: `Your refund of $${Number(refund.amount).toFixed(2)} is now ${status}.`,
+      relatedId: refund._id,
+      relatedModel: 'Refund',
+    });
     await notifyMemberByEmailAndSms(member, {
       subject: `Refund Status: ${status}`,
       message: `Dear ${member.name}, your refund of $${Number(refund.amount).toFixed(2)} is now ${status}.`,
     });
+    if (status === 'completed' && previousStatus !== 'completed') {
+      await createAdminNotification({
+        type: 'refund',
+        title: `Refund completed for ${member.name}`,
+        message: `Refund of $${Number(refund.amount).toFixed(2)} completed.`,
+        relatedId: refund._id,
+        relatedModel: 'Refund',
+      });
+    }
   }
 
+  return refund;
+}
+
+async function updateRefundStatusWithAudit(refundId, status, adminNote = '', options = {}) {
+  const refund = await updateRefundStatus(refundId, status, adminNote);
+  if (status === 'completed') {
+    await recordAdminActivity({
+      action: 'refund_completed',
+      actor: options.actor || null,
+      targetUserId: refund.member,
+      details: {
+        amount: refund.amount,
+        refundId: refund._id,
+      },
+      ip: options.ip || '',
+    });
+  }
   return refund;
 }
 
@@ -76,4 +113,5 @@ module.exports = {
   createRefund,
   getRefundsByMember,
   updateRefundStatus,
+  updateRefundStatusWithAudit,
 };

@@ -1100,8 +1100,16 @@ async function loadWithdrawalsModule() {
             <button type="button" class="secondary-btn" data-withdrawal-status="approved" data-id="${request._id}">Approve</button>
             <button type="button" class="ghost-btn" data-withdrawal-status="rejected" data-id="${request._id}">Reject</button>
           ` : request.status === 'approved' ? `
-            <button type="button" class="primary-btn" data-withdrawal-status="processed" data-id="${request._id}">Process</button>
-          ` : '—'}
+            <div class="withdrawal-process-row">
+              <select class="withdrawal-payment-method" data-id="${request._id}">
+                <option value="cash">Cash</option>
+                <option value="bank">Bank</option>
+                <option value="mfs">MFS</option>
+              </select>
+              <input type="text" class="withdrawal-payment-ref" data-id="${request._id}" placeholder="Txn ref" />
+              <button type="button" class="primary-btn" data-withdrawal-status="processed" data-id="${request._id}">Process</button>
+            </div>
+          ` : request.paymentMethod ? `${escapeHtml(paymentChannelLabel(request.paymentMethod))}${request.disbursementReference ? ` · ${escapeHtml(request.disbursementReference)}` : ''}` : '—'}
         </td>
       </tr>
     `).join('');
@@ -1109,11 +1117,19 @@ async function loadWithdrawalsModule() {
     tbody.querySelectorAll('[data-withdrawal-status]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (msg) msg.textContent = '';
+        const requestId = btn.dataset.id;
+        const status = btn.dataset.withdrawalStatus;
+        const paymentMethod = tbody.querySelector(`.withdrawal-payment-method[data-id="${requestId}"]`)?.value || 'cash';
+        const disbursementReference = tbody.querySelector(`.withdrawal-payment-ref[data-id="${requestId}"]`)?.value || '';
         try {
-          const res = await fetch(`/api/withdrawals/admin/${btn.dataset.id}`, {
+          const res = await fetch(`/api/withdrawals/admin/${requestId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: btn.dataset.withdrawalStatus }),
+            body: JSON.stringify({
+              status,
+              paymentMethod: status === 'processed' ? paymentMethod : undefined,
+              disbursementReference: status === 'processed' ? disbursementReference : undefined,
+            }),
           });
           const payload = await res.json();
           if (!res.ok) throw new Error(payload.error || 'Unable to update withdrawal.');

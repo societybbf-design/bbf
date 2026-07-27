@@ -9,7 +9,7 @@ const {
   getDeletedMemberCount,
   getMemberDeletionSummary,
 } = require('../services/memberLifecycleService');
-const { createRefund, getRefundsByMember, updateRefundStatus } = require('../services/refundService');
+const { createRefund, getRefundsByMember, updateRefundStatusWithAudit } = require('../services/refundService');
 const { getMonthlyContributionReport, generateMonthlyContributionReportPdf } = require('../services/monthlyContributionService');
 const {
   getMemberLedgerDocumentData,
@@ -301,7 +301,11 @@ router.post('/members/:id/refunds', manageRefunds, requirePasswordConfirmation, 
 router.patch('/refunds/:id', manageRefunds, requirePasswordConfirmation, async (req, res) => {
   try {
     const { status, adminNote } = req.body;
-    const refund = await updateRefundStatus(req.params.id, status, adminNote);
+    const { clientIp } = require('../services/securityService');
+    const refund = await updateRefundStatusWithAudit(req.params.id, status, adminNote, {
+      actor: req.session?.user || null,
+      ip: clientIp(req),
+    });
     return res.json({ refund });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Could not update refund.' });
