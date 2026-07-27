@@ -77,9 +77,29 @@ let staffMembersCache = [];
 let staffInvestorsCache = [];
 let staffCurrentView = null;
 let staffCanManageLedger = false;
+let staffViewLoadToken = 0;
+const staffViewCache = new Map();
+const STAFF_VIEW_CACHE_TTL_MS = 20000;
 let auditState = { offset: 0, hasMore: false, filters: {} };
 let activeMemberProfileId = null;
 let activeInvestorProfileId = null;
+
+function isStaffViewCacheFresh(viewId) {
+  const entry = staffViewCache.get(viewId);
+  return Boolean(entry && (Date.now() - entry.at) < STAFF_VIEW_CACHE_TTL_MS);
+}
+
+function markStaffViewCache(viewId) {
+  staffViewCache.set(viewId, { at: Date.now() });
+}
+
+function invalidateStaffViewCache(viewIds = null) {
+  if (!viewIds) {
+    staffViewCache.clear();
+    return;
+  }
+  viewIds.forEach((id) => staffViewCache.delete(id));
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -280,12 +300,13 @@ function formatLedgerLabel(entry) {
   return `${type} ${dir} · ${money(entry.amount)}`;
 }
 
-async function loadCashierHomeKpis() {
+async function loadCashierHomeKpis({ force = false } = {}) {
   const recentEl = document.getElementById('cashierRecentLedger');
   try {
-    const [metricsRes, reportRes] = await Promise.all([
+    const [metricsRes, reportRes, trendsRes] = await Promise.all([
       fetch('/api/admin/bank-ledger/cashier-metrics'),
       fetch('/api/admin/monthly-targets/contribution-report'),
+      fetch('/api/admin/analytics/financial-trends'),
     ]);
     const data = await metricsRes.json();
     if (!metricsRes.ok) throw new Error(data.error || 'Unable to load metrics.');
@@ -334,7 +355,11 @@ async function loadCashierHomeKpis() {
       const err = await reportRes.json().catch(() => ({}));
       renderCashierContributionSummary(null, err.error || 'Unable to load monthly contribution status.');
     }
-    await loadCashierFinancialTrends();
+
+    if (trendsRes.ok) {
+      const trends = await trendsRes.json().catch(() => null);
+      if (trends) renderFinancialTrendChart('cashierFinancialTrendChart', trends);
+    }
   } catch (error) {
     if (recentEl) recentEl.innerHTML = `<li class="text-secondary">${escapeHtml(error.message)}</li>`;
     renderCashierContributionSummary(null, error.message);
@@ -457,6 +482,7 @@ function showStaffView(viewId, { forceReload = false } = {}) {
   const next = viewId || 'home';
   const prev = staffCurrentView;
   const sameView = prev === next;
+  const cacheFresh = isStaffViewCacheFresh(next);
 
   if (prev === 'chat' && next !== 'chat') {
     stopCashierChatPolling();
@@ -464,8 +490,17 @@ function showStaffView(viewId, { forceReload = false } = {}) {
 
   staffCurrentView = next;
 
+  // Instant panel switch — never wait on network before painting.
   document.querySelectorAll('[data-staff-view]').forEach((el) => {
-    el.classList.toggle('hidden', el.dataset.staffView !== next);
+    const active = el.dataset.staffView === next;
+    el.classList.toggle('hidden', !active);
+    if (active) {
+      el.classList.toggle('is-loading-view', forceReload || !sameView || !cacheFresh);
+      el.setAttribute('aria-busy', forceReload || !sameView || !cacheFresh ? 'true' : 'false');
+    } else {
+      el.classList.remove('is-loading-view');
+      el.removeAttribute('aria-busy');
+    }
   });
 
   document.querySelectorAll('[data-staff-nav]').forEach((el) => {
@@ -476,15 +511,24 @@ function showStaffView(viewId, { forceReload = false } = {}) {
     window.history.replaceState(null, '', `#${next}`);
   }
 
-  // Skip duplicate fetches when hashchange echoes a click that already loaded this view.
-  if (sameView && !forceReload) {
-    window.SocietyHubSidebar?.close?.();
+  // Close mobile sidebar immediately so nav feels instantaneous.
+  window.SocietyHubSidebar?.close?.();
+
+  if (sameView && !forceReload && cacheFresh) {
     return;
   }
 
-  Promise.resolve(loadViewData(next)).finally(() => {
-    enhanceTableCards();
-    window.SocietyHubSidebar?.close?.();
+  const token = ++staffViewLoadToken;
+  const panel = document.querySelector(`[data-staff-view="${next}"]`);
+
+  Promise.resolve(loadViewData(next)).then(() => {
+    if (token !== staffViewLoadToken) return;
+    markStaffViewCache(next);
+  }).finally(() => {
+    if (token !== staffViewLoadToken) return;
+    panel?.classList.remove('is-loading-view');
+    panel?.setAttribute('aria-busy', 'false');
+    if (panel) enhanceTableCards(panel);
   });
 }
 
@@ -630,24 +674,34 @@ async function loadBankLedger() {
 }
 
 /**
- * After any cash-in (deposit / advance / sale / monthly profit), refresh ledger + related views.
+ * After any cash-in (deposit / advance / sale / monthly profit), refresh only what is visible.
  */
 async function syncAfterCashIn({ memberId = null, bookBalance = null } = {}) {
   applyLiveBookBalance(bookBalance);
-
   staffMembersCache = [];
+  invalidateStaffViewCache(['home', 'deposits', 'funding', 'profit', 'ledger', 'members', 'reports', 'queue']);
 
-  const tasks = [loadBankLedger()];
+  const tasks = [];
+  const current = staffCurrentView;
 
-  tasks.push(loadDepositsModule({ skipLedgerFetch: true }).catch(() => {}));
-  tasks.push(loadFundingModule().catch(() => {}));
-  tasks.push(loadProfitPool({ skipLedgerFetch: true }).catch(() => {}));
-
-  if (staffCurrentView === 'members' || staffCurrentView === 'home' || staffCurrentView === 'reports') {
-    tasks.push(loadViewData(staffCurrentView).catch(() => {}));
+  if (current === 'deposits') {
+    tasks.push(loadDepositsModule({ skipLedgerFetch: bookBalance != null }).catch(() => {}));
+  } else if (current === 'funding') {
+    tasks.push(loadFundingModule().catch(() => {}));
+  } else if (current === 'profit') {
+    tasks.push(loadProfitPool({ skipLedgerFetch: bookBalance != null }).catch(() => {}));
+  } else if (current === 'ledger') {
+    tasks.push(loadBankLedger().catch(() => {}));
+  } else if (current === 'home' || current === 'members' || current === 'reports' || current === 'queue') {
+    tasks.push(loadViewData(current).catch(() => {}));
+  } else if (bookBalance == null) {
+    tasks.push(loadBankLedger().catch(() => {}));
   }
 
-  await Promise.all(tasks);
+  if (tasks.length) {
+    await Promise.all(tasks);
+    if (current) markStaffViewCache(current);
+  }
 
   const modal = document.getElementById('cashierMemberProfileModal');
   if (memberId && modal && !modal.classList.contains('hidden')) {
@@ -692,6 +746,11 @@ async function loadCashierQueue() {
   const list = document.getElementById('cashierQueueList');
   const messageEl = document.getElementById('cashierQueueMessage');
   if (!list) return;
+
+  if (!list.dataset.hasContent) {
+    list.innerHTML = '<p class="text-secondary">Loading payment queue…</p>';
+  }
+
   try {
     const response = await fetch('/api/admin/investments/cashier-queue');
     const data = await response.json();
@@ -699,6 +758,7 @@ async function loadCashierQueue() {
     const queue = data.queue || [];
     if (!queue.length) {
       list.innerHTML = '<p class="text-secondary">No investments awaiting cashier payment.</p>';
+      list.dataset.hasContent = '1';
     } else {
     list.innerHTML = queue.map((item) => {
       const docs = (item.documents || []).map((doc) => `
@@ -725,11 +785,13 @@ async function loadCashierQueue() {
         </article>
       `;
     }).join('');
+    list.dataset.hasContent = '1';
 
     list.querySelectorAll('[data-complete-payment]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!window.confirm('Complete payment? This deducts society savings and the central bank ledger.')) return;
         if (messageEl) messageEl.textContent = '';
+        btn.disabled = true;
         try {
           const res = await fetch(`/api/admin/investments/${btn.dataset.completePayment}/cashier-complete`, {
             method: 'POST',
@@ -745,12 +807,15 @@ async function loadCashierQueue() {
               messageEl.innerHTML += ` <a href="${escapeHtml(payload.voucherUrl)}" target="_blank" rel="noopener">Download voucher PDF</a>`;
             }
           }
+          invalidateStaffViewCache(['queue', 'home', 'investments', 'ledger']);
           await loadCashierQueue();
         } catch (error) {
           if (messageEl) {
             messageEl.classList.remove('success');
             messageEl.textContent = error.message;
           }
+        } finally {
+          btn.disabled = false;
         }
       });
     });
@@ -759,9 +824,11 @@ async function loadCashierQueue() {
     if (messageEl) messageEl.textContent = error.message;
   }
 
-  await loadCashierExitQueue();
-  await loadCashierExternalCapitalQueue();
-  await loadCashierMonthlyProjects();
+  await Promise.all([
+    loadCashierExitQueue().catch(() => {}),
+    loadCashierExternalCapitalQueue().catch(() => {}),
+    loadCashierMonthlyProjects().catch(() => {}),
+  ]);
 }
 
 async function loadCashierExternalCapitalQueue() {
@@ -1036,8 +1103,6 @@ async function loadDepositsModule(options = {}) {
   const amountInput = document.getElementById('cashierDepositAmount');
   const msg = document.getElementById('cashierDepositMessage');
   try {
-    await ensureMembersOptions(['cashierDepositMember', 'cashierAdvanceMember', 'cashierBorrowLender']);
-
     const fetches = [
       fetch('/api/admin/deposits'),
       fetch('/api/admin/monthly-targets/active'),
@@ -1047,7 +1112,10 @@ async function loadDepositsModule(options = {}) {
       fetches.push(fetch('/api/admin/bank-ledger'));
     }
 
-    const responses = await Promise.all(fetches);
+    const [, responses] = await Promise.all([
+      ensureMembersOptions(['cashierDepositMember', 'cashierAdvanceMember', 'cashierBorrowLender']),
+      Promise.all(fetches),
+    ]);
     const depRes = responses[0];
     const targetRes = responses[1];
     const duesRes = responses[2];
@@ -1197,9 +1265,8 @@ async function loadFundingModule() {
   const buyInValBox = document.getElementById('cashierBuyInValuationBox');
 
   try {
-    await ensureMembersOptions(['cashierAdvanceMember', 'cashierBorrowLender']);
-
-    const [advRes, unpaidRes, borrowRes, buyInRes] = await Promise.all([
+    const [, advRes, unpaidRes, borrowRes, buyInRes] = await Promise.all([
+      ensureMembersOptions(['cashierAdvanceMember', 'cashierBorrowLender']),
       fetch('/api/admin/funding/advances'),
       fetch('/api/admin/funding/unpaid-contributions'),
       fetch('/api/admin/funding/borrowings?status=open'),
@@ -1801,10 +1868,15 @@ async function openCashierChat(memberId, memberName = 'Member') {
   await refreshCashierChatThread();
 
   stopCashierChatPolling();
-  const pollMs = window.SocietyChat?.POLL_MS || 2500;
+  const pollMs = Math.max(Number(window.SocietyChat?.POLL_MS) || 5000, 5000);
+  let chatDirectoryTick = 0;
   cashierChatPollTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible' || staffCurrentView !== 'chat') return;
     void refreshCashierChatThread();
-    void loadCashierChatDirectory(true);
+    chatDirectoryTick += 1;
+    if (chatDirectoryTick % 3 === 0) {
+      void loadCashierChatDirectory(true);
+    }
   }, pollMs);
 }
 
@@ -1839,7 +1911,11 @@ async function loadChatModule() {
     refreshBtn.dataset.bound = '1';
     refreshBtn.addEventListener('click', () => void loadCashierChatDirectory());
   }
-  document.getElementById('cashierChatReplyClear')?.addEventListener('click', () => setCashierReplyTarget(null));
+  const clearReplyBtn = document.getElementById('cashierChatReplyClear');
+  if (clearReplyBtn && clearReplyBtn.dataset.bound !== '1') {
+    clearReplyBtn.dataset.bound = '1';
+    clearReplyBtn.addEventListener('click', () => setCashierReplyTarget(null));
+  }
 
   if (filesInput && filesInput.dataset.bound !== '1') {
     filesInput.dataset.bound = '1';
@@ -1948,10 +2024,10 @@ async function loadInvestorsModule() {
   }
 }
 
-async function loadMembersModule() {
+async function loadMembersModule({ force = false } = {}) {
   const tbody = document.getElementById('cashierMembersBody');
   try {
-    staffMembersCache = [];
+    if (force) staffMembersCache = [];
     await ensureMembersOptions([]);
     if (!tbody) return;
     tbody.innerHTML = staffMembersCache.length
@@ -2436,25 +2512,22 @@ async function loadLoansModule() {
   bindCashierLoansUi();
 
   try {
-    const [approvedRes, allRes, borrowersRes, repaymentsRes, summaryRes] = await Promise.all([
-      fetch('/api/loans/admin?status=approved'),
+    const [allRes, borrowersRes, repaymentsRes, summaryRes] = await Promise.all([
       fetch('/api/loans/admin'),
       fetch('/api/loans/admin/active-borrowers'),
       fetch('/api/loans/admin/repayments'),
       fetch('/api/loans/admin/summary'),
     ]);
 
-    const approvedData = await approvedRes.json();
     const allData = await allRes.json();
     const borrowersData = await borrowersRes.json();
     const repaymentsData = await repaymentsRes.json();
     const summaryData = summaryRes.ok ? await summaryRes.json() : {};
 
-    if (!approvedRes.ok) throw new Error(approvedData.error || 'Unable to load approved loans.');
     if (!allRes.ok) throw new Error(allData.error || 'Unable to load loans.');
 
-    const approvedLoans = (approvedData.loans || []).filter((loan) => !loan.autoRejected);
     const allLoans = allData.loans || [];
+    const approvedLoans = allLoans.filter((loan) => loan.status === 'approved' && !loan.autoRejected);
     const borrowers = borrowersData.borrowers || [];
     const repayments = repaymentsData.repayments || [];
     cashierLoanBorrowersCache = borrowers;
@@ -2974,6 +3047,7 @@ async function init() {
       title: 'Staff Dashboard',
       subtitle: `Signed in as ${user.name}`,
     };
+    const roleLabel = (user.role || 'staff').replace(/_/g, ' ');
 
     document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${user.role}`, meta.title);
     document.getElementById('dashboardSubtitle').textContent = meta.subtitle;
@@ -2982,7 +3056,6 @@ async function init() {
     ) || roleLabel;
 
     const initials = initialsFromName(user.name);
-    const roleLabel = (user.role || 'staff').replace(/_/g, ' ');
     const setText = (id, value) => {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
@@ -3081,7 +3154,8 @@ async function init() {
     }
 
     document.getElementById('cashierRefreshKpis')?.addEventListener('click', () => {
-      void loadCashierHomeKpis();
+      invalidateStaffViewCache(['home']);
+      showStaffView('home', { forceReload: true });
     });
 
     document.addEventListener('bbbf:languagechange', () => {
@@ -3100,6 +3174,7 @@ async function init() {
       }
       window.I18n?.applyI18n?.();
     });
+    bindStaffNavigation();
     bindLedgerForms();
     applyLedgerAdminVisibility(canManageLedger);
     bindProfitPoolForms();
@@ -3110,7 +3185,7 @@ async function init() {
     bindCashierInvestorProfileModal();
 
     const initial = (window.location.hash || '#home').replace(/^#/, '') || 'home';
-    showStaffView(initial);
+    showStaffView(initial, { forceReload: true });
   } catch (error) {
     document.getElementById('dashMessage').textContent = t('staffUi.unableLoadDashboard', 'Unable to load dashboard.');
   }

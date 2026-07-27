@@ -1119,6 +1119,25 @@ html[data-theme="dark"] .cashier-collection-ring {
   to { transform: rotate(360deg); }
 }
 
+[data-staff-view].is-loading-view {
+  position: relative;
+}
+
+[data-staff-view].is-loading-view::after {
+  content: '';
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(15, 118, 110, 0.35);
+  border-right-color: #0f766e;
+  border-radius: 50%;
+  animation: pdf-spin 0.7s linear infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .audit-direction-in {
   color: #047857;
   font-weight: 600;
