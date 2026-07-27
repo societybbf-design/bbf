@@ -61,6 +61,10 @@
         <span class="nav-icon-wrap"><span class="nav-icon">📈</span></span>
         <span class="nav-label" data-i18n="nav.investments">Investments</span>
       </a>
+      <a href="#" class="nav-item" data-page="projects" data-requires-permission="can_manage_investments">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏗️</span></span>
+        <span class="nav-label" data-i18n="nav.projects">Project Management</span>
+      </a>
       <a href="#" class="nav-item" data-page="profit" data-requires-permission="can_manage_profit">
         <span class="nav-icon-wrap"><span class="nav-icon">💹</span></span>
         <span class="nav-label" data-i18n="nav.profitLoss">Profit &amp; Loss</span>
@@ -975,6 +979,292 @@
               </thead>
               <tbody id="investmentIouList">
                 <tr><td colspan="9">Loading IOUs...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="projects">
+        <div class="page-actions">
+          <button id="scrollToCreateProjectBtn" class="primary-btn" type="button" data-i18n="admin.buttons.newProject">+ New Project</button>
+          <button id="refreshProjectsModuleBtn" class="secondary-btn" type="button" data-i18n="admin.buttons.refreshProjects">Refresh</button>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card metric-card-1">
+            <div class="metric-icon">🟢</div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="admin.kpi.openProjects">Open Projects</span>
+              <strong class="metric-value" id="projectsOpenCount">0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-2">
+            <div class="metric-icon">📅</div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="admin.kpi.monthlyReturnProjects">Monthly Return</span>
+              <strong class="metric-value" id="projectsMonthlyCount">0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-3">
+            <div class="metric-icon">🔒</div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="admin.kpi.fixedTermProjects">Fixed / Term</span>
+              <strong class="metric-value" id="projectsFixedCount">0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-4">
+            <div class="metric-icon">✅</div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="admin.kpi.closedProjects">Sold / Closed</span>
+              <strong class="metric-value" id="projectsClosedCount">0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-5">
+            <div class="metric-icon">💼</div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="admin.kpi.projectCapital">Active Capital</span>
+              <strong class="metric-value" id="projectsActiveCapital">৳0</strong>
+            </div>
+          </div>
+        </div>
+
+        <section class="panel-card card-form-wide" id="createProjectPanel">
+          <h2 data-i18n="admin.sections.createProject">Create Project</h2>
+          <p class="table-subtitle" data-i18n="admin.projects.createHelp">
+            Combine society funds and external investor capital with ownership percentages. Choose monthly returns or fixed/term lock until maturity. After member approval and cashier payout, the Cashier records inbound external capital.
+          </p>
+          <form id="projectCreateForm" class="add-member-form">
+            <div class="form-group">
+              <label data-i18n="admin.forms.selectInvestor">
+                Select Investor
+                <select name="investorId" id="projectInvestorSelect" required>
+                  <option value="">Choose investor…</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.investmentType">
+                  Project / Investment Type
+                  <select name="investmentType" id="projectTypeSelect" required>
+                    <option value="">Choose type…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.projectManager">
+                  Project Manager
+                  <select name="projectManagerId" id="projectManagerSelect">
+                    <option value="">Unassigned</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.location">
+                  Location
+                  <input type="text" name="location" id="projectLocationInput" placeholder="City / Area" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.projectTotalAmount">
+                  Total Project Amount (৳)
+                  <input type="number" name="amount" id="projectTotalAmount" min="0.01" step="0.01" placeholder="100000.00" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.returnType">
+                  Return type
+                  <select name="returnMode" id="projectReturnMode">
+                    <option value="fixed_term" data-i18n="admin.forms.returnFixedTerm">Fixed / Term (locked until maturity)</option>
+                    <option value="monthly" data-i18n="admin.forms.returnMonthly">Monthly Return</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.notesOptional">
+                  Notes (optional)
+                  <input type="text" name="notes" id="projectNotesInput" placeholder="Optional project details" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2" id="projectTermFields">
+              <div class="form-group">
+                <label data-i18n="admin.forms.termMonths">
+                  Term (months)
+                  <input type="number" name="termMonths" id="projectTermMonths" min="1" step="1" placeholder="12" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.maturityDate">
+                  Maturity / closing date
+                  <input type="date" name="maturityDate" id="projectMaturityDate" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.societyOwnershipPct">
+                  Society ownership (%)
+                  <input type="number" name="societyOwnershipPct" id="projectSocietyPct" min="0" max="100" step="0.01" value="70" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.investorOwnershipPct">
+                  External investor ownership (%)
+                  <input type="number" name="investorOwnershipPct" id="projectInvestorPct" min="0" max="100" step="0.01" value="30" required />
+                </label>
+              </div>
+            </div>
+            <p class="table-subtitle" id="projectOwnershipPreview">Society capital ৳0.00 · External capital ৳0.00</p>
+            <button type="submit" class="primary-btn" data-i18n="admin.buttons.createProject">Create Project</button>
+            <p id="projectCreateMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2 data-i18n="admin.sections.openProjects">Open Projects</h2>
+          <p class="table-subtitle" data-i18n="admin.projects.openHelp">
+            Active and in-progress projects with ownership ratios, return mode, and external capital status. Cashier records external investments and monthly returns from the Payment Queue.
+          </p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="table.projectId">Project ID</th>
+                  <th data-i18n="table.investor">Investor</th>
+                  <th data-i18n="table.type">Type</th>
+                  <th data-i18n="table.returnMode">Return</th>
+                  <th data-i18n="table.ownership">Ownership</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.externalCapital">External Capital</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="projectsOpenList">
+                <tr><td colspan="9">Loading projects...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card card-form-wide" id="projectLiquidatePanel">
+          <h2 data-i18n="admin.sections.liquidateProject">Sell / Liquidate Project</h2>
+          <p class="table-subtitle" data-i18n="admin.projects.liquidateHelp">
+            Enter total sale proceeds. Net capital and profit are split by the agreed ownership percentages. On settlement the project becomes Sold/Closed and ledgers are locked.
+          </p>
+          <form id="projectLiquidateForm" class="add-member-form">
+            <input type="hidden" id="projectLiquidateId" value="" />
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.projectId">
+                  Project / Investment ID
+                  <input type="text" id="projectLiquidateCode" placeholder="INV-2026-0001" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.projectSummaryAuto">
+                  Project summary (auto)
+                  <input type="text" id="projectLiquidateSummary" readonly placeholder="Select a project or enter ID" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.saleAmountUsd">
+                  Total sale proceeds (৳)
+                  <input type="number" id="projectLiquidateSaleAmount" min="0" step="0.01" placeholder="0.00" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.additionalCosts">
+                  Additional Costs (৳)
+                  <input type="number" id="projectLiquidateCosts" min="0" step="0.01" value="0" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.tax">
+                  Tax (৳)
+                  <input type="number" id="projectLiquidateTax" min="0" step="0.01" value="0" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.notes">
+                  Notes
+                  <input type="text" id="projectLiquidateNotes" placeholder="Optional settlement notes" />
+                </label>
+              </div>
+            </div>
+            <div id="projectLiquidateSplitPreview" class="panel-card u-mb-1">
+              <p class="table-subtitle" data-i18n="admin.projects.selectToPreview">Select an open project to preview the ownership split.</p>
+            </div>
+            <button type="submit" class="primary-btn" data-i18n="admin.buttons.settleProject">Settle Sale &amp; Lock Ledgers</button>
+            <p id="projectLiquidateMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card card-form-wide" id="projectMonthlyReturnPanel">
+          <h2 data-i18n="admin.sections.recordMonthlyReturn">Record Monthly Project Return</h2>
+          <p class="table-subtitle" data-i18n="admin.projects.monthlyHelp">
+            For monthly-return projects, record profit cash flow. Distribution follows ownership ratios automatically (society → members, investor → investor profit balance). Cashier can also do this from Payment Queue.
+          </p>
+          <form id="projectMonthlyReturnForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.monthlyProject">
+                  Monthly project
+                  <select id="projectMonthlySelect" required>
+                    <option value="">Choose monthly project…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.monthlyProfitAmount">
+                  Monthly profit / cash flow (৳)
+                  <input type="number" id="projectMonthlyAmount" min="0.01" step="0.01" placeholder="0.00" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label data-i18n="admin.forms.notesOptional">
+                Notes (optional)
+                <input type="text" id="projectMonthlyNotes" placeholder="e.g. March 2026 rent" />
+              </label>
+            </div>
+            <button type="submit" class="primary-btn" data-i18n="admin.buttons.recordMonthlyReturn">Record &amp; Distribute</button>
+            <p id="projectMonthlyMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2 data-i18n="admin.sections.closedProjects">Sold / Closed Projects</h2>
+          <p class="table-subtitle" data-i18n="admin.projects.closedHelp">
+            Settled projects with locked ledgers. Ownership split and net profit/loss are preserved here.
+          </p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="table.projectId">Project ID</th>
+                  <th data-i18n="table.investor">Investor</th>
+                  <th data-i18n="table.type">Type</th>
+                  <th data-i18n="table.ownership">Ownership</th>
+                  <th data-i18n="table.invested">Invested</th>
+                  <th data-i18n="table.saleAmount">Sale Amount</th>
+                  <th data-i18n="table.profitLoss">Profit / Loss</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.soldDate">Closed Date</th>
+                </tr>
+              </thead>
+              <tbody id="projectsClosedList">
+                <tr><td colspan="9">Loading closed projects...</td></tr>
               </tbody>
             </table>
           </div>
