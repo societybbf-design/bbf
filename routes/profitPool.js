@@ -1,3 +1,4 @@
+const { formatMoney } = require('../services/moneyFormat');
 const router = require('express').Router();
 const ProfitDistribution = require('../models/ProfitDistribution');
 const {
@@ -30,7 +31,7 @@ router.post('/monthly', requirePasswordConfirmation, async (req, res) => {
     });
     let message = `Monthly profit logged and credited to the bank ledger.`;
     if (result.bookBalance != null) {
-      message += ` Book balance now $${Number(result.bookBalance).toFixed(2)}.`;
+      message += ` Book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
     }
     if (result.ledgerWarning) {
       message += ` Ledger warning: ${result.ledgerWarning}`;

@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const PDFDocument = require('pdfkit');
 const {
   drawPdfOrganizationHeader,
@@ -16,7 +17,7 @@ const BRAND = {
 };
 
 function money(value) {
-  return `$${Number(value || 0).toFixed(2)}`;
+  return `${formatMoney(Number(value || 0), 2)}`;
 }
 
 function formatDate(value) {

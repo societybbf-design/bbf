@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const InternalBorrowing = require('../models/InternalBorrowing');
@@ -112,7 +113,7 @@ async function createInternalBorrowing({
   if (!borrower) throw httpError('Borrower member not found.', 404);
   if (money(lender.advanceBalance) + 0.001 < normalized) {
     throw httpError(
-      `Lender advance balance insufficient. Available: $${money(lender.advanceBalance).toFixed(2)}`
+      `Lender advance balance insufficient. Available: ${formatMoney(money(lender.advanceBalance), 2)}`
     );
   }
 
@@ -130,7 +131,7 @@ async function createInternalBorrowing({
     }
     const stillDue = money(contribution.unpaidAmount || contribution.expectedAmount);
     if (normalized > stillDue + 0.001) {
-      throw httpError(`Borrow amount exceeds unpaid due of $${stillDue.toFixed(2)}.`);
+      throw httpError(`Borrow amount exceeds unpaid due of ${formatMoney(stillDue, 2)}.`);
     }
   }
 
@@ -193,7 +194,7 @@ async function settleInternalBorrowing(borrowingId, {
     throw httpError('Repayment amount must be greater than zero.');
   }
   if (payAmount > outstanding + 0.001) {
-    throw httpError(`Repayment exceeds outstanding $${outstanding.toFixed(2)}.`);
+    throw httpError(`Repayment exceeds outstanding ${formatMoney(outstanding, 2)}.`);
   }
 
   const [lender, borrower] = await Promise.all([
@@ -302,7 +303,7 @@ async function repayUnpaidContribution(contributionId, {
     throw httpError('Repayment amount must be greater than zero.');
   }
   if (payAmount > due + 0.001) {
-    throw httpError(`Repayment exceeds unpaid due of $${due.toFixed(2)}.`);
+    throw httpError(`Repayment exceeds unpaid due of ${formatMoney(due, 2)}.`);
   }
 
   const member = await User.findById(contribution.member._id || contribution.member);

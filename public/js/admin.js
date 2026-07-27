@@ -153,9 +153,9 @@ function formatProfitDueWindow(createdAt) {
 function formatNetProfitLoss(value) {
   const amount = Number(value || 0);
   if (amount < 0) {
-    return `-$${Math.abs(amount).toFixed(2)}`;
+    return `-${formatMoney(Math.abs(amount), 2)}`;
   }
-  return `$${amount.toFixed(2)}`;
+  return `${formatMoney(amount, 2)}`;
 }
 
 function formatRunningStatusBadge() {
@@ -189,7 +189,7 @@ function renderActiveInvestmentTableRows(investments) {
       <td>${investment.investmentType || '-'}</td>
       <td>${pmCell}</td>
       <td>${investment.location || investment.sector || '-'}</td>
-      <td>$${Number(investment.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(investment.amount || 0), 2)}</td>
       <td>${new Date(investment.createdAt).toLocaleString()}</td>
       <td>${investment.displayStatus || 'Successful'}</td>
       <td>
@@ -208,8 +208,8 @@ function renderSoldInvestmentTableRows(investments) {
       <td><strong>${investment.investmentCode || '-'}</strong></td>
       <td>${investment.investor?.name || investment.investorName || investment.partner || '-'}</td>
       <td>${investment.investmentType || '-'}</td>
-      <td>$${Number(investment.amount || 0).toFixed(2)}</td>
-      <td>$${Number(investment.saleAmount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(investment.amount || 0), 2)}</td>
+      <td>${formatMoney(Number(investment.saleAmount || 0), 2)}</td>
       <td>${formatNetProfitLoss(investment.netProfitLoss)}</td>
       <td>${formatOutcomeStatusBadge(investment.outcomeType)}</td>
       <td>${investment.soldAt ? new Date(investment.soldAt).toLocaleString() : '-'}</td>
@@ -400,7 +400,7 @@ function updateCalculatedProfit(form) {
       fields.profitInput.value = '';
       if (fields.statusEl) {
         fields.statusEl.classList.add('error');
-        fields.statusEl.textContent = `Sale is below investment by $${Math.abs(calculated).toFixed(2)}. Use the Record Investment Loss form.`;
+        fields.statusEl.textContent = `Sale is below investment by ${formatMoney(Math.abs(calculated), 2)}. Use the Record Investment Loss form.`;
       }
     }
   }
@@ -438,7 +438,7 @@ async function lookupInvestmentForProfitForm(form, code) {
     if (fields.dobInput) fields.dobInput.value = formatInvestmentDate(data.investment.dateOfBirth);
     if (fields.locationInput) fields.locationInput.value = data.investment.location || data.investment.sector || '';
     if (fields.amountInput) {
-      fields.amountInput.value = `$${Number(data.investment.amount || 0).toFixed(2)}`;
+      fields.amountInput.value = `${formatMoney(Number(data.investment.amount || 0), 2)}`;
     }
     if (fields.statusEl) {
       fields.statusEl.classList.add('success');
@@ -527,15 +527,15 @@ function bindInvestmentProfitForm(form) {
       await loadProfitHistory();
 
       const shareSummary = (data.updatedMembers || [])
-        .map((member) => `${member.memberName}: $${Number(member.share || 0).toFixed(2)}`)
+        .map((member) => `${member.memberName}: ${formatMoney(Number(member.share || 0), 2)}`)
         .join(', ');
       const savingsNote = data.principalReturned > 0
-        ? ` $${Number(data.principalReturned).toFixed(2)} returned to Total Savings.`
+        ? ` ${formatMoney(Number(data.principalReturned), 2)} returned to Total Savings.`
         : '';
 
       if (fields.messageEl) {
         fields.messageEl.classList.add('success');
-        fields.messageEl.textContent = `Profit of $${Number(data.calculatedProfit || 0).toFixed(2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
+        fields.messageEl.textContent = `Profit of ${formatMoney(Number(data.calculatedProfit || 0), 2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
       }
     } catch (error) {
       if (fields.messageEl) {
@@ -590,7 +590,7 @@ function updateCalculatedLoss(form) {
     fields.lossInput.value = Number((investedAmount - saleAmount).toFixed(2));
     if (fields.statusEl) {
       fields.statusEl.classList.add('success');
-      fields.statusEl.textContent = `Loss of $${fields.lossInput.value} will be shared equally among all members.`;
+      fields.statusEl.textContent = `Loss of ${formatMoney(fields.lossInput.value)} will be shared equally among all members.`;
     }
   } else if (saleAmount >= investedAmount && investedAmount > 0) {
     fields.lossInput.value = '';
@@ -631,7 +631,7 @@ async function lookupInvestmentForLossForm(form, code) {
     lossFormState.set(form, data.investment);
     if (fields.nameInput) fields.nameInput.value = data.investment.investorName || data.investment.partner || '';
     if (fields.amountInput) {
-      fields.amountInput.value = `$${Number(data.investment.amount || 0).toFixed(2)}`;
+      fields.amountInput.value = `${formatMoney(Number(data.investment.amount || 0), 2)}`;
     }
     if (fields.statusEl) {
       fields.statusEl.classList.add('success');
@@ -719,15 +719,15 @@ function bindInvestmentLossForm(form) {
       await loadProfitHistory();
 
       const shareSummary = (data.updatedMembers || [])
-        .map((member) => `${member.memberName}: -$${Number(member.share || 0).toFixed(2)}`)
+        .map((member) => `${member.memberName}: -${formatMoney(Number(member.share || 0), 2)}`)
         .join(', ');
       const savingsNote = data.saleReturned > 0
-        ? ` $${Number(data.saleReturned).toFixed(2)} returned to Total Savings.`
+        ? ` ${formatMoney(Number(data.saleReturned), 2)} returned to Total Savings.`
         : '';
 
       if (fields.messageEl) {
         fields.messageEl.classList.add('success');
-        fields.messageEl.textContent = `Loss of $${Number(data.calculatedLoss || 0).toFixed(2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
+        fields.messageEl.textContent = `Loss of ${formatMoney(Number(data.calculatedLoss || 0), 2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
       }
     } catch (error) {
       if (fields.messageEl) {
@@ -774,9 +774,9 @@ function updateSellNetCalculation() {
   }
 
   const label = net > 0 ? 'Profit' : net < 0 ? 'Loss' : 'Break even';
-  netEl.value = `${label}: $${Math.abs(net).toFixed(2)} (${net >= 0 ? '+' : '-'}$${Math.abs(net).toFixed(2)})`;
-  if (totalEl && !totalEl.value.includes('$') && sellProjectState) {
-    totalEl.value = `$${totalInvestment.toFixed(2)}`;
+  netEl.value = `${label}: ${formatMoney(Math.abs(net), 2)} (${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)})`;
+  if (totalEl && !totalEl.value.includes('৳') && sellProjectState) {
+    totalEl.value = `${formatMoney(totalInvestment, 2)}`;
   }
 }
 
@@ -811,17 +811,17 @@ async function lookupSellProject(code) {
     sellProjectState = data.project;
     if (investorEl) investorEl.value = data.project.primary?.investorName || '';
     if (projectEl) projectEl.value = data.project.projectLabel || '';
-    if (totalEl) totalEl.value = `$${Number(data.project.totalInvestment || 0).toFixed(2)}`;
+    if (totalEl) totalEl.value = `${formatMoney(Number(data.project.totalInvestment || 0), 2)}`;
     if (productEl && !productEl.value) productEl.value = data.project.projectLabel || '';
 
     const lines = data.project.investments || [];
     if (linesEl) {
       linesEl.innerHTML = lines.length
-        ? `<strong>Included investments:</strong> ${lines.map((line) => `${escapeHtml(line.investmentCode)} ($${Number(line.amount || 0).toFixed(2)})`).join(', ')}`
+        ? `<strong>Included investments:</strong> ${lines.map((line) => `${escapeHtml(line.investmentCode)} (${formatMoney(Number(line.amount || 0), 2)})`).join(', ')}`
         : '';
     }
     if (statusEl) {
-      statusEl.textContent = `Loaded ${lines.length} investment(s). Total invested: $${Number(data.project.totalInvestment || 0).toFixed(2)}.`;
+      statusEl.textContent = `Loaded ${lines.length} investment(s). Total invested: ${formatMoney(Number(data.project.totalInvestment || 0), 2)}.`;
     }
     updateSellNetCalculation();
   } catch (error) {
@@ -848,16 +848,16 @@ async function loadSellList() {
 
     tbody.innerHTML = sales.map((sale) => {
       const net = Number(sale.netProfitLoss || 0);
-      const netText = `${net >= 0 ? '+' : '-'}$${Math.abs(net).toFixed(2)}`;
+      const netText = `${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)}`;
       return `
         <tr>
           <td>${escapeHtml(formatInvestmentDate(sale.createdAt))}</td>
           <td>${escapeHtml(sale.saleCode || '')}</td>
           <td>${escapeHtml(sale.productName || sale.projectLabel || '')}</td>
-          <td>$${Number(sale.saleAmount || 0).toFixed(2)}</td>
-          <td>$${Number(sale.totalInvestment || 0).toFixed(2)}</td>
-          <td>$${Number(sale.additionalCosts || 0).toFixed(2)}</td>
-          <td>$${Number(sale.tax || 0).toFixed(2)}</td>
+          <td>${formatMoney(Number(sale.saleAmount || 0), 2)}</td>
+          <td>${formatMoney(Number(sale.totalInvestment || 0), 2)}</td>
+          <td>${formatMoney(Number(sale.additionalCosts || 0), 2)}</td>
+          <td>${formatMoney(Number(sale.tax || 0), 2)}</td>
           <td>${netText}</td>
           <td>
             <button type="button" class="ghost-btn" data-view-sale="${sale._id}">View</button>
@@ -934,8 +934,8 @@ function bindSellProductForm() {
       if (messageEl) {
         const book = data.bookBalance ?? data.bankLedger?.ledger?.bookBalance;
         messageEl.textContent = data.message
-          || `Sale ${data.sale?.saleCode || ''} recorded. Net: $${Number(data.sale?.netProfitLoss || 0).toFixed(2)}.`
-            + (book != null ? ` Bank book balance now $${Number(book).toFixed(2)}.` : '');
+          || `Sale ${data.sale?.saleCode || ''} recorded. Net: ${formatMoney(Number(data.sale?.netProfitLoss || 0), 2)}.`
+            + (book != null ? ` Bank book balance now ${formatMoney(Number(book), 2)}.` : '');
       }
       form.reset();
       sellProjectState = null;
@@ -1584,14 +1584,14 @@ async function openInvestorDetail(investorId, { pushUrl = false } = {}) {
       <p class="table-subtitle">${escapeCeoHtml(investor.email || '')}${investor.phone ? ` · ${escapeCeoHtml(investor.phone)}` : ''}</p>
       <div class="metrics-grid u-my-1">
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Investments</span><strong class="metric-value">${summary.totalInvestments || 0}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Active Amount</span><strong class="metric-value">$${Number(summary.activeAmount || 0).toFixed(2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Sold Amount</span><strong class="metric-value">$${Number(summary.soldAmount || 0).toFixed(2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Total Invested</span><strong class="metric-value">$${Number(summary.totalAmount || 0).toFixed(2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Active Amount</span><strong class="metric-value">${formatMoney(Number(summary.activeAmount || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Sold Amount</span><strong class="metric-value">${formatMoney(Number(summary.soldAmount || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Total Invested</span><strong class="metric-value">${formatMoney(Number(summary.totalAmount || 0), 2)}</strong></div></div>
       </div>
       ${byType.length ? byType.map((bucket) => `
         <section class="panel-card" style="margin-top: 0.85rem;">
           <h3 style="margin:0 0 0.35rem;">${escapeCeoHtml(bucket.investmentType)}</h3>
-          <p class="table-subtitle">${bucket.count} investment(s) · Total $${Number(bucket.totalAmount || 0).toFixed(2)}</p>
+          <p class="table-subtitle">${bucket.count} investment(s) · Total ${formatMoney(Number(bucket.totalAmount || 0), 2)}</p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>
@@ -1608,7 +1608,7 @@ async function openInvestorDetail(investorId, { pushUrl = false } = {}) {
                 ${(bucket.investments || []).map((item) => `
                   <tr>
                     <td><strong>${escapeCeoHtml(item.investmentCode || '-')}</strong></td>
-                    <td>$${Number(item.amount || 0).toFixed(2)}</td>
+                    <td>${formatMoney(Number(item.amount || 0), 2)}</td>
                     <td>${escapeCeoHtml(item.investmentType || '-')}</td>
                     <td>${escapeCeoHtml(item.displayStatus || item.status || '-')}</td>
                     <td>${item.projectManager?._id
@@ -1708,9 +1708,9 @@ async function openProjectManagerDetail(managerId, { pushUrl = false } = {}) {
       <p class="table-subtitle">${escapeCeoHtml(manager.email || '')}${manager.phone ? ` · ${escapeCeoHtml(manager.phone)}` : ''}</p>
       <div class="metrics-grid u-my-1">
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Assigned Projects</span><strong class="metric-value">${summary.assignedProjects || 0}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Active Capital</span><strong class="metric-value">$${Number(summary.activeCapital || 0).toFixed(2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit Returns</span><strong class="metric-value">$${Number(summary.profitReturns || 0).toFixed(2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Expenses Managed</span><strong class="metric-value">$${Number(summary.expensesManaged || 0).toFixed(2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Active Capital</span><strong class="metric-value">${formatMoney(Number(summary.activeCapital || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit Returns</span><strong class="metric-value">${formatMoney(Number(summary.profitReturns || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Expenses Managed</span><strong class="metric-value">${formatMoney(Number(summary.expensesManaged || 0), 2)}</strong></div></div>
       </div>
       <section class="panel-card" style="margin-top: 0.85rem;">
         <h3 style="margin:0 0 0.5rem;">Assigned Projects</h3>
@@ -1735,9 +1735,9 @@ async function openProjectManagerDetail(managerId, { pushUrl = false } = {}) {
                     ? `<a href="/admin/investors/${item.investor._id}" class="table-link" data-open-investor="${item.investor._id}">${escapeCeoHtml(item.investor.name || item.investorName || '-')}</a>`
                     : escapeCeoHtml(item.investorName || '-')}</td>
                   <td>${escapeCeoHtml(item.investmentType || '-')}</td>
-                  <td>$${Number(item.amount || 0).toFixed(2)}</td>
+                  <td>${formatMoney(Number(item.amount || 0), 2)}</td>
                   <td>${escapeCeoHtml(item.displayStatus || item.status || '-')}</td>
-                  <td>${item.status === 'sold' ? `$${Number(item.netProfitLoss || 0).toFixed(2)}` : '-'}</td>
+                  <td>${item.status === 'sold' ? `${formatMoney(Number(item.netProfitLoss || 0), 2)}` : '-'}</td>
                   <td>${item.createdAt ? new Date(item.createdAt).toLocaleString() : '-'}</td>
                 </tr>
               `).join('') : '<tr><td colspan="7">No projects assigned yet.</td></tr>'}
@@ -1842,12 +1842,12 @@ async function loadMigrationOverview() {
     if (!response.ok) throw new Error(data.error || 'Unable to load overview.');
     const t = data.totals || {};
     statsEl.innerHTML = `
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Savings</span><strong class="metric-value">$${Number(t.totalSavings || 0).toFixed(2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Profit</span><strong class="metric-value">$${Number(t.totalProfit || 0).toFixed(2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Savings</span><strong class="metric-value">$${Number(t.totalOpeningSavings || 0).toFixed(2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Profit</span><strong class="metric-value">$${Number(t.totalOpeningProfit || 0).toFixed(2)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Savings</span><strong class="metric-value">${formatMoney(Number(t.totalSavings || 0), 2)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Profit</span><strong class="metric-value">${formatMoney(Number(t.totalProfit || 0), 2)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Savings</span><strong class="metric-value">${formatMoney(Number(t.totalOpeningSavings || 0), 2)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Profit</span><strong class="metric-value">${formatMoney(Number(t.totalOpeningProfit || 0), 2)}</strong></div></div>
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Migrated Members</span><strong class="metric-value">${t.migratedMemberCount || 0}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Digital Deposits</span><strong class="metric-value">$${Number(t.digitalDepositTotal || 0).toFixed(2)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Digital Deposits</span><strong class="metric-value">${formatMoney(Number(t.digitalDepositTotal || 0), 2)}</strong></div></div>
     `;
   } catch (error) {
     statsEl.innerHTML = `<p class="message">${escapeCeoHtml(error.message)}</p>`;
@@ -1870,11 +1870,11 @@ async function loadReplacementValuation(memberId) {
     const v = data.valuation || {};
     const d = v.departing || {};
     box.innerHTML = `
-      <p><strong>Exact exit settlement / entry required: $${Number(v.entryAmount || 0).toFixed(2)}</strong></p>
+      <p><strong>Exact exit settlement / entry required: ${formatMoney(Number(v.entryAmount || 0), 2)}</strong></p>
       <p class="table-subtitle">${escapeCeoHtml(v.formula || '')}</p>
-      <p class="table-subtitle">Departing: ${escapeCeoHtml(d.name || '')} — Savings $${Number(d.savings || 0).toFixed(2)} + Profit $${Number(d.profit || 0).toFixed(2)} + Advance $${Number(d.advanceBalance || 0).toFixed(2)}</p>
+      <p class="table-subtitle">Departing: ${escapeCeoHtml(d.name || '')} — Savings ${formatMoney(Number(d.savings || 0), 2)} + Profit ${formatMoney(Number(d.profit || 0), 2)} + Advance ${formatMoney(Number(d.advanceBalance || 0), 2)}</p>
       <p class="table-subtitle">Incoming payment is credited to the bank ledger, then routed as exit settlement to the departing member (works even if prior bank cash was short).</p>
-      <p class="table-subtitle">Society fund (all active): Savings $${Number(v.totalSavings || 0).toFixed(2)} · Profit $${Number(v.totalProfit || 0).toFixed(2)} · Advance $${Number(v.totalAdvance || 0).toFixed(2)} · Members ${v.activeCount || 0}</p>
+      <p class="table-subtitle">Society fund (all active): Savings ${formatMoney(Number(v.totalSavings || 0), 2)} · Profit ${formatMoney(Number(v.totalProfit || 0), 2)} · Advance ${formatMoney(Number(v.totalAdvance || 0), 2)} · Members ${v.activeCount || 0}</p>
     `;
     if (entryInput) {
       entryInput.value = Number(v.entryAmount || 0).toFixed(2);
@@ -1954,7 +1954,7 @@ async function initMemberMigrationUi() {
       if (msg) {
         const settled = Number(data.departingMember?.settledAmount || data.valuation?.entryAmount || 0).toFixed(2);
         msg.textContent = data.message
-          || `Exit settled $${settled} for ${data.departingMember?.name || 'member'}; ${data.newMember?.name || 'successor'} activated.`;
+          || `Exit settled ${formatMoney(settled)} for ${data.departingMember?.name || 'member'}; ${data.newMember?.name || 'successor'} activated.`;
       }
       event.target.reset();
       document.getElementById('replaceValuationBox').innerHTML = '<p class="table-subtitle">Select a departing member to load the calculated entry valuation.</p>';
@@ -2133,19 +2133,19 @@ async function fetchSummary() {
     totalDeposits.textContent = data.totalDeposits;
   }
   if (totalSavings) {
-    totalSavings.textContent = `$${Number(data.totalSavings || 0).toFixed(2)}`;
+    totalSavings.textContent = `${formatMoney(Number(data.totalSavings || 0), 2)}`;
   }
   if (totalProfit) {
-    totalProfit.textContent = `$${Number(data.totalProfit || 0).toFixed(2)}`;
+    totalProfit.textContent = `${formatMoney(Number(data.totalProfit || 0), 2)}`;
   }
 
   const savingsFootnote = document.querySelector('[data-admin-dashboard-type="savings"] .kpi-footnote');
   if (savingsFootnote && (data.totalOpeningSavings || data.totalOpeningProfit)) {
-    savingsFootnote.textContent = `Incl. opening $${Number(data.totalOpeningSavings || 0).toFixed(0)} + digital`;
+    savingsFootnote.textContent = `Incl. opening ${formatMoney(Number(data.totalOpeningSavings || 0), 0)} + digital`;
   }
   const profitFootnote = document.querySelector('[data-admin-dashboard-type="profit"] .kpi-footnote');
   if (profitFootnote && data.totalOpeningProfit) {
-    profitFootnote.textContent = `Incl. opening $${Number(data.totalOpeningProfit || 0).toFixed(0)}`;
+    profitFootnote.textContent = `Incl. opening ${formatMoney(Number(data.totalOpeningProfit || 0), 0)}`;
   }
 
   const kpiActiveMembers = document.getElementById('kpiActiveMembers');
@@ -2160,10 +2160,10 @@ async function fetchSummary() {
   const snapshotActiveMembers = document.getElementById('snapshotActiveMembers');
 
   if (financeListSavings) {
-    financeListSavings.textContent = `$${Number(data.totalSavings || 0).toFixed(2)}`;
+    financeListSavings.textContent = `${formatMoney(Number(data.totalSavings || 0), 2)}`;
   }
   if (financeListProfit) {
-    financeListProfit.textContent = `$${Number(data.totalProfit || 0).toFixed(2)}`;
+    financeListProfit.textContent = `${formatMoney(Number(data.totalProfit || 0), 2)}`;
   }
   if (financeListDeposits) {
     financeListDeposits.textContent = data.totalDeposits || 0;
@@ -2172,7 +2172,7 @@ async function fetchSummary() {
     snapshotActiveMembers.textContent = data.activeMembers || data.totalMembers || 0;
   }
   if (financeListInvestments && dashboardTotalInvestment) {
-    financeListInvestments.textContent = dashboardTotalInvestment.textContent || '$0';
+    financeListInvestments.textContent = dashboardTotalInvestment.textContent || formatMoney(0);
   }
 
   if (reportMembers) {
@@ -2214,7 +2214,7 @@ async function loadDashboardSnapshot() {
         ? recentLoans.map((loan) => `
           <tr>
             <td>${loan.member?.name || 'Unknown'} — ${loan.loanType === 'emergency' ? 'Emergency' : 'General'}</td>
-            <td>$${Number(loan.amount || 0).toFixed(2)}</td>
+            <td>${formatMoney(Number(loan.amount || 0), 2)}</td>
             <td>${formatLoanStatusBadge(loan.status)}</td>
           </tr>
         `).join('')
@@ -2283,8 +2283,8 @@ function renderMemberStatusLists(members) {
         <tr>
           <td>${member.name}</td>
           <td>${member.email}</td>
-          <td>$${Number(member.savings || 0).toFixed(2)}</td>
-          <td>$${Number(member.profit || 0).toFixed(2)}</td>
+          <td>${formatMoney(Number(member.savings || 0), 2)}</td>
+          <td>${formatMoney(Number(member.profit || 0), 2)}</td>
         </tr>
       `).join('')
     : '<tr><td colspan="4">No members yet. Add members first.</td></tr>';
@@ -2311,7 +2311,7 @@ function renderDashboardMembersList(members) {
         <div>
           <strong>${member.name}</strong>
           <span>${member.email}</span>
-          <small>Savings $${Number(member.savings || 0).toFixed(2)} · Profit $${Number(member.profit || 0).toFixed(2)}</small>
+          <small>Savings ${formatMoney(Number(member.savings || 0), 2)} · Profit ${formatMoney(Number(member.profit || 0), 2)}</small>
         </div>
       </button>
     `;
@@ -2398,8 +2398,8 @@ function renderMembersReport() {
     <tr>
       <td>${member.name}</td>
       <td>${member.email}</td>
-      <td>$${Number(member.savings || 0).toFixed(2)}</td>
-      <td>$${Number(member.profit || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(member.savings || 0), 2)}</td>
+      <td>${formatMoney(Number(member.profit || 0), 2)}</td>
       <td>${member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '-'}</td>
     </tr>
   `).join('');
@@ -2436,7 +2436,7 @@ function renderDepositsReport() {
     <tr>
       <td>${deposit.member?.name || 'Unknown'}</td>
       <td>${deposit.member?.email || 'Unknown'}</td>
-      <td>$${Number(deposit.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(deposit.amount || 0), 2)}</td>
       <td>${new Date(deposit.createdAt).toLocaleString()}</td>
       <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Download</a></td>
     </tr>
@@ -2484,7 +2484,7 @@ function renderInvestmentsReport() {
       <td>${investment.investorName || investment.partner || '-'}</td>
       <td>${formatInvestmentDate(investment.dateOfBirth)}</td>
       <td>${investment.location || investment.sector || '-'}</td>
-      <td>$${Number(investment.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(investment.amount || 0), 2)}</td>
       <td>${new Date(investment.createdAt).toLocaleString()}</td>
       <td>${formatProfitDueWindow(investment.createdAt)}</td>
       <td><button type="button" class="receipt-button" data-pdf-preview="/api/admin/investments/${investment._id}/receipt">View Receipt</button></td>
@@ -2498,7 +2498,7 @@ function renderInvestmentsReport() {
       <td>${investment.investorName || investment.partner || '-'}</td>
       <td>${formatInvestmentDate(investment.dateOfBirth)}</td>
       <td>${investment.location || investment.sector || '-'}</td>
-      <td>$${Number(investment.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(investment.amount || 0), 2)}</td>
       <td>${investment.soldAt ? new Date(investment.soldAt).toLocaleString() : new Date(investment.createdAt).toLocaleString()}</td>
       <td>${formatNetProfitLoss(investment.netProfitLoss)}</td>
       <td><button type="button" class="receipt-button" data-pdf-preview="/api/admin/investments/${investment._id}/receipt">View Receipt</button></td>
@@ -2566,8 +2566,8 @@ function renderMembers(members) {
         <td class="member-name-cell">${member.name}</td>
         <td>${member.email}</td>
         <td>${formatMemberStatusBadge(status)}</td>
-        <td>$${Number(member.savings || 0).toFixed(2)}</td>
-        <td>$${Number(member.profit || 0).toFixed(2)}</td>
+        <td>${formatMoney(Number(member.savings || 0), 2)}</td>
+        <td>${formatMoney(Number(member.profit || 0), 2)}</td>
         <td><button type="button" class="secondary-btn member-profile-link" data-member-id="${member._id}">View Profile</button></td>
       </tr>
     `;
@@ -2640,7 +2640,7 @@ function buildMonthlyHistoryRows(monthlyHistory) {
     <tr>
       <td>${item.label}</td>
       <td><span class="status-badge ${item.status === 'completed' ? 'status-completed' : 'status-pending'}">${item.status}</span></td>
-      <td>$${Number(item.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(item.amount || 0), 2)}</td>
     </tr>
   `).join('');
 }
@@ -2653,7 +2653,7 @@ function buildProfileDepositForm(memberId, formPrefix = 'profile') {
       <form class="deposit-form profile-deposit-form" data-member-id="${memberId}" data-form-prefix="${formPrefix}">
         <div class="form-group">
           <label>
-            Amount ($)
+            Amount (৳)
             <input type="number" name="amount" min="0.01" step="0.01" placeholder="0.00" required />
           </label>
         </div>
@@ -2710,7 +2710,7 @@ function buildRefundHistoryRows(refunds = []) {
 
   return refunds.map((refund) => `
     <tr>
-      <td>$${Number(refund.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(refund.amount || 0), 2)}</td>
       <td>${refund.reason || '-'}</td>
       <td>${formatRefundStatusBadge(refund.status)}</td>
       <td>${refund.adminNote || '-'}</td>
@@ -2733,7 +2733,7 @@ function buildRefundSection(memberId, refunds = [], formPrefix = 'profile') {
         <div class="form-grid-2">
           <div class="form-group">
             <label>
-              Refund Amount ($)
+              Refund Amount (৳)
               <input type="number" name="amount" min="0.01" step="0.01" placeholder="0.00" required />
             </label>
           </div>
@@ -2804,7 +2804,7 @@ function buildLoanDisbursementDetailsHtml(loan = {}) {
     <section class="panel-card loan-disbursement-details">
       <h3>Loan Transfer Completed</h3>
       <div class="member-profile-meta">
-        <span class="member-profile-meta-pill">Amount Sent: $${Number(loan.amount || 0).toFixed(2)}</span>
+        <span class="member-profile-meta-pill">Amount Sent: ${formatMoney(Number(loan.amount || 0), 2)}</span>
         <span class="member-profile-meta-pill">Method: ${formatPaymentMethodLabel(loan.paymentMethod)}</span>
         <span class="member-profile-meta-pill">Date: ${loan.disbursedAt ? new Date(loan.disbursedAt).toLocaleString() : '-'}</span>
         ${loan.disbursementReference ? `<span class="member-profile-meta-pill">Ref: ${loan.disbursementReference}</span>` : ''}
@@ -2824,7 +2824,7 @@ function buildLoanDisbursementFormHtml(loan = {}) {
     <section class="panel-card loan-disbursement-panel">
       <h3>Transfer Loan Money to Member</h3>
       <p class="table-subtitle">
-        After you send <strong>$${Number(loan.amount || 0).toFixed(2)}</strong> to this member (cash, bank, mobile banking, etc.),
+        After you send <strong>${formatMoney(Number(loan.amount || 0), 2)}</strong> to this member (cash, bank, mobile banking, etc.),
         confirm the transfer here. The member will see it on their dashboard immediately.
       </p>
       <form class="loan-disbursement-form add-member-form" data-loan-id="${loan._id}">
@@ -2883,15 +2883,15 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
     return `
     <tr>
       <td>${formatLoanTypeLabel(loan.loanType)}</td>
-      <td>$${Number(loan.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(loan.amount || 0), 2)}</td>
       <td>${formatLoanStatusBadge(loan.status)}</td>
       <td>${formatLoanClearanceBadge(loan)}</td>
-      <td>${loan.status === 'disbursed' ? `$${outstanding.toFixed(2)}` : '-'}</td>
-      <td>${loan.status === 'disbursed' ? `$${Number(loan.totalRepaid || 0).toFixed(2)}` : '-'}</td>
+      <td>${loan.status === 'disbursed' ? `${formatMoney(outstanding, 2)}` : '-'}</td>
+      <td>${loan.status === 'disbursed' ? `${formatMoney(Number(loan.totalRepaid || 0), 2)}` : '-'}</td>
       <td>${buildLoanDecisionSummary(loan)}</td>
       <td>${formatPaymentMethodLabel(loan.paymentMethod)}</td>
       <td>${loan.status === 'disbursed'
-        ? `$${Number(loan.amount || 0).toFixed(2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursementReference ? `<br><small>Ref: ${loan.disbursementReference}</small>` : ''}`
+        ? `${formatMoney(Number(loan.amount || 0), 2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursementReference ? `<br><small>Ref: ${loan.disbursementReference}</small>` : ''}`
         : loan.status === 'approved'
           ? '<span class="status-badge status-pending">Awaiting Transfer</span>'
           : '-'
@@ -2910,11 +2910,11 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
     <tr>
       <td>${new Date(item.createdAt).toLocaleString()}</td>
       <td>${item.repaymentType === 'full' ? 'Full' : 'Installment'}</td>
-      <td>$${Number(item.amount || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(item.amount || 0), 2)}</td>
       <td>${formatPaymentMethodLabel(item.paymentMethod)}</td>
       <td>${formatLoanStatusBadge(item.status)}</td>
       <td>${item.adminManual ? 'Admin Manual' : 'Member Request'}</td>
-      <td>$${Number(item.balanceAfter || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(item.balanceAfter || 0), 2)}</td>
       <td>${item.status === 'approved' && item._id ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Receipt</a>` : '-'}</td>
     </tr>
   `).join('') : '<tr><td colspan="8">No loan payments recorded yet.</td></tr>';
@@ -2937,15 +2937,15 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
         <div class="member-loan-outstanding-grid">
           <article class="profile-finance-card profile-finance-loans">
             <span>Outstanding Balance</span>
-            <strong>$${Number(loanSummary.outstandingBalance || 0).toFixed(2)}</strong>
+            <strong>${formatMoney(Number(loanSummary.outstandingBalance || 0), 2)}</strong>
           </article>
           <article class="profile-finance-card profile-finance-deposits">
             <span>Total Repaid</span>
-            <strong>$${Number(loanSummary.totalRepaid || 0).toFixed(2)}</strong>
+            <strong>${formatMoney(Number(loanSummary.totalRepaid || 0), 2)}</strong>
           </article>
           <article class="profile-finance-card profile-finance-profit">
             <span>Available to Pay Now</span>
-            <strong>$${availableToPay.toFixed(2)}</strong>
+            <strong>${formatMoney(availableToPay, 2)}</strong>
           </article>
         </div>
         <form class="admin-loan-repayment-form add-member-form" data-member-id="${memberId}">
@@ -2975,7 +2975,7 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
           <div class="form-grid-2">
             <div class="form-group">
               <label>
-                Amount ($)
+                Amount (৳)
                 <input type="number" name="amount" class="admin-loan-repayment-amount" min="0.01" max="${availableToPay}" step="0.01" value="${availableToPay.toFixed(2)}" required />
               </label>
             </div>
@@ -3086,7 +3086,7 @@ function buildMemberActivityTimeline(data = {}) {
       type: 'deposit',
       date: deposit.createdAt,
       title: 'Deposit recorded',
-      detail: `$${Number(deposit.amount || 0).toFixed(2)} added to savings`,
+      detail: `${formatMoney(Number(deposit.amount || 0), 2)} added to savings`,
       icon: '💰',
     });
   });
@@ -3095,7 +3095,7 @@ function buildMemberActivityTimeline(data = {}) {
       type: 'refund',
       date: refund.createdAt,
       title: 'Refund update',
-      detail: `$${Number(refund.amount || 0).toFixed(2)} · ${refund.status || 'pending'}`,
+      detail: `${formatMoney(Number(refund.amount || 0), 2)} · ${refund.status || 'pending'}`,
       icon: '↩️',
     });
   });
@@ -3104,7 +3104,7 @@ function buildMemberActivityTimeline(data = {}) {
       type: 'loan',
       date: loan.updatedAt || loan.createdAt,
       title: `Loan ${loan.status || 'pending'}`,
-      detail: `${formatLoanTypeLabel(loan.loanType)} · $${Number(loan.amount || 0).toFixed(2)}`,
+      detail: `${formatLoanTypeLabel(loan.loanType)} · ${formatMoney(Number(loan.amount || 0), 2)}`,
       icon: '🏛️',
     });
   });
@@ -3224,17 +3224,17 @@ function buildMemberProfileHtml(data, options = {}) {
       <div class="member-profile-financial-grid">
         <article class="profile-finance-card profile-finance-savings">
           <span>Current Savings</span>
-          <strong>$${Number(member.savings || 0).toFixed(2)}</strong>
+          <strong>${formatMoney(Number(member.savings || 0), 2)}</strong>
           <small>Live balance</small>
         </article>
         <article class="profile-finance-card profile-finance-profit">
           <span>Profit Share</span>
-          <strong>$${Number(member.profit || 0).toFixed(2)}</strong>
+          <strong>${formatMoney(Number(member.profit || 0), 2)}</strong>
           <small>Total distributed</small>
         </article>
         <article class="profile-finance-card profile-finance-deposits">
           <span>Total Deposits</span>
-          <strong>$${Number(data.totalDeposits || 0).toFixed(2)}</strong>
+          <strong>${formatMoney(Number(data.totalDeposits || 0), 2)}</strong>
           <small>${data.completedPayments || 0} completed months</small>
         </article>
         <article class="profile-finance-card profile-finance-loans">
@@ -3271,7 +3271,7 @@ function buildMemberProfileHtml(data, options = {}) {
           <div class="metric-card metric-card-3">
             <div class="metric-content">
               <span class="metric-label">Total Refunded</span>
-              <strong class="metric-value">$${Number(data.totalRefunded || 0).toFixed(2)}</strong>
+              <strong class="metric-value">${formatMoney(Number(data.totalRefunded || 0), 2)}</strong>
             </div>
           </div>
           <div class="metric-card metric-card-4">
@@ -3360,7 +3360,7 @@ function applyDepositFormSettings() {
     if (target) {
       if (!depositAmount.value) depositAmount.value = target.toFixed(2);
       if (hint) {
-        hint.textContent = `This month’s fixed target: $${target.toFixed(2)}. Extra goes to Advance; shortfall stays as unpaid dues.`;
+        hint.textContent = `This month’s fixed target: ${formatMoney(target, 2)}. Extra goes to Advance; shortfall stays as unpaid dues.`;
       }
     } else if (hint) {
       hint.textContent = 'No fixed target set for this month yet — full amount credits savings. Configure a month target above.';
@@ -3390,7 +3390,7 @@ async function loadMonthlyTargetsUi() {
     if (box) {
       if (active.amount != null) {
         box.innerHTML = `
-          <p><strong>Active month (${escapeCeoHtml(active.monthLabel || active.yearMonth)}): $${Number(active.amount).toFixed(2)}</strong></p>
+          <p><strong>Active month (${escapeCeoHtml(active.monthLabel || active.yearMonth)}): ${formatMoney(Number(active.amount), 2)}</strong></p>
           <p class="table-subtitle">Source: ${escapeCeoHtml(active.source || '—')}${active.configured ? '' : ' (env fallback — save a month target to override)'}</p>
         `;
       } else {
@@ -3411,7 +3411,7 @@ async function loadMonthlyTargetsUi() {
         ? targets.map((t) => `
           <tr>
             <td>${escapeCeoHtml(t.monthLabel || t.yearMonth)}</td>
-            <td>$${Number(t.amount || 0).toFixed(2)}</td>
+            <td>${formatMoney(Number(t.amount || 0), 2)}</td>
             <td>${escapeCeoHtml(t.setBy || '—')}</td>
             <td>${escapeCeoHtml(t.notes || '—')}</td>
           </tr>
@@ -3788,8 +3788,8 @@ function bindProfileLoanProcessing(container, memberId, refreshProfile) {
         messageEl.classList.add('success');
         const remaining = Number(data.summary?.outstandingBalance || 0);
         messageEl.textContent = remaining <= 0
-          ? `Payment of $${Number(data.repayment?.amount || payload.amount).toFixed(2)} recorded. Loan is fully cleared.`
-          : `Payment of $${Number(data.repayment?.amount || payload.amount).toFixed(2)} recorded. Remaining balance: $${remaining.toFixed(2)}.`;
+          ? `Payment of ${formatMoney(Number(data.repayment?.amount || payload.amount), 2)} recorded. Loan is fully cleared.`
+          : `Payment of ${formatMoney(Number(data.repayment?.amount || payload.amount), 2)} recorded. Remaining balance: ${formatMoney(remaining, 2)}.`;
       }
       form.reset();
       if (typeof refreshProfile === 'function') {
@@ -4390,8 +4390,8 @@ function renderDeletedMembers(members = adminDeletedMembers) {
       <td>${member.email}</td>
       <td>${member.deletedAt ? new Date(member.deletedAt).toLocaleString() : '-'}</td>
       <td>${member.deletedReason || '-'}</td>
-      <td>$${Number(member.savings || 0).toFixed(2)}</td>
-      <td>$${Number(member.profit || 0).toFixed(2)}</td>
+      <td>${formatMoney(Number(member.savings || 0), 2)}</td>
+      <td>${formatMoney(Number(member.profit || 0), 2)}</td>
       <td class="member-lifecycle-table-actions">
         <button type="button" class="receipt-button deleted-member-view" data-member-id="${member._id}">View</button>
       </td>
@@ -4474,7 +4474,7 @@ async function fetchDepositHistory() {
       <tr>
         <td>${deposit.member?.name || 'Unknown'}</td>
         <td>${deposit.member?.email || 'Unknown'}</td>
-        <td>$${Number(deposit.amount || 0).toFixed(2)} <span class="kpi-footnote">(${typeLabel})</span></td>
+        <td>${formatMoney(Number(deposit.amount || 0), 2)} <span class="kpi-footnote">(${typeLabel})</span></td>
         <td>${new Date(deposit.createdAt).toLocaleString()}</td>
         <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank">Download</a></td>
       </tr>
@@ -4528,11 +4528,11 @@ if (adminDepositForm) {
       if (depositMessage) {
         const base = data.message
           || (data.monthlySplit?.splitApplied
-            ? `Toward target $${Number(data.monthlySplit.towardTarget).toFixed(2)}${data.monthlySplit.surplus > 0 ? ` · surplus $${Number(data.monthlySplit.surplus).toFixed(2)} → advance` : ''}${data.monthlySplit.remainingUnpaid > 0 ? ` · still due $${Number(data.monthlySplit.remainingUnpaid).toFixed(2)}` : ''}`
+            ? `Toward target ${formatMoney(Number(data.monthlySplit.towardTarget), 2)}${data.monthlySplit.surplus > 0 ? ` · surplus ${formatMoney(Number(data.monthlySplit.surplus), 2)} → advance` : ''}${data.monthlySplit.remainingUnpaid > 0 ? ` · still due ${formatMoney(Number(data.monthlySplit.remainingUnpaid), 2)}` : ''}`
             : 'Deposit recorded successfully. Receipt can be downloaded below.');
         const book = data.bookBalance ?? data.bankLedger?.ledger?.bookBalance;
         depositMessage.textContent = book != null
-          ? `${base}${String(base).includes('book balance') ? '' : ` · Bank book balance now $${Number(book).toFixed(2)}`}`
+          ? `${base}${String(base).includes('book balance') ? '' : ` · Bank book balance now ${formatMoney(Number(book), 2)}`}`
           : base;
       }
       if (latestReceiptLink) {
@@ -4577,8 +4577,8 @@ if (memberSearch) {
         <button type="button" class="search-member-link" data-member-id="${member._id}">
           <strong>${member.name}</strong>
           <span>${member.email}</span>
-          <span class="search-member-meta">Savings: $${Number(member.savings || 0).toFixed(2)}</span>
-          <span class="search-member-meta">Profit: $${Number(member.profit || 0).toFixed(2)}</span>
+          <span class="search-member-meta">Savings: ${formatMoney(Number(member.savings || 0), 2)}</span>
+          <span class="search-member-meta">Profit: ${formatMoney(Number(member.profit || 0), 2)}</span>
         </button>
       `).join('');
       searchMemberDetails.classList.remove('hidden');
@@ -4691,7 +4691,7 @@ async function loadProfitHistory() {
         lastProfitDistribution.textContent = 'Last distribution: Not yet distributed';
       } else {
         const latest = distributions[0];
-        lastProfitDistribution.textContent = `Last distribution: $${Number(latest.totalAmount || 0).toFixed(2)} on ${new Date(latest.createdAt).toLocaleString()} (Equal Share)`;
+        lastProfitDistribution.textContent = `Last distribution: ${formatMoney(Number(latest.totalAmount || 0), 2)} on ${new Date(latest.createdAt).toLocaleString()} (Equal Share)`;
       }
     }
 
@@ -4707,7 +4707,7 @@ async function loadProfitHistory() {
     profitHistoryList.innerHTML = distributions.map((item) => `
       <tr>
         <td>${new Date(item.createdAt).toLocaleString()}</td>
-        <td>$${Number(item.totalAmount || 0).toFixed(2)}</td>
+        <td>${formatMoney(Number(item.totalAmount || 0), 2)}</td>
         <td>Equal Share</td>
         <td>${item.memberCount || 0}</td>
         <td>${item.notes || '-'}</td>
@@ -4817,9 +4817,9 @@ async function loadInvestmentProfitHistory() {
         <td>${item.investmentCode || '-'}</td>
         <td>${item.sector || '-'}</td>
         <td>${item.partner || '-'}</td>
-        <td>$${Number(item.investmentAmount || 0).toFixed(2)}</td>
-        <td>$${Number(item.saleAmount || 0).toFixed(2)}</td>
-        <td>${isLoss ? '-' : ''}$${amount.toFixed(2)}</td>
+        <td>${formatMoney(Number(item.investmentAmount || 0), 2)}</td>
+        <td>${formatMoney(Number(item.saleAmount || 0), 2)}</td>
+        <td>${isLoss ? '-' : ''}${formatMoney(amount, 2)}</td>
         <td>${isLoss ? 'Loss (Equal Share)' : 'Profit (Equal Share)'}</td>
         <td>${item.notes || '-'}</td>
       </tr>
@@ -4872,7 +4872,7 @@ async function loadInvestmentIous() {
             <td>${iou.investorName || '-'}</td>
             <td>${formatInvestmentDate(iou.dateOfBirth)}</td>
             <td>${iou.location || '-'}</td>
-            <td>$${Number(iou.amount || 0).toFixed(2)}</td>
+            <td>${formatMoney(Number(iou.amount || 0), 2)}</td>
             <td>${iou.status || 'pending'}</td>
             <td>${new Date(iou.createdAt).toLocaleString()}</td>
             <td>
@@ -5123,9 +5123,9 @@ async function loadInvestorPortfolio(investorId = null) {
     if (summaryEl) {
       summaryEl.innerHTML = `
         <div class="metric-card metric-card-1"><div class="metric-content"><span class="metric-label">Investments</span><strong class="metric-value">${data.summary.totalInvestments}</strong></div></div>
-        <div class="metric-card metric-card-2"><div class="metric-content"><span class="metric-label">Active Amount</span><strong class="metric-value">$${Number(data.summary.activeAmount || 0).toFixed(2)}</strong></div></div>
-        <div class="metric-card metric-card-3"><div class="metric-content"><span class="metric-label">Sold Amount</span><strong class="metric-value">$${Number(data.summary.soldAmount || 0).toFixed(2)}</strong></div></div>
-        <div class="metric-card metric-card-5"><div class="metric-content"><span class="metric-label">Total Invested</span><strong class="metric-value">$${Number(data.summary.totalAmount || 0).toFixed(2)}</strong></div></div>
+        <div class="metric-card metric-card-2"><div class="metric-content"><span class="metric-label">Active Amount</span><strong class="metric-value">${formatMoney(Number(data.summary.activeAmount || 0), 2)}</strong></div></div>
+        <div class="metric-card metric-card-3"><div class="metric-content"><span class="metric-label">Sold Amount</span><strong class="metric-value">${formatMoney(Number(data.summary.soldAmount || 0), 2)}</strong></div></div>
+        <div class="metric-card metric-card-5"><div class="metric-content"><span class="metric-label">Total Invested</span><strong class="metric-value">${formatMoney(Number(data.summary.totalAmount || 0), 2)}</strong></div></div>
       `;
     }
 
@@ -5138,7 +5138,7 @@ async function loadInvestorPortfolio(investorId = null) {
       byTypeEl.innerHTML = data.byType.map((bucket) => `
         <section class="panel-card" style="margin-top: 0.85rem;">
           <h3 style="margin: 0 0 0.35rem;">${bucket.investmentType}</h3>
-          <p class="table-subtitle">${bucket.count} investment(s) · Total $${Number(bucket.totalAmount || 0).toFixed(2)} · Active $${Number(bucket.activeAmount || 0).toFixed(2)}</p>
+          <p class="table-subtitle">${bucket.count} investment(s) · Total ${formatMoney(Number(bucket.totalAmount || 0), 2)} · Active ${formatMoney(Number(bucket.activeAmount || 0), 2)}</p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>
@@ -5154,7 +5154,7 @@ async function loadInvestorPortfolio(investorId = null) {
                 ${bucket.investments.map((item) => `
                   <tr>
                     <td><strong>${item.investmentCode || '-'}</strong></td>
-                    <td>$${Number(item.amount || 0).toFixed(2)}</td>
+                    <td>${formatMoney(Number(item.amount || 0), 2)}</td>
                     <td>${item.projectManager?.name || 'Unassigned'}</td>
                     <td>${item.status || '-'}</td>
                     <td>${item.createdAt ? new Date(item.createdAt).toLocaleString() : '-'}</td>
@@ -5469,16 +5469,16 @@ function applyInvestmentDashboardSummary(summary = {}) {
   const soldCount = summary.soldCount ?? 0;
 
   if (dashboardTotalInvestment) {
-    dashboardTotalInvestment.textContent = `$${total.toFixed(0)}`;
+    dashboardTotalInvestment.textContent = `${formatMoney(total, 0)}`;
   }
 
   const activeAmount = document.getElementById('dashboardInvestmentActiveAmount');
   const soldAmount = document.getElementById('dashboardInvestmentSoldAmount');
   if (activeAmount) {
-    activeAmount.textContent = `$${active.toFixed(0)}`;
+    activeAmount.textContent = `${formatMoney(active, 0)}`;
   }
   if (soldAmount) {
-    soldAmount.textContent = `$${sold.toFixed(0)}`;
+    soldAmount.textContent = `${formatMoney(sold, 0)}`;
   }
 
   const investedNote = document.getElementById('dashboardInvestmentInvestedNote');
@@ -5488,13 +5488,13 @@ function applyInvestmentDashboardSummary(summary = {}) {
   }
   if (soldNote) {
     soldNote.textContent = soldProceeds > 0
-      ? `${soldCount} sold · proceeds $${soldProceeds.toFixed(0)}`
+      ? `${soldCount} sold · proceeds ${formatMoney(soldProceeds, 0)}`
       : `${soldCount} sold investment${soldCount === 1 ? '' : 's'}`;
   }
 
   const financeListInvestments = document.getElementById('financeListInvestments');
   if (financeListInvestments) {
-    financeListInvestments.textContent = `$${total.toFixed(2)}`;
+    financeListInvestments.textContent = `${formatMoney(total, 2)}`;
   }
 
   const investmentSoldAmount = document.getElementById('investmentSoldAmount');
@@ -5502,14 +5502,14 @@ function applyInvestmentDashboardSummary(summary = {}) {
   const investmentPageTotalNote = document.getElementById('investmentPageTotalNote');
   if (investmentSoldAmount) {
     investmentSoldAmount.textContent = soldProceeds > 0
-      ? `$${sold.toFixed(2)} invested · $${soldProceeds.toFixed(2)} sale proceeds`
-      : `$${sold.toFixed(2)} sold amount`;
+      ? `${formatMoney(sold, 2)} invested · ${formatMoney(soldProceeds, 2)} sale proceeds`
+      : `${formatMoney(sold, 2)} sold amount`;
   }
   if (investmentPageTotal) {
-    investmentPageTotal.textContent = `$${total.toFixed(2)}`;
+    investmentPageTotal.textContent = `${formatMoney(total, 2)}`;
   }
   if (investmentPageTotalNote) {
-    investmentPageTotalNote.textContent = `$${active.toFixed(2)} running · $${sold.toFixed(2)} sold`;
+    investmentPageTotalNote.textContent = `${formatMoney(active, 2)} running · ${formatMoney(sold, 2)} sold`;
   }
 }
 
@@ -5540,15 +5540,15 @@ async function loadMonthlyContributionDashboard() {
     if (givenSubtitle) givenSubtitle.textContent = `Paid in ${monthLabel}`;
     if (notGivenSubtitle) notGivenSubtitle.textContent = `Not paid in ${monthLabel}`;
     if (givenCountNumber) givenCountNumber.textContent = String(report.paidCount || 0);
-    if (givenTotal) givenTotal.textContent = `$${Number(report.paidTotal || 0).toFixed(2)}`;
+    if (givenTotal) givenTotal.textContent = `${formatMoney(Number(report.paidTotal || 0), 2)}`;
     if (notGivenCountNumber) notGivenCountNumber.textContent = String(report.unpaidCount || 0);
-    if (notGivenTotal) notGivenTotal.textContent = `$${Number(report.unpaidTotal || 0).toFixed(2)}`;
+    if (notGivenTotal) notGivenTotal.textContent = `${formatMoney(Number(report.unpaidTotal || 0), 2)}`;
 
     const paidRows = report.paid || [];
     givenList.innerHTML = paidRows.length ? paidRows.map((row) => `
       <li class="monthly-contribution-row">
         <span class="monthly-contribution-name">${row.member?.name || 'Unknown'}</span>
-        <span class="monthly-contribution-amount">$${Number(row.amount || 0).toFixed(2)}</span>
+        <span class="monthly-contribution-amount">${formatMoney(Number(row.amount || 0), 2)}</span>
       </li>
     `).join('') : '<li class="table-subtitle">No deposits recorded this month yet.</li>';
 
@@ -5556,7 +5556,7 @@ async function loadMonthlyContributionDashboard() {
     notGivenList.innerHTML = unpaidRows.length ? unpaidRows.map((row) => `
       <li class="monthly-contribution-row">
         <span class="monthly-contribution-name">${row.member?.name || 'Unknown'}</span>
-        <span class="monthly-contribution-amount monthly-contribution-amount-warn">${report.expectedAmount ? `$${Number(row.expectedAmount || 0).toFixed(2)} due` : 'Not paid'}</span>
+        <span class="monthly-contribution-amount monthly-contribution-amount-warn">${report.expectedAmount ? `${formatMoney(Number(row.expectedAmount || 0), 2)} due` : 'Not paid'}</span>
       </li>
     `).join('') : '<li class="table-subtitle">All active members deposited this month.</li>';
   } catch (error) {
@@ -5601,13 +5601,13 @@ async function loadInvestments() {
     const summary = data.summary || {};
 
     if (investmentTotalSavings) {
-      investmentTotalSavings.textContent = `$${Number(summary.totalSavings || 0).toFixed(2)}`;
+      investmentTotalSavings.textContent = `${formatMoney(Number(summary.totalSavings || 0), 2)}`;
     }
     if (investmentActiveCount) {
       investmentActiveCount.textContent = summary.activeCount ?? societyActiveInvestments.length;
     }
     if (investmentActiveInvested) {
-      investmentActiveInvested.textContent = `$${Number(summary.activeInvested || 0).toFixed(2)}`;
+      investmentActiveInvested.textContent = `${formatMoney(Number(summary.activeInvested || 0), 2)}`;
     }
     if (investmentSoldCount) {
       investmentSoldCount.textContent = summary.soldCount ?? societySoldInvestments.length;
@@ -5659,7 +5659,7 @@ function renderPendingInvestmentApprovals(pendingInvestments = []) {
         <td><strong>${item.investmentCode || '-'}</strong></td>
         <td>${item.investor?.name || item.investorName || '-'}</td>
         <td>${item.investmentType || '-'}</td>
-        <td>$${Number(item.amount || 0).toFixed(2)}</td>
+        <td>${formatMoney(Number(item.amount || 0), 2)}</td>
         <td>${item.displayStatus || item.status}</td>
         <td>${tracking.approvedCount ?? 0}/${tracking.totalMembers ?? 0}</td>
         <td>${tracking.pendingCount ?? 0}</td>
@@ -5693,7 +5693,7 @@ async function showInvestmentApprovalDetail(investmentId) {
 
     panel.innerHTML = `
       <h3 style="margin:0 0 0.4rem;">${investment.investmentCode || 'Investment'} · Approval Tracking</h3>
-      <p class="table-subtitle">${tracking.displayStatus || investment.status} · $${Number(investment.amount || 0).toFixed(2)}</p>
+      <p class="table-subtitle">${tracking.displayStatus || investment.status} · ${formatMoney(Number(investment.amount || 0), 2)}</p>
       <div class="metrics-grid u-my-1">
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Approved</span><strong class="metric-value">${tracking.approvedCount || 0}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Not Yet Approved</span><strong class="metric-value">${tracking.pendingCount || 0}</strong></div></div>
@@ -5784,7 +5784,7 @@ async function loadWithdrawalRequests() {
       withdrawalRequestsList.innerHTML = withdrawalRequests.map((request) => `
         <tr>
           <td>${request.member?.name || 'Unknown'}</td>
-          <td>$${Number(request.amount || 0).toFixed(2)}</td>
+          <td>${formatMoney(Number(request.amount || 0), 2)}</td>
           <td>${request.status}</td>
           <td>${request.reason || '-'}</td>
           <td>
@@ -5877,9 +5877,9 @@ function buildLoanClearanceStatusHtml(loanSummary = {}) {
       <div class="loan-clearance-banner loan-clearance-active">
         <strong>Active Loan — Payment Due</strong>
         <p class="table-subtitle">
-          ${formatLoanTypeLabel(loanSummary.loanType)} loan of $${Number(loanSummary.originalAmount || 0).toFixed(2)} —
-          outstanding balance: <strong>$${Number(loanSummary.outstandingBalance || 0).toFixed(2)}</strong>
-          (repaid so far: $${Number(loanSummary.totalRepaid || 0).toFixed(2)}).
+          ${formatLoanTypeLabel(loanSummary.loanType)} loan of ${formatMoney(Number(loanSummary.originalAmount || 0), 2)} —
+          outstanding balance: <strong>${formatMoney(Number(loanSummary.outstandingBalance || 0), 2)}</strong>
+          (repaid so far: ${formatMoney(Number(loanSummary.totalRepaid || 0), 2)}).
           Record cash or office payments below.
         </p>
       </div>
@@ -5892,8 +5892,8 @@ function buildLoanClearanceStatusHtml(loanSummary = {}) {
         <strong>Loan Cleared</strong>
         <p class="table-subtitle">
           This member has fully repaid their ${formatLoanTypeLabel(loanSummary.loanType)} loan of
-          $${Number(loanSummary.originalAmount || 0).toFixed(2)}.
-          Total repaid: <strong>$${Number(loanSummary.totalRepaid || 0).toFixed(2)}</strong>.
+          ${formatMoney(Number(loanSummary.originalAmount || 0), 2)}.
+          Total repaid: <strong>${formatMoney(Number(loanSummary.totalRepaid || 0), 2)}</strong>.
           ${loanSummary.clearedAt ? `Cleared on ${new Date(loanSummary.clearedAt).toLocaleString()}.` : ''}
         </p>
       </div>
@@ -5933,14 +5933,14 @@ function applyLoanPortfolioSummary(summary = {}) {
   if (dashboardTakers) dashboardTakers.textContent = takers;
   if (dashboardActive) dashboardActive.textContent = active;
   if (dashboardOutstanding) {
-    dashboardOutstanding.textContent = `${notPaid} not paid · $${outstanding.toFixed(2)} due`;
+    dashboardOutstanding.textContent = `${notPaid} not paid · ${formatMoney(outstanding, 2)} due`;
   }
   if (dashboardTakersNote) {
     dashboardTakersNote.textContent = `${takers} received loan money`;
   }
   if (pageTakers) pageTakers.textContent = takers;
   if (pageActive) pageActive.textContent = active;
-  if (pageOutstanding) pageOutstanding.textContent = `$${outstanding.toFixed(2)}`;
+  if (pageOutstanding) pageOutstanding.textContent = `${formatMoney(outstanding, 2)}`;
   if (pageNotPaid) pageNotPaid.textContent = `${notPaid} not paid · ${paid} paid this month`;
   if (pageMonthLabel) pageMonthLabel.textContent = monthLabel;
 }
@@ -6060,8 +6060,8 @@ async function loadLoanTakers() {
       <tr>
         <td>${renderLoanPortfolioMemberCell(entry.member)}</td>
         <td>${entry.totalApplications || 0}</td>
-        <td>$${Number(entry.totalBorrowed || 0).toFixed(2)}</td>
-        <td>$${Number(entry.totalOutstanding || 0).toFixed(2)}</td>
+        <td>${formatMoney(Number(entry.totalBorrowed || 0), 2)}</td>
+        <td>${formatMoney(Number(entry.totalOutstanding || 0), 2)}</td>
         <td>${entry.lastLoanDate ? new Date(entry.lastLoanDate).toLocaleDateString() : '-'}</td>
         <td>${formatLoanStatusBadge(entry.lastLoanStatus)}</td>
         <td>${renderLoanPortfolioActions(entry.memberId, { showPayment: Number(entry.totalOutstanding || 0) > 0 })}</td>
@@ -6092,11 +6092,11 @@ async function loadActiveBorrowers() {
     list.innerHTML = borrowers.length ? borrowers.map((entry) => `
       <tr>
         <td>${renderLoanPortfolioMemberCell(entry.member)}</td>
-        <td>$${Number(entry.totalOutstanding || 0).toFixed(2)}</td>
-        <td>$${Number(entry.totalRepaid || 0).toFixed(2)}</td>
+        <td>${formatMoney(Number(entry.totalOutstanding || 0), 2)}</td>
+        <td>${formatMoney(Number(entry.totalRepaid || 0), 2)}</td>
         <td>${formatMonthlyPaymentBadge(entry)}</td>
         <td>${entry.lastPaymentDate
-          ? `$${Number(entry.lastPaymentAmount || 0).toFixed(2)}<br><small>${new Date(entry.lastPaymentDate).toLocaleDateString()}</small>`
+          ? `${formatMoney(Number(entry.lastPaymentAmount || 0), 2)}<br><small>${new Date(entry.lastPaymentDate).toLocaleDateString()}</small>`
           : 'No payment yet'
         }</td>
         <td>${entry.lastLoanDate ? new Date(entry.lastLoanDate).toLocaleDateString() : '-'}</td>
@@ -6126,7 +6126,7 @@ function formatLoanMaxEligible(loan = {}) {
   if (loan.loanType === 'emergency') {
     return 'Unlimited';
   }
-  return `$${Number(loan.maxEligibleAmount || 0).toFixed(2)}`;
+  return `${formatMoney(Number(loan.maxEligibleAmount || 0), 2)}`;
 }
 
 function buildLoanDocumentLinks(documents = []) {
@@ -6145,9 +6145,9 @@ function buildLoanReviewHtml(loan = {}) {
       <section class="panel-card">
         <h3>${formatLoanTypeLabel(loan.loanType)} Loan — <button type="button" class="member-loan-hub-link" data-member-id="${member._id || ''}">${member.name || 'Unknown'}</button></h3>
         <div class="member-profile-meta">
-          <span class="member-profile-meta-pill">Amount: $${Number(loan.amount || 0).toFixed(2)}</span>
-          <span class="member-profile-meta-pill">Savings: $${Number(loan.memberSavingsAtApply || member.savings || 0).toFixed(2)}</span>
-          <span class="member-profile-meta-pill">Max Eligible (80%): ${loan.loanType === 'emergency' ? 'Unlimited' : `$${Number(loan.maxEligibleAmount || 0).toFixed(2)}`}</span>
+          <span class="member-profile-meta-pill">Amount: ${formatMoney(Number(loan.amount || 0), 2)}</span>
+          <span class="member-profile-meta-pill">Savings: ${formatMoney(Number(loan.memberSavingsAtApply || member.savings || 0), 2)}</span>
+          <span class="member-profile-meta-pill">Max Eligible (80%): ${loan.loanType === 'emergency' ? 'Unlimited' : `${formatMoney(Number(loan.maxEligibleAmount || 0), 2)}`}</span>
           <span class="member-profile-meta-pill">Status: ${loan.status}</span>
           ${loan.paymentMethod ? `<span class="member-profile-meta-pill">Payment: ${formatPaymentMethodLabel(loan.paymentMethod)}</span>` : ''}
           ${loan.autoRejected ? '<span class="status-badge status-fail">Auto-rejected</span>' : ''}
@@ -6275,7 +6275,7 @@ function bindLoanReviewUi() {
       if (messageEl) {
         messageEl.classList.remove('error');
         messageEl.classList.add('success');
-        messageEl.textContent = `Transfer of $${Number(data.loan?.amount || 0).toFixed(2)} recorded. Member can now see it on their panel.`;
+        messageEl.textContent = `Transfer of ${formatMoney(Number(data.loan?.amount || 0), 2)} recorded. Member can now see it on their panel.`;
       }
 
       if (modal && !modal.classList.contains('hidden')) {
@@ -6375,13 +6375,13 @@ async function loadLoanApplications() {
           <br><small>${loan.member?.email || ''}</small>
         </td>
         <td>${formatLoanTypeLabel(loan.loanType)}</td>
-        <td>$${Number(loan.amount || 0).toFixed(2)}</td>
-        <td>$${Number(loan.memberSavingsAtApply || loan.member?.savings || 0).toFixed(2)}<br><small>Max: ${formatLoanMaxEligible(loan)}</small></td>
+        <td>${formatMoney(Number(loan.amount || 0), 2)}</td>
+        <td>${formatMoney(Number(loan.memberSavingsAtApply || loan.member?.savings || 0), 2)}<br><small>Max: ${formatLoanMaxEligible(loan)}</small></td>
         <td>${loan.reason || '-'}</td>
         <td>${loan.witnessName || '-'}<br><small>${loan.witnessPhone || ''}</small></td>
-        <td>${formatLoanStatusBadge(loan.status)}${loan.autoRejected ? '<br><small>Auto-rejected</small>' : ''}${loan.status === 'disbursed' ? `<br><small>Outstanding: $${Number(loan.outstandingBalance ?? loan.amount ?? 0).toFixed(2)}</small>` : ''}${loan.status === 'approved' ? '<br><small>Awaiting transfer</small>' : ''}</td>
+        <td>${formatLoanStatusBadge(loan.status)}${loan.autoRejected ? '<br><small>Auto-rejected</small>' : ''}${loan.status === 'disbursed' ? `<br><small>Outstanding: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</small>` : ''}${loan.status === 'approved' ? '<br><small>Awaiting transfer</small>' : ''}</td>
         <td>${loan.status === 'disbursed'
-          ? `$${Number(loan.amount || 0).toFixed(2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursedAt ? `<br><small>${new Date(loan.disbursedAt).toLocaleString()}</small>` : ''}`
+          ? `${formatMoney(Number(loan.amount || 0), 2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursedAt ? `<br><small>${new Date(loan.disbursedAt).toLocaleString()}</small>` : ''}`
           : loan.status === 'approved'
             ? '<span class="status-badge status-pending">Pending Transfer</span>'
             : '-'
@@ -6422,11 +6422,11 @@ async function loadLoanRepayments() {
     list.innerHTML = repayments.length ? repayments.map((item) => `
       <tr>
         <td>${item.member?.name || 'Unknown'}<br><small>${item.member?.email || ''}</small></td>
-        <td>${formatLoanTypeLabel(item.loan?.loanType)}<br><small>$${Number(item.loan?.amount || 0).toFixed(2)}</small></td>
-        <td>$${Number(item.amount || 0).toFixed(2)}</td>
+        <td>${formatLoanTypeLabel(item.loan?.loanType)}<br><small>${formatMoney(Number(item.loan?.amount || 0), 2)}</small></td>
+        <td>${formatMoney(Number(item.amount || 0), 2)}</td>
         <td>${item.repaymentType === 'full' ? 'Full' : 'Installment'}</td>
         <td>${formatPaymentMethodLabel(item.paymentMethod)}</td>
-        <td>$${Number(item.loan?.outstandingBalance ?? item.balanceBefore ?? 0).toFixed(2)}</td>
+        <td>${formatMoney(Number(item.loan?.outstandingBalance ?? item.balanceBefore ?? 0), 2)}</td>
         <td>${formatRepaymentStatusBadge(item.status)}</td>
         <td>${new Date(item.createdAt).toLocaleString()}</td>
         <td>
@@ -6652,10 +6652,10 @@ function bindDividendUi() {
       previewBody.innerHTML = (data.preview || []).map((row) => `
         <tr>
           <td>${row.memberName}</td>
-          <td>$${Number(row.savings || 0).toFixed(2)}</td>
-          <td>$${Number(row.profit || 0).toFixed(2)}</td>
+          <td>${formatMoney(Number(row.savings || 0), 2)}</td>
+          <td>${formatMoney(Number(row.profit || 0), 2)}</td>
           <td>${Number(row.weight || 0).toFixed(2)}</td>
-          <td>$${Number(row.dividendShare || 0).toFixed(2)}</td>
+          <td>${formatMoney(Number(row.dividendShare || 0), 2)}</td>
         </tr>
       `).join('') || '<tr><td colspan="5">No active members found.</td></tr>';
     });

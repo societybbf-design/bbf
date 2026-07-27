@@ -1,3 +1,4 @@
+const { formatMoney } = require('../services/moneyFormat');
 const router = require('express').Router();
 const {
   getTargetForMonth,
@@ -75,7 +76,7 @@ router.put('/:yearMonth', writeTargets, requirePasswordConfirmation, async (req,
     });
     return res.json({
       ...result,
-      message: `Fixed target for ${result.target.monthLabel} set to $${Number(result.target.amount).toFixed(2)}. Member dues synced.`,
+      message: `Fixed target for ${result.target.monthLabel} set to ${formatMoney(Number(result.target.amount), 2)}. Member dues synced.`,
     });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to save month target.' });

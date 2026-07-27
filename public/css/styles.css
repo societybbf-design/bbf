@@ -3055,6 +3055,27 @@ html:not([data-theme="light"]) .theme-toggle-btn .theme-icon-sun,
 .dashboard-quick-btn-deposit { background: linear-gradient(135deg, #db2777, #ec4899); }
 .dashboard-quick-btn-loan { background: linear-gradient(135deg, #2563eb, #3b82f6); }
 .dashboard-quick-btn-member { background: linear-gradient(135deg, #d97706, #f59e0b); }
+.dashboard-quick-btn-ceo { background: linear-gradient(135deg, #0f766e, #14b8a6); color: #fff; }
+.dashboard-quick-btn-users { background: linear-gradient(135deg, #4f46e5, #06b6d4); color: #fff; }
+
+.metric-content {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.metric-value,
+.kpi-one-number {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(0.95rem, 2.8vw, 1.65rem);
+}
+
+.investment-kpi-breakdown-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 
 .dashboard-kpi-grid .dashboard-kpi-card {
   min-height: 132px;
@@ -3110,10 +3131,13 @@ html:not([data-theme="light"]) .theme-toggle-btn .theme-icon-sun,
 }
 
 .monthly-kpi-amount {
-  font-size: 0.95rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(0.85rem, 2.4vw, 0.95rem);
   font-weight: 700;
   color: #34d399;
-  white-space: nowrap;
 }
 
 .monthly-kpi-amount-warn {

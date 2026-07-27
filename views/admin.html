@@ -219,11 +219,11 @@
           <span class="dashboard-quick-icon">👥</span>
           <span data-i18n="admin.quickActions.manageMembers">Manage Members</span>
         </button>
-        <a href="/user-management" class="dashboard-quick-btn dashboard-quick-btn-ceo hidden" data-developer-nav>
+        <a href="/user-management" class="dashboard-quick-btn dashboard-quick-btn-users hidden" data-developer-nav>
           <span class="dashboard-quick-icon">🛠️</span>
           <span data-i18n="admin.quickActions.userManagement">User Management</span>
         </a>
-        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-notice hidden" data-quick-nav="ceo" data-ceo-only>
+        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-ceo hidden" data-quick-nav="ceo" data-ceo-only>
           <span class="dashboard-quick-icon">👔</span>
           <span data-i18n="admin.quickActions.ceoPanel">CEO Panel</span>
         </button>
@@ -241,7 +241,7 @@
                 <span class="kpi-footnote" id="monthlyGivenSubtitle">members paid</span>
               </div>
               <div class="monthly-kpi-side">
-                <strong class="monthly-kpi-amount" id="monthlyGivenTotal">$0</strong>
+                <strong class="monthly-kpi-amount" id="monthlyGivenTotal">৳0</strong>
                 <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="paid">PDF</button>
               </div>
             </div>
@@ -261,7 +261,7 @@
                 <span class="kpi-footnote" id="monthlyNotGivenSubtitle">members not paid</span>
               </div>
               <div class="monthly-kpi-side">
-                <strong class="monthly-kpi-amount monthly-kpi-amount-warn" id="monthlyNotGivenTotal">$0</strong>
+                <strong class="monthly-kpi-amount monthly-kpi-amount-warn" id="monthlyNotGivenTotal">৳0</strong>
                 <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="unpaid">PDF</button>
               </div>
             </div>
@@ -293,7 +293,7 @@
           <div class="metric-icon">📊</div>
           <div class="metric-content">
             <span class="metric-label" data-i18n="admin.kpi.totalSavings">Total Savings</span>
-            <strong class="metric-value kpi-one-number" id="totalSavings">$0</strong>
+            <strong class="metric-value kpi-one-number" id="totalSavings">৳0</strong>
             <span class="kpi-footnote">Society fund</span>
           </div>
         </button>
@@ -302,7 +302,7 @@
           <div class="metric-icon">📈</div>
           <div class="metric-content">
             <span class="metric-label" data-i18n="admin.kpi.totalProfit">Total Profit</span>
-            <strong class="metric-value kpi-one-number" id="totalProfit">$0</strong>
+            <strong class="metric-value kpi-one-number" id="totalProfit">৳0</strong>
             <span class="kpi-footnote">Distributed earnings</span>
           </div>
         </button>
@@ -314,15 +314,15 @@
             <ul class="investment-kpi-breakdown" aria-label="Investment amount breakdown">
               <li class="investment-kpi-breakdown-item is-total">
                 <span class="investment-kpi-breakdown-label" data-i18n="admin.kpi.breakdownTotal">Total</span>
-                <strong class="investment-kpi-breakdown-value" id="dashboardTotalInvestment">$0</strong>
+                <strong class="investment-kpi-breakdown-value" id="dashboardTotalInvestment">৳0</strong>
               </li>
               <li class="investment-kpi-breakdown-item is-active">
                 <span class="investment-kpi-breakdown-label" data-i18n="admin.kpi.breakdownInvested">Invested</span>
-                <strong class="investment-kpi-breakdown-value" id="dashboardInvestmentActiveAmount">$0</strong>
+                <strong class="investment-kpi-breakdown-value" id="dashboardInvestmentActiveAmount">৳0</strong>
               </li>
               <li class="investment-kpi-breakdown-item is-sold">
                 <span class="investment-kpi-breakdown-label" data-i18n="admin.kpi.breakdownSold">Sold</span>
-                <strong class="investment-kpi-breakdown-value" id="dashboardInvestmentSoldAmount">$0</strong>
+                <strong class="investment-kpi-breakdown-value" id="dashboardInvestmentSoldAmount">৳0</strong>
               </li>
             </ul>
             <div class="investment-kpi-meta-row">
@@ -361,10 +361,10 @@
           </div>
           <div class="dashboard-finance-body">
             <ul class="dashboard-finance-list" id="dashboardFinanceList">
-              <li><span class="finance-dot finance-dot-savings"></span> Total Savings <strong id="financeListSavings">$0</strong></li>
-              <li><span class="finance-dot finance-dot-profit"></span> Total Profit <strong id="financeListProfit">$0</strong></li>
+              <li><span class="finance-dot finance-dot-savings"></span> Total Savings <strong id="financeListSavings">৳0</strong></li>
+              <li><span class="finance-dot finance-dot-profit"></span> Total Profit <strong id="financeListProfit">৳0</strong></li>
               <li><span class="finance-dot finance-dot-deposits"></span> Deposit Records <strong id="financeListDeposits">0</strong></li>
-              <li><span class="finance-dot finance-dot-investments"></span> Total Investment <strong id="financeListInvestments">$0</strong></li>
+              <li><span class="finance-dot finance-dot-investments"></span> Total Investment <strong id="financeListInvestments">৳0</strong></li>
             </ul>
             <div class="dashboard-chart-wrap">
               <canvas id="depositChart" height="220"></canvas>
@@ -508,7 +508,7 @@
             </div>
             <div class="form-group">
               <label data-i18n="admin.forms.amountUsd">
-                Amount ($)
+                Amount (৳)
                 <input type="number" id="depositAmount" min="0.01" step="0.01" placeholder="0.00" required />
               </label>
               <p class="table-subtitle" id="depositAmountHint">Enter the deposit amount for this member.</p>
@@ -625,7 +625,7 @@
             </button>
             <article class="profile-finance-card profile-finance-profit">
               <span>Total Outstanding</span>
-              <strong id="loanPageTotalOutstanding">$0</strong>
+              <strong id="loanPageTotalOutstanding">৳0</strong>
               <small id="loanPageMonthLabel">This month</small>
             </article>
           </div>
@@ -820,7 +820,7 @@
             <div class="metric-icon">💰</div>
             <div class="metric-content">
               <span class="metric-label" data-i18n="admin.kpi.totalSavings">Total Savings</span>
-              <strong class="metric-value" id="investmentTotalSavings">$0</strong>
+              <strong class="metric-value" id="investmentTotalSavings">৳0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-1">
@@ -834,7 +834,7 @@
             <div class="metric-icon">📈</div>
             <div class="metric-content">
               <span class="metric-label" data-i18n="admin.kpi.runningAmount">Running Amount</span>
-              <strong class="metric-value" id="investmentActiveInvested">$0</strong>
+              <strong class="metric-value" id="investmentActiveInvested">৳0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-4">
@@ -842,14 +842,14 @@
             <div class="metric-content">
               <span class="metric-label" data-i18n="admin.kpi.soldInvestments">Sold Investments</span>
               <strong class="metric-value" id="investmentSoldCount">0</strong>
-              <span class="kpi-footnote" id="investmentSoldAmount">$0 sold amount</span>
+              <span class="kpi-footnote" id="investmentSoldAmount">৳0 sold amount</span>
             </div>
           </div>
           <div class="metric-card metric-card-5">
             <div class="metric-icon">💵</div>
             <div class="metric-content">
               <span class="metric-label" data-i18n="admin.kpi.totalInvestment">Total Investment</span>
-              <strong class="metric-value" id="investmentPageTotalInvested">$0</strong>
+              <strong class="metric-value" id="investmentPageTotalInvested">৳0</strong>
               <span class="kpi-footnote" id="investmentPageTotalNote">Invested + sold combined</span>
             </div>
           </div>
@@ -1023,7 +1023,7 @@
             </div>
             <div class="form-group">
               <label data-i18n="admin.forms.saleReturnAmount">
-                Sale / Return Amount ($)
+                Sale / Return Amount (৳)
                 <input type="number" name="saleAmount" id="profitSaleAmount" class="profit-sale-input" min="0" step="0.01" placeholder="1500.00" />
               </label>
             </div>
@@ -1031,7 +1031,7 @@
           <div class="form-row-2">
             <div class="form-group">
               <label data-i18n="admin.forms.profitAmount">
-                Profit Amount ($)
+                Profit Amount (৳)
                 <input type="number" name="profitAmount" id="profitAmount" class="profit-profit-input" min="0.01" step="0.01" placeholder="Auto or manual" />
               </label>
             </div>
@@ -1077,7 +1077,7 @@
               </div>
               <div class="form-group">
                 <label data-i18n="admin.forms.saleReturnAmount">
-                Sale / Return Amount ($)
+                Sale / Return Amount (৳)
                   <input type="number" name="saleAmount" id="lossSaleAmount" class="loss-sale-input" min="0" step="0.01" placeholder="800.00" required />
                 </label>
               </div>
@@ -1085,7 +1085,7 @@
             <div class="form-row-2">
               <div class="form-group">
                 <label data-i18n="admin.forms.lossAmount">
-                Loss Amount ($)
+                Loss Amount (৳)
                   <input type="number" name="lossAmount" id="lossAmount" class="loss-amount-input" min="0.01" step="0.01" placeholder="Auto-calculated" />
                 </label>
               </div>
@@ -1132,7 +1132,7 @@
           <form id="profitDistributionForm" class="add-member-form">
             <div class="form-group">
               <label data-i18n="admin.forms.totalProfitAmount">
-                Total Profit Amount ($)
+                Total Profit Amount (৳)
                 <input type="number" name="totalAmount" min="0.01" step="0.01" placeholder="500.00" required />
               </label>
             </div>
@@ -1154,7 +1154,7 @@
           <form id="dividendPreviewForm" class="add-member-form">
             <div class="form-group">
               <label data-i18n="admin.forms.dividendPoolAmount">
-                Dividend Pool Amount ($)
+                Dividend Pool Amount (৳)
                 <input type="number" name="totalAmount" id="dividendPoolAmount" min="0.01" step="0.01" placeholder="1000.00" required />
               </label>
             </div>
@@ -1261,7 +1261,7 @@
               </div>
               <div class="form-group">
                 <label data-i18n="admin.forms.saleAmountUsd">
-                Sale Amount ($)
+                Sale Amount (৳)
                   <input type="number" name="saleAmount" id="sellSaleAmount" min="0" step="0.01" placeholder="0.00" required />
                 </label>
               </div>
@@ -1269,13 +1269,13 @@
             <div class="form-row-2">
               <div class="form-group">
                 <label data-i18n="admin.forms.additionalCosts">
-                Additional Costs ($)
+                Additional Costs (৳)
                   <input type="number" name="additionalCosts" id="sellAdditionalCosts" min="0" step="0.01" value="0" />
                 </label>
               </div>
               <div class="form-group">
                 <label data-i18n="admin.forms.tax">
-                Tax ($)
+                Tax (৳)
                   <input type="number" name="tax" id="sellTax" min="0" step="0.01" value="0" />
                 </label>
               </div>
@@ -1610,7 +1610,7 @@
               </div>
               <div class="form-group">
                 <label data-i18n="admin.forms.exactSettlementAmount">
-                Exact settlement amount paid ($)
+                Exact settlement amount paid (৳)
                   <input type="number" name="entryAmountPaid" id="replaceEntryAmountInput" min="0" step="0.01" required />
                 </label>
               </div>
@@ -1741,7 +1741,7 @@
         </div>
         <div class="form-group">
           <label data-i18n="admin.forms.profitEarned">
-                Profit Earned ($)
+                Profit Earned (৳)
             <input type="number" name="profit" min="0" step="0.01" placeholder="0.00" />
           </label>
         </div>
@@ -1791,7 +1791,7 @@
         </div>
         <div class="form-group">
           <label data-i18n="admin.forms.committedAmount">
-                Committed Amount ($)
+                Committed Amount (৳)
             <input type="number" name="amount" min="0.01" step="0.01" placeholder="1000.00" required />
           </label>
         </div>
@@ -1873,7 +1873,7 @@
         </div>
         <div class="form-group">
           <label data-i18n="admin.forms.investmentAmountUsd">
-                Investment Amount ($)
+                Investment Amount (৳)
             <input type="number" name="amount" min="0.01" step="0.01" placeholder="1000.00" required />
           </label>
         </div>
@@ -2026,6 +2026,7 @@
   <script defer src="/static/js/table-cards.js"></script>
   <script defer src="/static/js/password-confirm.js"></script>
   <script defer src="/static/js/chat-shared.js"></script>
+  <script defer src="/static/js/money.js"></script>
   <script defer src="/static/js/admin.js"></script>
 </body>
 </html>

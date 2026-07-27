@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const { removeMember } = require('./memberLifecycleService');
@@ -76,7 +77,7 @@ async function getEntryValuation({ replaceMemberId = null } = {}) {
       ? 'Departing member savings + profit + advance (exit settlement value)'
       : activeCount > 0
         ? 'Equal share = (total savings + profit + advance) ÷ active members'
-        : 'First member — no buy-in required (entry $0.00)',
+        : 'First member — no buy-in required (entry ৳0.00)',
     departing: departing
       ? {
         id: departing._id,
@@ -191,7 +192,7 @@ async function completeMemberBuyIn({
 
   if (!amountsMatch(paid, required)) {
     const error = new Error(
-      `Buy-in must be exactly $${required.toFixed(2)} (current share valuation). Received $${paid.toFixed(2)}.`
+      `Buy-in must be exactly ${formatMoney(required, 2)} (current share valuation). Received ${formatMoney(paid, 2)}.`
     );
     error.status = 400;
     throw error;
@@ -201,7 +202,7 @@ async function completeMemberBuyIn({
     member: member._id,
     amount: paid,
     type: 'member_buyin',
-    notes: notes?.trim() || `Share valuation buy-in ($${required.toFixed(2)})`,
+    notes: notes?.trim() || `Share valuation buy-in (${formatMoney(required, 2)})`,
     recordedBy: String(recordedBy || '').trim(),
   });
 
@@ -239,7 +240,7 @@ async function completeMemberBuyIn({
 }
 
 /**
- * Prepare a newly created member for buy-in (or activate immediately if valuation is $0).
+ * Prepare a newly created member for buy-in (or activate immediately if valuation is ৳0).
  */
 async function prepareMemberForBuyIn(userDoc, { entryAmountPaid = null, recordedBy = '' } = {}) {
   const valuation = await getEntryValuation();
@@ -262,7 +263,7 @@ async function prepareMemberForBuyIn(userDoc, { entryAmountPaid = null, recorded
   const hasPaidNow = entryAmountPaid !== null && entryAmountPaid !== undefined && entryAmountPaid !== '';
   if (hasPaidNow && !amountsMatch(entryAmountPaid, required)) {
     const error = new Error(
-      `Buy-in must be exactly $${required.toFixed(2)} (current share valuation). Received $${money(entryAmountPaid).toFixed(2)}.`
+      `Buy-in must be exactly ${formatMoney(required, 2)} (current share valuation). Received ${formatMoney(money(entryAmountPaid), 2)}.`
     );
     error.status = 400;
     throw error;
@@ -294,7 +295,7 @@ async function prepareMemberForBuyIn(userDoc, { entryAmountPaid = null, recorded
     valuation,
     buyIn: null,
     activated: false,
-    message: `Member created as inactive. Exact buy-in of $${required.toFixed(2)} is required to activate.`,
+    message: `Member created as inactive. Exact buy-in of ${formatMoney(required, 2)} is required to activate.`,
   };
 }
 
@@ -326,7 +327,7 @@ async function replaceMember({
 
   if (!amountsMatch(paid, requiredEntry)) {
     const error = new Error(
-      `Replacement payment must be exactly $${requiredEntry.toFixed(2)} (exiting member settlement value). Received $${paid.toFixed(2)}.`
+      `Replacement payment must be exactly ${formatMoney(requiredEntry, 2)} (exiting member settlement value). Received ${formatMoney(paid, 2)}.`
     );
     error.status = 400;
     throw error;

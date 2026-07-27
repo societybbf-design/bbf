@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const Investment = require('../models/Investment');
 const User = require('../models/User');
 const InvestmentProfit = require('../models/InvestmentProfit');
@@ -60,7 +61,7 @@ async function deductFromTotalSavings(amount) {
   }
 
   if (normalizedAmount > totalSavings) {
-    const error = new Error(`Insufficient total savings. Available: $${totalSavings.toFixed(2)}`);
+    const error = new Error(`Insufficient total savings. Available: ${formatMoney(totalSavings, 2)}`);
     error.status = 400;
     throw error;
   }
@@ -579,7 +580,7 @@ async function createSocietyInvestment({
   ]);
 
   const notifyTitle = `New investment request ${investment.investmentCode}`;
-  const notifyMessage = `${normalizedName} · ${normalizedType} · $${Number(amount).toFixed(2)}. Please review and approve.`;
+  const notifyMessage = `${normalizedName} · ${normalizedType} · ${formatMoney(Number(amount), 2)}. Please review and approve.`;
 
   await Promise.all(eligibleMembers.map((member) => createMemberNotification({
     memberId: member._id,
@@ -865,7 +866,7 @@ async function completeCashierPayment(investmentId, {
   await createAdminNotification({
     type: 'general',
     title: `Investment successful: ${investment.investmentCode}`,
-    message: `Cashier completed payment of $${Number(investment.amount).toFixed(2)} to ${receiver.name}.`,
+    message: `Cashier completed payment of ${formatMoney(Number(investment.amount), 2)} to ${receiver.name}.`,
     relatedId: investment._id,
     relatedModel: 'Investment',
   });

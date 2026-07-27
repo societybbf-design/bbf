@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const ProfitPool = require('../models/ProfitPool');
 const ProfitDistribution = require('../models/ProfitDistribution');
 const { distributeAmountToMembers } = require('./profitService');
@@ -110,7 +111,7 @@ async function distributeEqually({
     throw httpError('No profit pool balance available to distribute.');
   }
   if (toDistribute > available + 0.001) {
-    throw httpError(`Cannot distribute $${toDistribute.toFixed(2)}; pool balance is $${available.toFixed(2)}.`);
+    throw httpError(`Cannot distribute ${formatMoney(toDistribute, 2)}; pool balance is ${formatMoney(available, 2)}.`);
   }
 
   const distributionResult = await distributeAmountToMembers({

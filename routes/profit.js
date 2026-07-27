@@ -1,3 +1,4 @@
+const { formatMoney } = require('../services/moneyFormat');
 const router = require('express').Router();
 const {
   distributeProfit,
@@ -40,18 +41,18 @@ router.post('/investment', manageProfit, requirePasswordConfirmation, async (req
     });
 
     const shareSummary = result.updatedMembers
-      .map((member) => `${member.memberName}: $${member.share.toFixed(2)}`)
+      .map((member) => `${member.memberName}: ${formatMoney(member.share, 2)}`)
       .join(', ');
 
     await createNotice({
       title: `Profit Recorded for ${result.investment.investmentCode}`,
-      message: `Profit of $${result.calculatedProfit.toFixed(2)} from investment ${result.investment.investmentCode} was distributed. ${shareSummary}`,
+      message: `Profit of ${formatMoney(result.calculatedProfit, 2)} from investment ${result.investment.investmentCode} was distributed. ${shareSummary}`,
       author: req.session?.user?.name || 'Admin',
     });
 
     let message = `Investment return recorded. Sale proceeds credited to the bank ledger.`;
     if (result.bookBalance != null) {
-      message += ` Book balance now $${Number(result.bookBalance).toFixed(2)}.`;
+      message += ` Book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
     }
 
     return res.status(201).json({ ...result, message });
@@ -74,12 +75,12 @@ router.post('/investment-loss', manageProfit, requirePasswordConfirmation, async
     });
 
     const shareSummary = result.updatedMembers
-      .map((member) => `${member.memberName}: -$${member.share.toFixed(2)}`)
+      .map((member) => `${member.memberName}: -${formatMoney(member.share, 2)}`)
       .join(', ');
 
     await createNotice({
       title: `Loss Recorded for ${result.investment.investmentCode}`,
-      message: `Loss of $${result.calculatedLoss.toFixed(2)} from investment ${result.investment.investmentCode} was shared equally. ${shareSummary}`,
+      message: `Loss of ${formatMoney(result.calculatedLoss, 2)} from investment ${result.investment.investmentCode} was shared equally. ${shareSummary}`,
       author: req.session?.user?.name || 'Admin',
     });
 
@@ -111,12 +112,12 @@ router.post('/distribute', manageProfit, requirePasswordConfirmation, async (req
     });
 
     const shareSummary = result.updatedMembers
-      .map((member) => `${member.memberName}: $${member.share.toFixed(2)}`)
+      .map((member) => `${member.memberName}: ${formatMoney(member.share, 2)}`)
       .join(', ');
 
     await createNotice({
       title: 'Profit Distributed',
-      message: `A profit of $${Number(totalAmount).toFixed(2)} was distributed to all members. ${shareSummary}`,
+      message: `A profit of ${formatMoney(Number(totalAmount), 2)} was distributed to all members. ${shareSummary}`,
       author: req.session?.user?.name || 'Admin',
     });
 
@@ -124,7 +125,7 @@ router.post('/distribute', manageProfit, requirePasswordConfirmation, async (req
       const member = await User.findById(item.memberId).select('email phone name');
       return notifyMemberByEmailAndSms(member, {
         subject: 'Profit Distribution Received',
-        message: `Dear ${item.memberName}, you received $${item.share.toFixed(2)} from the latest profit distribution.`,
+        message: `Dear ${item.memberName}, you received ${formatMoney(item.share, 2)} from the latest profit distribution.`,
       });
     }));
 
@@ -174,12 +175,12 @@ router.post('/dividend/distribute', manageProfit, requirePasswordConfirmation, a
     });
 
     const shareSummary = result.updatedMembers
-      .map((member) => `${member.memberName}: $${member.share.toFixed(2)}`)
+      .map((member) => `${member.memberName}: ${formatMoney(member.share, 2)}`)
       .join(', ');
 
     await createNotice({
       title: 'Automatic Dividend Distributed',
-      message: `Dividend pool of $${Number(totalAmount).toFixed(2)} was distributed based on savings and profit. ${shareSummary}`,
+      message: `Dividend pool of ${formatMoney(Number(totalAmount), 2)} was distributed based on savings and profit. ${shareSummary}`,
       author: req.session?.user?.name || 'Admin',
     });
 
@@ -187,7 +188,7 @@ router.post('/dividend/distribute', manageProfit, requirePasswordConfirmation, a
       const member = await User.findById(item.memberId).select('email phone name');
       return notifyMemberByEmailAndSms(member, {
         subject: 'Dividend Credited',
-        message: `Dear ${item.memberName}, your dividend share of $${item.share.toFixed(2)} has been credited.`,
+        message: `Dear ${item.memberName}, your dividend share of ${formatMoney(item.share, 2)} has been credited.`,
       });
     }));
 

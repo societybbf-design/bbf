@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const { brandingSubjectSuffix } = require('./organizationBranding');
 const MonthlyContributionDue = require('../models/MonthlyContributionDue');
 const User = require('../models/User');
@@ -54,7 +55,7 @@ async function sendDuesReminders({
 
   const results = [];
   for (const target of targets) {
-    const message = `Your ${month} society contribution of $${target.unpaidAmount.toFixed(2)} is still outstanding. Please deposit at your earliest convenience.`;
+    const message = `Your ${month} society contribution of ${formatMoney(target.unpaidAmount, 2)} is still outstanding. Please deposit at your earliest convenience.`;
 
     const member = await User.findById(target.memberId).select('name email phone');
     if (!member) continue;

@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const Notice = require('../models/Notice');
@@ -28,7 +29,7 @@ async function getDuesAlert(memberData = {}, now = new Date()) {
       return {
         isOverdue,
         message: isOverdue
-          ? `Your dues are overdue. Remaining for ${yearMonth}: $${money(mine.unpaidAmount).toFixed(2)}.`
+          ? `Your dues are overdue. Remaining for ${yearMonth}: ${formatMoney(money(mine.unpaidAmount), 2)}.`
           : '',
         dueDay,
         yearMonth,
@@ -117,11 +118,11 @@ async function saveDeposit(memberId, amount, options = {}) {
   if (monthlySplit?.splitApplied) {
     const parts = [
       notesBase,
-      `Month ${monthlySplit.yearMonth} target $${money(monthlySplit.targetAmount).toFixed(2)}`,
-      towardTarget > 0 ? `applied $${towardTarget.toFixed(2)}` : null,
-      surplus > 0 ? `surplus $${surplus.toFixed(2)} → advance` : null,
+      `Month ${monthlySplit.yearMonth} target ${formatMoney(money(monthlySplit.targetAmount), 2)}`,
+      towardTarget > 0 ? `applied ${formatMoney(towardTarget, 2)}` : null,
+      surplus > 0 ? `surplus ${formatMoney(surplus, 2)} → advance` : null,
       monthlySplit.remainingUnpaid > 0
-        ? `still due $${monthlySplit.remainingUnpaid.toFixed(2)}`
+        ? `still due ${formatMoney(monthlySplit.remainingUnpaid, 2)}`
         : null,
     ].filter(Boolean);
     regularNotes = parts.join(' · ');
@@ -156,7 +157,7 @@ async function saveDeposit(memberId, amount, options = {}) {
         towardTarget: 0,
         surplusToAdvance: surplus,
         notes: notesBase
-          || `Surplus above ${monthlySplit?.yearMonth || yearMonth} fixed target of $${money(monthlySplit?.targetAmount).toFixed(2)}`,
+          || `Surplus above ${monthlySplit?.yearMonth || yearMonth} fixed target of ${formatMoney(money(monthlySplit?.targetAmount), 2)}`,
         recordedBy,
         paymentMethod,
         paymentReference,
@@ -229,7 +230,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       referenceType: 'Deposit',
       referenceId: (deposit || advanceDeposit)?._id,
       note: surplus > 0 && towardTarget > 0
-        ? `Member deposit: ${updatedMember.name} (${yearMonth}) — $${towardTarget.toFixed(2)} target + $${surplus.toFixed(2)} advance`
+        ? `Member deposit: ${updatedMember.name} (${yearMonth}) — ${formatMoney(towardTarget, 2)} target + ${formatMoney(surplus, 2)} advance`
         : surplus > 0
           ? `Member advance surplus: ${updatedMember.name} (${yearMonth})`
           : `Member deposit: ${updatedMember.name} (${yearMonth})`,

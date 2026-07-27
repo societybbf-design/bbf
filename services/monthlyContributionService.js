@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const PDFDocument = require('pdfkit');
 const Deposit = require('../models/Deposit');
 const User = require('../models/User');
@@ -164,15 +165,15 @@ function generateMonthlyContributionReportPdf(report = {}, type = 'paid') {
 
     if (report.expectedAmount != null) {
       doc.fontSize(12).fillColor('#334155').text(
-        `Month target per member: $${Number(report.expectedAmount).toFixed(2)}`
+        `Month target per member: ${formatMoney(Number(report.expectedAmount), 2)}`
       );
     }
 
     if (type === 'paid') {
-      doc.fontSize(12).fillColor('#334155').text(`Total applied to target: $${Number(report.paidTotal || 0).toFixed(2)}`);
+      doc.fontSize(12).fillColor('#334155').text(`Total applied to target: ${formatMoney(Number(report.paidTotal || 0), 2)}`);
       doc.text(`Members fully paid: ${report.paidCount || 0}`);
     } else {
-      doc.fontSize(12).fillColor('#334155').text(`Outstanding: $${Number(report.unpaidTotal || 0).toFixed(2)}`);
+      doc.fontSize(12).fillColor('#334155').text(`Outstanding: ${formatMoney(Number(report.unpaidTotal || 0), 2)}`);
       doc.text(`Members with dues: ${report.unpaidCount || 0}`);
     }
 
@@ -188,18 +189,18 @@ function generateMonthlyContributionReportPdf(report = {}, type = 'paid') {
         doc.font('Helvetica').fillColor('#334155');
         doc.text(`Email: ${member.email || 'N/A'}`);
         if (type === 'paid') {
-          doc.text(`Paid toward target: $${Number(row.amount || 0).toFixed(2)}`);
+          doc.text(`Paid toward target: ${formatMoney(Number(row.amount || 0), 2)}`);
           if (row.surplusToAdvance > 0) {
-            doc.text(`Surplus to advance: $${Number(row.surplusToAdvance || 0).toFixed(2)}`);
+            doc.text(`Surplus to advance: ${formatMoney(Number(row.surplusToAdvance || 0), 2)}`);
           }
           doc.text(`Deposits: ${row.depositCount || 0}`);
           if (row.lastDepositDate) {
             doc.text(`Last payment: ${new Date(row.lastDepositDate).toLocaleString()}`);
           }
         } else {
-          doc.text(`Expected: $${Number(row.expectedAmount || report.expectedAmount || 0).toFixed(2)}`);
-          doc.text(`Paid: $${Number(row.amount || 0).toFixed(2)}`);
-          doc.text(`Still due: $${Number(row.unpaidAmount || 0).toFixed(2)}`);
+          doc.text(`Expected: ${formatMoney(Number(row.expectedAmount || report.expectedAmount || 0), 2)}`);
+          doc.text(`Paid: ${formatMoney(Number(row.amount || 0), 2)}`);
+          doc.text(`Still due: ${formatMoney(Number(row.unpaidAmount || 0), 2)}`);
           doc.text(`Status: ${row.status || 'unpaid'}`);
         }
         doc.moveDown(0.6);

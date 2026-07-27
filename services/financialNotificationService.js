@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const { createAdminNotification } = require('./adminNotificationService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
@@ -13,7 +14,7 @@ async function notifyDepositRecorded({
 }) {
   if (!member || !deposit) return;
 
-  const amountLabel = `$${Number(deposit.amount || 0).toFixed(2)}`;
+  const amountLabel = `${formatMoney(Number(deposit.amount || 0), 2)}`;
   const channelLabel = paymentChannelLabel(paymentMethod);
   const receiptLabel = receiptNumber ? ` Receipt ${receiptNumber}.` : '';
 
@@ -48,7 +49,7 @@ async function notifyWithdrawalEvent({
 }) {
   if (!member || !request) return;
 
-  const amountLabel = `$${Number(request.amount || 0).toFixed(2)}`;
+  const amountLabel = `${formatMoney(Number(request.amount || 0), 2)}`;
   const isNew = status === 'pending';
 
   if (isNew) {
@@ -101,7 +102,7 @@ async function notifyProfitDistribution({
   distributedBy = 'Cashier',
   distributionId = null,
 }) {
-  const amountLabel = `$${Number(totalAmount || 0).toFixed(2)}`;
+  const amountLabel = `${formatMoney(Number(totalAmount || 0), 2)}`;
 
   await createAdminNotification({
     type: 'dividend',
@@ -119,7 +120,7 @@ async function notifyProfitDistribution({
       memberId,
       type: 'dividend',
       title: 'Profit credited',
-      message: `You received a profit distribution of $${shareAmount.toFixed(2)}.`,
+      message: `You received a profit distribution of ${formatMoney(shareAmount, 2)}.`,
       relatedId: distributionId,
       relatedModel: 'ProfitDistribution',
     });
@@ -128,7 +129,7 @@ async function notifyProfitDistribution({
         { name: share.memberName, email: share.email, phone: share.phone },
         {
           subject: `Profit distribution — ${brandingSubjectSuffix('en')}`,
-          message: `Dear ${share.memberName || 'Member'}, you received a profit distribution of $${shareAmount.toFixed(2)}.`,
+          message: `Dear ${share.memberName || 'Member'}, you received a profit distribution of ${formatMoney(shareAmount, 2)}.`,
         }
       );
     }
