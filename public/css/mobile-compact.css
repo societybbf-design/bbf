@@ -5,122 +5,159 @@
  */
 
 @media (max-width: 768px) {
-  /* ----- Compact top bar ----- */
-  .topbar {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "toggle heading actions"
-      "search search search";
+  /* ----- Ultra-compact single-line top bar ----- */
+  .topbar,
+  .cashier-topbar {
+    display: flex !important;
+    flex-wrap: nowrap !important;
     align-items: center;
-    gap: 0.35rem 0.5rem;
-    padding: 0.5rem 0.75rem !important;
+    gap: 0.3rem;
+    padding: 0.28rem 0.5rem !important;
+    min-height: 2.75rem;
   }
 
   .topbar-left {
-    display: contents;
+    display: flex !important;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .sidebar-toggle {
-    grid-area: toggle;
-    min-width: 40px !important;
-    min-height: 40px !important;
-    width: 40px;
-    height: 40px;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    width: 32px;
+    height: 32px;
     padding: 0;
-    font-size: 1.1rem;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    flex-shrink: 0;
   }
 
   .topbar-heading {
-    grid-area: heading;
     min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
   }
 
   .topbar-eyebrow {
     margin: 0;
-    font-size: 0.62rem;
-    letter-spacing: 0.08em;
-    line-height: 1.2;
+    font-size: 0.58rem;
+    letter-spacing: 0.04em;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .topbar-left h1,
-  .topbar-heading h1 {
-    font-size: 1.05rem !important;
-    line-height: 1.2;
+  .topbar-heading h1,
+  .cashier-topbar h1 {
+    font-size: 0.92rem !important;
+    line-height: 1.15;
     margin: 0;
-  }
-
-  .topbar-note {
-    margin: 0.15rem 0 0;
-    font-size: 0.72rem;
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .topbar-right {
-    grid-area: actions;
+  /* Hide secondary note to keep header one line tall */
+  .topbar-note {
+    display: none !important;
+  }
+
+  .topbar-right,
+  .cashier-topbar-right {
     width: auto !important;
-    display: inline-flex;
-    flex-wrap: nowrap;
+    display: inline-flex !important;
+    flex-wrap: nowrap !important;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.3rem;
+    gap: 0.2rem;
+    flex: 0 0 auto;
+    max-width: none;
   }
 
   .search-wrapper {
-    grid-area: search;
-    width: 100% !important;
-    order: unset;
-  }
-
-  /* Top bars without search — single compact row */
-  .topbar:not(:has(.search-wrapper)),
-  .cashier-topbar:not(:has(.search-wrapper)) {
-    grid-template-areas: "toggle heading actions";
-    grid-template-rows: auto;
+    width: auto !important;
+    flex: 0 1 5.75rem;
+    min-width: 3.5rem;
+    max-width: 7rem;
+    order: unset !important;
   }
 
   .search-input {
-    padding: 0.5rem 0.75rem 0.5rem 2.35rem !important;
-    font-size: 0.88rem;
-    border-radius: 10px;
-    min-height: 38px;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0.28rem 0.4rem 0.28rem 1.55rem !important;
+    font-size: 0.72rem !important;
+    border-radius: 8px;
+    min-height: 30px !important;
+    height: 30px;
   }
 
   .search-icon {
-    left: 0.7rem;
-    font-size: 0.9rem;
+    left: 0.4rem;
+    font-size: 0.72rem;
   }
 
   .theme-toggle-btn,
-  .language-toggle-btn {
-    width: 2.15rem;
-    height: 2.15rem;
-    min-width: 2.15rem;
-    min-height: 2.15rem;
-    font-size: 0.95rem;
+  .language-toggle-btn,
+  .notification-bell-btn {
+    width: 1.85rem !important;
+    height: 1.85rem !important;
+    min-width: 1.85rem !important;
+    min-height: 1.85rem !important;
+    padding: 0 !important;
+    font-size: 0.78rem !important;
+    border-radius: 8px;
+    flex-shrink: 0;
   }
 
   .notification-bell-btn {
-    min-width: 2.15rem;
-    min-height: 2.15rem;
-    padding: 0.25rem;
+    font-size: 0.85rem !important;
   }
 
-  .user-profile-menu,
+  .notification-badge {
+    transform: scale(0.85);
+    transform-origin: top right;
+  }
+
+  .user-profile-menu {
+    padding: 0;
+    gap: 0;
+    max-width: none;
+  }
+
+  .user-profile {
+    width: 1.85rem;
+    height: 1.85rem;
+    min-width: 1.85rem;
+    padding: 0;
+    font-size: 0.8rem;
+    border-radius: 8px;
+  }
+
   .cashier-profile-chip {
-    padding: 0.2rem 0.45rem 0.2rem 0.2rem;
-    gap: 0.35rem;
-    max-width: 7.5rem;
+    padding: 0.1rem 0.3rem 0.1rem 0.1rem;
+    gap: 0.25rem;
+    max-width: 5.5rem;
+  }
+
+  .cashier-profile-chip span,
+  .cashier-profile-chip strong {
+    font-size: 0.65rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .user-profile-menu img,
-  .cashier-profile-chip img {
-    width: 28px;
-    height: 28px;
+  .cashier-profile-chip img,
+  .cashier-profile-avatar {
+    width: 24px !important;
+    height: 24px !important;
   }
 
   /* ----- Page rhythm ----- */
@@ -128,8 +165,8 @@
   .staff-dashboard .page-layout,
   .ceo-dashboard .page-layout,
   .admin-dashboard .page-layout {
-    padding: 0.65rem 0.75rem 1rem !important;
-    gap: 0.65rem !important;
+    padding: 0.5rem 0.55rem 0.85rem !important;
+    gap: 0.5rem !important;
   }
 
   .page-section.active {
@@ -172,17 +209,22 @@
   .metrics-grid,
   .report-metrics-grid,
   .admin-dashboard .metrics-grid,
-  .admin-dashboard .dashboard-kpi-grid {
+  .admin-dashboard .dashboard-kpi-grid,
+  .dashboard-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 0.5rem !important;
-    margin-bottom: 0.15rem;
+    gap: 0.4rem !important;
+    margin-bottom: 0.1rem;
   }
 
+  /* Paid / Not Paid sit side-by-side; investment card spans full width */
   .dashboard-kpi-grid .dashboard-monthly-kpi-card,
+  .admin-dashboard .dashboard-kpi-grid .dashboard-monthly-kpi-card {
+    grid-column: span 1 !important;
+  }
+
   .dashboard-kpi-grid .dashboard-investment-kpi-card,
-  .admin-dashboard .dashboard-kpi-grid .dashboard-monthly-kpi-card,
   .admin-dashboard .dashboard-kpi-grid .dashboard-investment-kpi-card {
-    grid-column: 1 / -1;
+    grid-column: 1 / -1 !important;
   }
 
   .metric-card,
@@ -190,11 +232,11 @@
   .report-metric-card,
   .member-metric-card {
     flex-direction: row !important;
-    align-items: center !important;
+    align-items: flex-start !important;
     text-align: left !important;
-    gap: 0.55rem !important;
-    padding: 0.65rem 0.7rem !important;
-    border-radius: 12px !important;
+    gap: 0.4rem !important;
+    padding: 0.55rem 0.55rem !important;
+    border-radius: 10px !important;
     min-height: 0 !important;
   }
 
@@ -203,73 +245,99 @@
   }
 
   .metric-icon {
-    font-size: 1.35rem !important;
-    min-width: 2rem;
+    font-size: 1.1rem !important;
+    min-width: 1.5rem;
     line-height: 1;
   }
 
   .metric-content {
-    gap: 0.15rem;
+    gap: 0.1rem;
     min-width: 0;
   }
 
   .metric-label {
-    font-size: 0.62rem;
-    letter-spacing: 0.04em;
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
     line-height: 1.2;
   }
 
   .metric-value,
   .kpi-one-number {
-    font-size: 1.15rem !important;
+    font-size: 1.05rem !important;
     line-height: 1.1;
   }
 
   .kpi-footnote,
   .snapshot-label {
-    margin-top: 0.1rem;
-    font-size: 0.68rem;
-    line-height: 1.25;
+    margin-top: 0.05rem;
+    font-size: 0.62rem;
+    line-height: 1.2;
   }
 
-  /* Quick actions */
-  .dashboard-quick-actions {
-    gap: 0.45rem !important;
-    margin-bottom: 0.65rem !important;
+  /* Quick actions — forced 2-column grid */
+  .dashboard-quick-actions,
+  .admin-dashboard .dashboard-quick-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.4rem !important;
+    margin-bottom: 0.5rem !important;
   }
 
   .dashboard-quick-btn {
-    padding: 0.55rem 0.6rem !important;
-    gap: 0.45rem;
+    padding: 0.45rem 0.5rem !important;
+    gap: 0.35rem;
     border-radius: 10px;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
+    min-height: 0;
+    justify-content: flex-start;
   }
 
   .dashboard-quick-icon {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
-  /* Monthly KPI cards */
-  .dashboard-monthly-kpi-card {
-    padding: 0.75rem 0.8rem !important;
+  /* Monthly contribution cards — compact side-by-side */
+  .dashboard-monthly-kpi-card,
+  .admin-dashboard .dashboard-monthly-kpi-card {
+    padding: 0.55rem 0.55rem !important;
+    align-items: stretch !important;
   }
 
-  .monthly-kpi-head {
-    gap: 0.45rem;
+  .admin-dashboard .monthly-kpi-head {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.3rem;
+  }
+
+  .admin-dashboard .monthly-kpi-side {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    justify-items: start;
   }
 
   .monthly-kpi-amount {
-    font-size: 0.82rem;
+    font-size: 0.72rem;
+  }
+
+  .monthly-kpi-pdf-btn {
+    padding: 0.2rem 0.4rem !important;
+    min-height: 26px !important;
+    font-size: 0.65rem !important;
   }
 
   .monthly-contribution-list-compact {
-    gap: 0.25rem;
+    gap: 0.15rem;
+    max-height: 4.5rem;
+    overflow-y: auto;
   }
 
   .monthly-contribution-list-compact li,
   .monthly-contribution-list li {
-    padding: 0.25rem 0;
-    font-size: 0.74rem;
+    padding: 0.15rem 0;
+    font-size: 0.65rem;
   }
 
   /* Investment breakdown inside KPI */
@@ -563,37 +631,7 @@
     max-height: 160px;
   }
 
-  /* Cashier top bar (staff dashboard) */
-  .cashier-topbar {
-    display: grid !important;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "toggle heading actions"
-      "search search search";
-    gap: 0.35rem 0.5rem;
-    padding: 0.5rem 0.75rem !important;
-    flex-wrap: nowrap !important;
-  }
-
-  .cashier-topbar:not(:has(.search-wrapper)) {
-    grid-template-areas: "toggle heading actions";
-  }
-
-  .cashier-topbar .topbar-left {
-    display: contents;
-  }
-
-  .cashier-topbar h1 {
-    font-size: 1.05rem !important;
-    line-height: 1.2;
-  }
-
-  .cashier-topbar-right {
-    grid-area: actions;
-    width: auto !important;
-    gap: 0.3rem;
-  }
-
+  /* Cashier home (staff dashboard) — topbar already ultra-compact above */
   .cashier-hero-banner {
     padding: 0.75rem 0.8rem !important;
     gap: 0.45rem;
@@ -620,27 +658,30 @@
 
   /* Mobile menu toolbar */
   .mobile-menu-toolbar {
-    padding: 0.55rem 0.75rem 0.45rem !important;
+    padding: 0.45rem 0.65rem 0.4rem !important;
   }
 
   .mobile-menu-title {
-    font-size: 1.1rem !important;
+    font-size: 1.05rem !important;
   }
 
   .mobile-menu-back {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
   }
 
   .mobile-menu-grid .nav-item {
-    min-height: 72px;
-    padding: 0.6rem 0.55rem;
-    gap: 0.4rem;
+    min-height: 68px;
+    padding: 0.55rem 0.5rem;
+    gap: 0.35rem;
   }
 
   .mobile-menu-grid .nav-label {
-    font-size: 0.76rem;
+    font-size: 0.74rem;
   }
+
+  /* Chat */
+  .chat-thread {
     min-height: 200px;
   }
 
@@ -659,57 +700,60 @@
   .admin-dashboard .page-layout > .dashboard-finance-grid,
   .admin-dashboard .page-layout > .dashboard-main-grid,
   .admin-dashboard .page-layout > .panel-card {
-    margin-bottom: 0.65rem !important;
+    margin-bottom: 0.5rem !important;
   }
 }
 
-/* Extra-small phones */
+/* Extra-small phones — keep 2-col action + contribution grids */
 @media (max-width: 380px) {
   .topbar-left h1,
   .topbar-heading h1 {
-    font-size: 0.95rem !important;
+    font-size: 0.85rem !important;
   }
 
-  .topbar-note {
-    -webkit-line-clamp: 1;
-  }
-
-  .metrics-grid,
-  .dashboard-kpi-grid,
-  .report-metrics-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .metric-card {
-    padding: 0.55rem 0.6rem !important;
+  .search-wrapper {
+    flex-basis: 3.75rem;
+    max-width: 4.5rem;
   }
 
   .dashboard-quick-actions,
-  .cashier-module-grid {
-    grid-template-columns: 1fr !important;
+  .admin-dashboard .dashboard-quick-actions,
+  .cashier-module-grid,
+  .cashier-home-modules {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .member-profile-financial-grid,
-  .member-profile-stats.stats-grid {
-    grid-template-columns: 1fr !important;
+  .dashboard-kpi-grid .dashboard-monthly-kpi-card,
+  .admin-dashboard .dashboard-kpi-grid .dashboard-monthly-kpi-card {
+    grid-column: span 1 !important;
+  }
+
+  .metric-card {
+    padding: 0.45rem 0.5rem !important;
+  }
+
+  .dashboard-quick-btn {
+    font-size: 0.68rem;
+    padding: 0.4rem 0.4rem !important;
   }
 }
 
 @supports (padding: max(0px)) {
   @media (max-width: 768px) {
-    .topbar {
-      padding-top: max(0.45rem, env(safe-area-inset-top)) !important;
-      padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
-      padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    .topbar,
+    .cashier-topbar {
+      padding-top: max(0.28rem, env(safe-area-inset-top)) !important;
+      padding-left: max(0.5rem, env(safe-area-inset-left)) !important;
+      padding-right: max(0.5rem, env(safe-area-inset-right)) !important;
     }
 
     .page-layout,
     .staff-dashboard .page-layout,
     .ceo-dashboard .page-layout,
     .admin-dashboard .page-layout {
-      padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
-      padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
-      padding-bottom: max(0.85rem, env(safe-area-inset-bottom)) !important;
+      padding-left: max(0.55rem, env(safe-area-inset-left)) !important;
+      padding-right: max(0.55rem, env(safe-area-inset-right)) !important;
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
     }
   }
 }
