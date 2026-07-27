@@ -3,22 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Member Dashboard - Society Management</title>
+  <title data-page-title="Member Dashboard">Member Dashboard</title>
   <script src="/static/js/theme-boot.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/styles.css?v=20260714notify2" />
+  <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
   <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
 </head>
 <body class="dashboard-layout member-dashboard">
   <aside class="sidebar" id="appSidebar">
     <div class="sidebar-brand">
-      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-mark" aria-hidden="true" data-brand-mark>বব</div>
       <div class="brand-copy">
-        <h2>SocietyHub</h2>
-        <p class="brand-tagline">Member Portal</p>
+        <h2 data-brand-name>বন্ধুত্বের বন্ধন ফাউন্ডেশন</h2>
+        <p class="brand-tagline" data-brand-tagline data-brand-portal="member">Member Portal</p>
       </div>
     </div>
 
@@ -93,12 +94,13 @@
       <div class="topbar-left">
         <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
         <div class="topbar-heading">
-          <p class="topbar-eyebrow">SocietyHub Member</p>
+          <p class="topbar-eyebrow" data-brand-eyebrow data-brand-portal="member">Member Portal</p>
           <h1 id="pageTitle">Dashboard</h1>
           <p class="topbar-note" id="pageNote">Welcome back! Track your savings, investments, and profits.</p>
         </div>
       </div>
       <div class="topbar-right">
+        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language">EN</button>
         <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
@@ -721,6 +723,8 @@
     </main>
   </div>
 
+  <script src="/static/js/mobile-menu.js"></script>
+  <script src="/static/js/branding.js"></script>
   <script src="/static/js/mobile-menu.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/table-cards.js"></script>

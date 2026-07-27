@@ -3,18 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CEO Panel - SocietyHub</title>
+  <title data-page-title="CEO Panel">CEO Panel</title>
   <script src="/static/js/theme-boot.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
 </head>
 <body class="dashboard-layout ceo-dashboard">
   <aside class="sidebar" id="appSidebar">
     <div class="sidebar-brand">
-      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-mark" aria-hidden="true" data-brand-mark>বব</div>
       <div class="brand-copy">
-        <h2>SocietyHub</h2>
-        <p class="brand-tagline">CEO Control Panel</p>
+        <h2 data-brand-name>বন্ধুত্বের বন্ধন ফাউন্ডেশন</h2>
+        <p class="brand-tagline" data-brand-tagline data-brand-portal="ceoPanel">CEO Control Panel</p>
       </div>
     </div>
 
@@ -127,6 +131,8 @@
     </section>
   </div>
 
+  <script src="/static/js/branding.js"></script>
+  <script src="/static/js/mobile-menu.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/sidebar-nav.js"></script>
   <script src="/static/js/table-cards.js"></script>

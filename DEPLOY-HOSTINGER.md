@@ -1,4 +1,4 @@
-# Deploy SocietyHub on Hostinger (Node.js)
+# Deploy Bondhutto-er Bandhon Foundation on Hostinger (Node.js)
 
 This app is a single Node.js + Express + MongoDB Atlas service (vanilla HTML/CSS/JS frontends). Chat uses HTTP polling (no Socket.IO). Relative `/api/...` paths work on any live domain.
 

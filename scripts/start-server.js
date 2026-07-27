@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Reliable start/restart for SocietyHub.
+ * Reliable start/restart for Bondhutto-er Bandhon Foundation platform.
  * Prefer this over `lsof -ti :4000 | xargs kill`, which can leave the port empty
  * if the follow-up start fails or is cancelled.
  */

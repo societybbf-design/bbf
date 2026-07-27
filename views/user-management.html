@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>User Management - SocietyHub</title>
+  <title data-page-title="User Management">User Management</title>
   <script src="/static/js/theme-boot.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/utilities.css" />
   <link rel="stylesheet" href="/static/css/admin-dashboard.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
@@ -16,10 +17,10 @@
 <body class="dashboard-layout admin-dashboard" data-um-dashboard="true">
   <aside class="sidebar" id="appSidebar">
     <div class="sidebar-brand">
-      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-mark" aria-hidden="true" data-brand-mark>বব</div>
       <div class="brand-copy">
-        <h2>SocietyHub</h2>
-        <p class="brand-tagline">User Management</p>
+        <h2 data-brand-name>বন্ধুত্বের বন্ধন ফাউন্ডেশন</h2>
+        <p class="brand-tagline" data-brand-tagline data-brand-portal="userManagement">User Management</p>
       </div>
     </div>
 
@@ -74,12 +75,13 @@
       <div class="topbar-left">
         <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
         <div class="topbar-heading">
-          <p class="topbar-eyebrow">SocietyHub User Management</p>
+          <p class="topbar-eyebrow" data-brand-eyebrow data-brand-portal="userManagement">User Management</p>
           <h1 id="pageTitle">User Management</h1>
           <p class="topbar-note" id="pageNote">Create accounts, directory search/filters, lock/active states, passwords, soft-delete/restore, OTP, and audits.</p>
         </div>
       </div>
       <div class="topbar-right">
+        <button type="button" class="language-toggle-btn" data-language-toggle aria-label="Switch language">EN</button>
         <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
@@ -332,6 +334,8 @@
     </div>
   </div>
 
+  <script src="/static/js/branding.js"></script>
+  <script src="/static/js/mobile-menu.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/sidebar-nav.js"></script>
   <script src="/static/js/table-cards.js"></script>

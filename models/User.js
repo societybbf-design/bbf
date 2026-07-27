@@ -30,6 +30,11 @@ const UserSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+  preferredLanguage: {
+    type: String,
+    enum: ['bn', 'en'],
+    default: 'bn',
+  },
   savings: {
     type: Number,
     default: 0,

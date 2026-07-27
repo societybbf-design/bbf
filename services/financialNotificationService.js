@@ -2,6 +2,7 @@ const { createAdminNotification } = require('./adminNotificationService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
 const { paymentChannelLabel } = require('./paymentChannelService');
+const { brandingSubjectSuffix } = require('./organizationBranding');
 
 async function notifyDepositRecorded({
   member,
@@ -33,7 +34,7 @@ async function notifyDepositRecorded({
       relatedModel: 'Deposit',
     }),
     notifyMemberByEmailAndSms(member, {
-      subject: 'Deposit recorded — SocietyHub',
+      subject: `Deposit recorded — ${brandingSubjectSuffix('en')}`,
       message: `Dear ${member.name}, your deposit of ${amountLabel} via ${channelLabel} has been recorded.${receiptLabel}`,
     }),
   ]);
@@ -79,7 +80,7 @@ async function notifyWithdrawalEvent({
   });
 
   await notifyMemberByEmailAndSms(member, {
-    subject: `Withdrawal ${status} — SocietyHub`,
+    subject: `Withdrawal ${status} — ${brandingSubjectSuffix('en')}`,
     message: `Dear ${member.name}, your withdrawal request for ${amountLabel} is now ${status}.`,
   });
 
@@ -126,7 +127,7 @@ async function notifyProfitDistribution({
       await notifyMemberByEmailAndSms(
         { name: share.memberName, email: share.email, phone: share.phone },
         {
-          subject: 'Profit distribution — SocietyHub',
+          subject: `Profit distribution — ${brandingSubjectSuffix('en')}`,
           message: `Dear ${share.memberName || 'Member'}, you received a profit distribution of $${shareAmount.toFixed(2)}.`,
         }
       );
