@@ -42,7 +42,7 @@ const ROLE_META = {
   },
   cashier: {
     title: 'Cashier Dashboard',
-    subtitle: 'Handle deposits, withdrawals, refunds, bank ledger, and investment payments.',
+    subtitle: 'Handle deposits, withdrawals, refunds, loan payouts, bank ledger, and investment payments.',
   },
   employee: {
     title: 'Employee Dashboard',
@@ -60,7 +60,8 @@ const FEATURE_CATALOG = [
   { key: 'can_manage_deposits', title: 'Deposits', detail: 'Record member deposits and receipts.', icon: '💵', panel: 'deposits' },
   { key: 'can_manage_deposits', title: 'Advances & Borrowing', detail: 'Advance balances, unpaid shares, internal borrow & settle.', icon: '🔄', panel: 'funding', catalogKey: 'funding' },
   { key: 'can_manage_withdrawals', title: 'Withdrawals', detail: 'Review withdrawal requests.', icon: '🏦', panel: 'withdrawals' },
-  { key: 'can_manage_loans', title: 'Loans', detail: 'Review loan applications.', icon: '📄', panel: 'loans' },
+  { key: 'can_disburse_loans', title: 'Loans', detail: 'Disburse approved loans and record repayments.', icon: '📄', panel: 'loans' },
+  { key: 'can_manage_loans', title: 'Loan Review', detail: 'View pending loan applications (CEO approves).', icon: '📄', panel: 'loans', catalogKey: 'loan_review' },
   { key: 'can_manage_investments', title: 'Investments', detail: 'Investment summary and payment queue.', icon: '📈', panel: 'investments' },
   { key: 'can_manage_ious', title: 'IOUs', detail: 'Investment-related tracking.', icon: '📝', panel: 'investments' },
   { key: 'can_manage_profit', title: 'Profit & Dividends', detail: 'Log and distribute monthly profits.', icon: '💹', panel: 'profit' },
@@ -2087,27 +2088,263 @@ function bindCashierMemberProfileModal() {
   });
 }
 
+function formatLoanPaymentMethodLabel(method = '') {
+  const labels = {
+    cash: 'Cash',
+    bank_transfer: 'Bank Transfer',
+    mobile_banking: 'Mobile Banking',
+    check: 'Check',
+    other: 'Other',
+  };
+  return labels[method] || method || 'N/A';
+}
+
+function buildCashierLoanPaymentOptions(selected = '') {
+  return [
+    ['cash', 'Cash'],
+    ['bank_transfer', 'Bank Transfer'],
+    ['mobile_banking', 'Mobile Banking'],
+    ['check', 'Check'],
+    ['other', 'Other'],
+  ].map(([value, label]) => `
+    <option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>
+  `).join('');
+}
+
+function buildCashierDisburseCard(loan = {}) {
+  const member = loan.member || {};
+  return `
+    <article class="panel-card u-mb-1" data-cashier-loan-id="${loan._id}">
+      <h4>${escapeHtml(member.name || 'Member')} — ${escapeHtml(loan.loanType || 'loan')}</h4>
+      <p class="table-subtitle">
+        Amount <strong>${money(loan.amount)}</strong>
+        · Approved payment hint: ${escapeHtml(formatLoanPaymentMethodLabel(loan.paymentMethod))}
+        ${loan.approvedAt ? `· Approved ${new Date(loan.approvedAt).toLocaleString()}` : ''}
+      </p>
+      <form class="cashier-loan-disburse-form add-member-form" data-loan-id="${loan._id}">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Transfer method
+              <select name="paymentMethod" required>
+                <option value="">Select…</option>
+                ${buildCashierLoanPaymentOptions(loan.paymentMethod || '')}
+              </select>
+            </label>
+          </div>
+          <div class="form-group">
+            <label>Transfer reference
+              <input type="text" name="transferReference" placeholder="Txn / receipt #" />
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Transfer note
+            <input type="text" name="disbursementNote" placeholder="Cash given at office…" />
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Confirm Transfer &amp; Disburse</button>
+        <p class="message cashier-loan-disburse-msg"></p>
+      </form>
+    </article>
+  `;
+}
+
+let cashierLoanBorrowersCache = [];
+let cashierLoansUiBound = false;
+
 async function loadLoansModule() {
   const tbody = document.getElementById('cashierLoansBody');
+  const queueEl = document.getElementById('cashierLoanDisburseQueue');
+  const repaymentsBody = document.getElementById('cashierLoanRepaymentsBody');
+  const repaySelect = document.getElementById('cashierLoanRepayMember');
+  bindCashierLoansUi();
+
   try {
-    const response = await fetch('/api/loans/admin?status=pending');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load loans.');
-    const loans = data.loans || [];
-    if (!tbody) return;
-    tbody.innerHTML = loans.length
-      ? loans.map((loan) => `
-        <tr>
-          <td>${escapeHtml(loan.member?.name || 'Unknown')}</td>
-          <td>${money(loan.amount)}</td>
-          <td>${escapeHtml(loan.loanType || '—')}</td>
-          <td>${escapeHtml(loan.status || '—')}</td>
-        </tr>
-      `).join('')
-      : '<tr><td colspan="4">No pending loans.</td></tr>';
+    const [approvedRes, allRes, borrowersRes, repaymentsRes, summaryRes] = await Promise.all([
+      fetch('/api/loans/admin?status=approved'),
+      fetch('/api/loans/admin'),
+      fetch('/api/loans/admin/active-borrowers'),
+      fetch('/api/loans/admin/repayments'),
+      fetch('/api/loans/admin/summary'),
+    ]);
+
+    const approvedData = await approvedRes.json();
+    const allData = await allRes.json();
+    const borrowersData = await borrowersRes.json();
+    const repaymentsData = await repaymentsRes.json();
+    const summaryData = summaryRes.ok ? await summaryRes.json() : {};
+
+    if (!approvedRes.ok) throw new Error(approvedData.error || 'Unable to load approved loans.');
+    if (!allRes.ok) throw new Error(allData.error || 'Unable to load loans.');
+
+    const approvedLoans = (approvedData.loans || []).filter((loan) => !loan.autoRejected);
+    const allLoans = allData.loans || [];
+    const borrowers = borrowersData.borrowers || [];
+    const repayments = repaymentsData.repayments || [];
+    cashierLoanBorrowersCache = borrowers;
+
+    const awaitingEl = document.getElementById('cashierLoanAwaitingCount');
+    const activeEl = document.getElementById('cashierLoanActiveCount');
+    const outstandingEl = document.getElementById('cashierLoanOutstandingTotal');
+    if (awaitingEl) awaitingEl.textContent = String(approvedLoans.length);
+    if (activeEl) activeEl.textContent = String(borrowers.length);
+    if (outstandingEl) {
+      const totalOut = Number(summaryData.totalOutstanding ?? borrowers.reduce((sum, row) => sum + Number(row.totalOutstanding || 0), 0));
+      outstandingEl.textContent = money(totalOut);
+    }
+
+    if (queueEl) {
+      queueEl.innerHTML = approvedLoans.length
+        ? approvedLoans.map((loan) => buildCashierDisburseCard(loan)).join('')
+        : '<p class="text-secondary">No CEO-approved loans waiting for disbursement.</p>';
+    }
+
+    if (repaySelect) {
+      const previous = repaySelect.value;
+      repaySelect.innerHTML = `<option value="">Select active borrower…</option>${borrowers.map((row) => `
+        <option value="${row.memberId || row.member?._id || ''}" data-outstanding="${Number(row.totalOutstanding || 0)}">
+          ${escapeHtml(row.member?.name || row.name || 'Member')} — due ${money(row.totalOutstanding)}
+        </option>
+      `).join('')}`;
+      if (previous) repaySelect.value = previous;
+    }
+
+    if (tbody) {
+      tbody.innerHTML = allLoans.length
+        ? allLoans.slice(0, 40).map((loan) => `
+          <tr>
+            <td>${escapeHtml(loan.member?.name || 'Unknown')}</td>
+            <td>${money(loan.amount)}</td>
+            <td>${escapeHtml(loan.loanType || '—')}</td>
+            <td>${escapeHtml(translateStatus(loan.status || '—'))}</td>
+            <td>${loan.status === 'disbursed'
+              ? `${escapeHtml(formatLoanPaymentMethodLabel(loan.paymentMethod))}${loan.disbursementReference ? ` · ${escapeHtml(loan.disbursementReference)}` : ''}`
+              : loan.status === 'approved' ? 'Awaiting Cashier' : '—'}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="5">No loan applications yet.</td></tr>';
+    }
+
+    if (repaymentsBody) {
+      repaymentsBody.innerHTML = repayments.length
+        ? repayments.slice(0, 40).map((item) => `
+          <tr>
+            <td>${escapeHtml(item.member?.name || 'Unknown')}</td>
+            <td>${money(item.amount)}</td>
+            <td>${item.repaymentType === 'full' ? 'Full' : 'Installment'}</td>
+            <td>${escapeHtml(formatLoanPaymentMethodLabel(item.paymentMethod))}</td>
+            <td>${escapeHtml(translateStatus(item.status || '—'))}</td>
+            <td>${item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'}</td>
+            <td>${item.status === 'approved' && item._id
+              ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Receipt</a>`
+              : '—'}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="7">No loan repayments recorded yet.</td></tr>';
+    }
   } catch (error) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+    if (queueEl) queueEl.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+    if (repaymentsBody) repaymentsBody.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;
   }
+}
+
+function bindCashierLoansUi() {
+  if (cashierLoansUiBound) return;
+  cashierLoansUiBound = true;
+
+  document.getElementById('cashierLoanRepayMember')?.addEventListener('change', (event) => {
+    const option = event.target.selectedOptions?.[0];
+    const outstanding = Number(option?.dataset.outstanding || 0);
+    const amountInput = document.getElementById('cashierLoanRepayAmount');
+    const hint = document.getElementById('cashierLoanRepayHint');
+    const typeSelect = document.getElementById('cashierLoanRepayType');
+    if (amountInput && outstanding > 0) {
+      amountInput.max = outstanding;
+      if (typeSelect?.value === 'full' || !amountInput.value) {
+        amountInput.value = outstanding.toFixed(2);
+      }
+    }
+    if (hint) {
+      hint.textContent = option?.value
+        ? `Outstanding balance: ${money(outstanding)}`
+        : 'Select a borrower to load outstanding balance.';
+    }
+  });
+
+  document.getElementById('cashierLoanRepayType')?.addEventListener('change', (event) => {
+    if (event.target.value !== 'full') return;
+    const select = document.getElementById('cashierLoanRepayMember');
+    const outstanding = Number(select?.selectedOptions?.[0]?.dataset.outstanding || 0);
+    const amountInput = document.getElementById('cashierLoanRepayAmount');
+    if (amountInput && outstanding > 0) amountInput.value = outstanding.toFixed(2);
+  });
+
+  document.getElementById('cashierLoanDisburseQueue')?.addEventListener('submit', async (event) => {
+    const form = event.target.closest('.cashier-loan-disburse-form');
+    if (!form) return;
+    event.preventDefault();
+    const loanId = form.dataset.loanId;
+    const msg = form.querySelector('.cashier-loan-disburse-msg');
+    const formData = new FormData(form);
+    if (msg) msg.textContent = '';
+    try {
+      const response = await fetch(`/api/loans/admin/${loanId}/disburse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentMethod: formData.get('paymentMethod'),
+          transferReference: formData.get('transferReference'),
+          disbursementNote: formData.get('disbursementNote'),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to disburse loan.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = 'Loan disbursed successfully.';
+      }
+      await loadLoansModule();
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.getElementById('cashierLoanRepaymentForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('cashierLoanRepayMessage');
+    if (msg) {
+      msg.classList.remove('success');
+      msg.textContent = '';
+    }
+    const formData = new FormData(event.target);
+    const memberId = formData.get('memberId');
+    try {
+      const response = await fetch(`/api/loans/admin/member/${memberId}/repayments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: formData.get('amount'),
+          repaymentType: formData.get('repaymentType'),
+          paymentMethod: formData.get('paymentMethod'),
+          adminNote: formData.get('adminNote'),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to record loan payment.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = 'Loan payment recorded.';
+      }
+      event.target.reset();
+      await loadLoansModule();
+    } catch (error) {
+      if (msg) msg.textContent = error.message;
+    }
+  });
 }
 
 async function loadInvestmentsModule() {

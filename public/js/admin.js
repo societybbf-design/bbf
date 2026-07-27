@@ -1392,12 +1392,24 @@ async function loadAdminProfile() {
   }
 }
 
-function sessionHasAnyPermission(permissionKeys = []) {
+function sessionHasPermission(permissionKey) {
   const user = window.adminSessionUser;
-  if (!user) return false;
+  if (!user || !permissionKey) return false;
+  // Cashier-exclusive permissions must never be treated as CEO/developer full-access.
+  if (permissionKey === 'can_disburse_loans') {
+    return user.role === 'cashier';
+  }
   if (['ceo', 'admin', 'developer'].includes(user.role)) return true;
   const perms = new Set(user.permissions || []);
-  return permissionKeys.some((key) => perms.has(key));
+  return perms.has(permissionKey);
+}
+
+function sessionHasAnyPermission(permissionKeys = []) {
+  return permissionKeys.some((key) => sessionHasPermission(key));
+}
+
+function canDisburseLoansInSession() {
+  return sessionHasPermission('can_disburse_loans');
 }
 
 function applyOpsPermissionGate(user) {
@@ -2933,6 +2945,20 @@ function buildLoanDisbursementFormHtml(loan = {}) {
     return '';
   }
 
+  if (!canDisburseLoansInSession()) {
+    return `
+    <section class="panel-card loan-disbursement-panel">
+      <h3>Awaiting Cashier Disbursement</h3>
+      <p class="table-subtitle">
+        This loan is approved. The Cashier will transfer
+        <strong>${formatMoney(Number(loan.amount || 0), 2)}</strong>
+        and confirm disbursement from the Cashier dashboard.
+        Payment actions are not available on the CEO panel.
+      </p>
+    </section>
+  `;
+  }
+
   return `
     <section class="panel-card loan-disbursement-panel">
       <h3>Transfer Loan Money to Member</h3>
@@ -2988,6 +3014,7 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
   const hasOutstanding = Boolean(loanSummary.hasOutstandingLoan);
   const availableToPay = Number(loanSummary.availableToPay || 0);
   const pendingTransferLoans = loans.filter((loan) => loan.status === 'approved');
+  const cashierCanPay = canDisburseLoansInSession();
 
   const rows = loans.length ? loans.map((loan) => {
     const outstanding = loan.status === 'disbursed'
@@ -3006,14 +3033,14 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
       <td>${loan.status === 'disbursed'
         ? `${formatMoney(Number(loan.amount || 0), 2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursementReference ? `<br><small>Ref: ${loan.disbursementReference}</small>` : ''}`
         : loan.status === 'approved'
-          ? '<span class="status-badge status-pending">Awaiting Transfer</span>'
+          ? '<span class="status-badge status-pending">Awaiting Cashier</span>'
           : '-'
       }</td>
       <td>
         ${loan.contractPath ? `<a href="/api/loans/admin/${loan._id}/contract" class="receipt-button" target="_blank" rel="noopener">Contract</a>` : '-'}
       </td>
       <td>
-        <button type="button" class="secondary-btn" data-loan-review="${loan._id}">Manage</button>
+        <button type="button" class="secondary-btn" data-loan-review="${loan._id}">${loan.status === 'pending' ? 'Review' : 'View'}</button>
       </td>
     </tr>
   `;
@@ -3026,27 +3053,13 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
       <td>${formatMoney(Number(item.amount || 0), 2)}</td>
       <td>${formatPaymentMethodLabel(item.paymentMethod)}</td>
       <td>${formatLoanStatusBadge(item.status)}</td>
-      <td>${item.adminManual ? 'Admin Manual' : 'Member Request'}</td>
+      <td>${item.adminManual ? 'Cashier / Admin Manual' : 'Member Request'}</td>
       <td>${formatMoney(Number(item.balanceAfter || 0), 2)}</td>
       <td>${item.status === 'approved' && item._id ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Receipt</a>` : '-'}</td>
     </tr>
   `).join('') : '<tr><td colspan="8">No loan payments recorded yet.</td></tr>';
 
-  return `
-    ${buildLoanClearanceStatusHtml(loanSummary)}
-
-    ${pendingTransferLoans.length ? pendingTransferLoans.map((loan) => buildLoanDisbursementFormHtml(loan)).join('') : ''}
-
-    ${loans.filter((loan) => loan.status === 'disbursed').map((loan) => buildLoanDisbursementDetailsHtml(loan)).join('')}
-
-    <section class="panel-card member-loan-processing-card">
-      <div class="member-profile-section-header">
-        <div>
-          <h3>Admin Manual Loan Payment</h3>
-          <p class="table-subtitle">When a member returns loan money at the office (cash, bank, etc.), record it here. The system updates their balance and generates a PDF receipt automatically.</p>
-        </div>
-      </div>
-      ${hasOutstanding ? `
+  const repaymentActionHtml = cashierCanPay && hasOutstanding ? `
         <div class="member-loan-outstanding-grid">
           <article class="profile-finance-card profile-finance-loans">
             <span>Outstanding Balance</span>
@@ -3094,7 +3107,7 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
             </div>
             <div class="form-group">
               <label>
-                Admin Note
+                Note
                 <input type="text" name="adminNote" placeholder="Cash received at office, July installment..." />
               </label>
             </div>
@@ -3104,18 +3117,50 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
         </form>
       ` : `
         <div class="member-loan-no-outstanding">
-          <p class="table-subtitle">${loanSummary.loanCleared
-            ? 'This loan is fully cleared. Payment history and receipts are listed below.'
-            : 'No active disbursed loan with outstanding balance. Approve and disburse a loan first.'}</p>
+          <p class="table-subtitle">${hasOutstanding
+            ? 'Outstanding balance is visible for monitoring. The Cashier records repayments from the Cashier dashboard.'
+            : (loanSummary.loanCleared
+              ? 'This loan is fully cleared. Payment history and receipts are listed below.'
+              : 'No active disbursed loan with outstanding balance.')}</p>
+          ${hasOutstanding ? `
+            <div class="member-loan-outstanding-grid">
+              <article class="profile-finance-card profile-finance-loans">
+                <span>Outstanding Balance</span>
+                <strong>${formatMoney(Number(loanSummary.outstandingBalance || 0), 2)}</strong>
+              </article>
+              <article class="profile-finance-card profile-finance-deposits">
+                <span>Total Repaid</span>
+                <strong>${formatMoney(Number(loanSummary.totalRepaid || 0), 2)}</strong>
+              </article>
+            </div>
+          ` : ''}
         </div>
-      `}
+      `;
+
+  return `
+    ${buildLoanClearanceStatusHtml(loanSummary)}
+
+    ${pendingTransferLoans.length ? pendingTransferLoans.map((loan) => buildLoanDisbursementFormHtml(loan)).join('') : ''}
+
+    ${loans.filter((loan) => loan.status === 'disbursed').map((loan) => buildLoanDisbursementDetailsHtml(loan)).join('')}
+
+    <section class="panel-card member-loan-processing-card">
+      <div class="member-profile-section-header">
+        <div>
+          <h3>${cashierCanPay ? 'Cashier Loan Payment' : 'Loan Repayment Status'}</h3>
+          <p class="table-subtitle">${cashierCanPay
+            ? 'When a member returns loan money at the office, record it here. The system updates their balance and generates a PDF receipt.'
+            : 'Loan repayments are recorded by the Cashier. This panel is read-only for CEO monitoring.'}</p>
+        </div>
+      </div>
+      ${repaymentActionHtml}
     </section>
 
     <section class="panel-card table-card-wide">
       <div class="member-profile-section-header">
         <div>
           <h3>Loan Applications</h3>
-          <p class="table-subtitle">Review, approve, disburse, and manage contracts from here.</p>
+          <p class="table-subtitle">CEO reviews and approves applications. Cashier handles disbursement and repayments.</p>
         </div>
       </div>
       <div class="table-wrapper">
@@ -6492,7 +6537,7 @@ async function loadLoanApplications() {
         <td>${formatMoney(Number(loan.memberSavingsAtApply || loan.member?.savings || 0), 2)}<br><small>Max: ${formatLoanMaxEligible(loan)}</small></td>
         <td>${loan.reason || '-'}</td>
         <td>${loan.witnessName || '-'}<br><small>${loan.witnessPhone || ''}</small></td>
-        <td>${formatLoanStatusBadge(loan.status)}${loan.autoRejected ? '<br><small>Auto-rejected</small>' : ''}${loan.status === 'disbursed' ? `<br><small>Outstanding: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</small>` : ''}${loan.status === 'approved' ? '<br><small>Awaiting transfer</small>' : ''}</td>
+        <td>${formatLoanStatusBadge(loan.status)}${loan.autoRejected ? '<br><small>Auto-rejected</small>' : ''}${loan.status === 'disbursed' ? `<br><small>Outstanding: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</small>` : ''}${loan.status === 'approved' ? '<br><small>Awaiting Cashier</small>' : ''}</td>
         <td>${loan.status === 'disbursed'
           ? `${formatMoney(Number(loan.amount || 0), 2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursedAt ? `<br><small>${new Date(loan.disbursedAt).toLocaleString()}</small>` : ''}`
           : loan.status === 'approved'
@@ -6543,10 +6588,10 @@ async function loadLoanRepayments() {
         <td>${formatRepaymentStatusBadge(item.status)}</td>
         <td>${new Date(item.createdAt).toLocaleString()}</td>
         <td>
-          ${item.status === 'pending' ? `
+          ${item.status === 'pending' && canDisburseLoansInSession() ? `
             <button type="button" class="primary-btn" data-loan-repayment-action="approved" data-loan-repayment-id="${item._id}">Approve</button>
             <button type="button" class="secondary-btn" data-loan-repayment-action="rejected" data-loan-repayment-id="${item._id}">Reject</button>
-          ` : ''}
+          ` : item.status === 'pending' ? '<small>Cashier action required</small>' : ''}
           ${item.status === 'approved' && item.receiptPath ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Receipt</a>` : ''}
         </td>
       </tr>

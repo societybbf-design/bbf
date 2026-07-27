@@ -78,8 +78,13 @@ const PERMISSIONS = Object.freeze([
   },
   {
     key: 'can_manage_loans',
-    label: 'Manage loans',
-    description: 'Review loan applications, disburse, and record repayments.',
+    label: 'Review loan applications',
+    description: 'Review, approve, or reject member loan applications (CEO). Disbursement and repayments stay with the Cashier.',
+  },
+  {
+    key: 'can_disburse_loans',
+    label: 'Disburse loans & record repayments',
+    description: 'Process approved loan payouts and record loan repayments (Cashier only).',
   },
   {
     key: 'can_manage_investments',
@@ -130,15 +135,21 @@ const PERMISSIONS = Object.freeze([
 
 const PERMISSION_KEYS = Object.freeze(PERMISSIONS.map((p) => p.key));
 
+/** Permissions that must never be auto-granted via CEO/developer full-access bypass. */
+const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_disburse_loans']);
+
 const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
-  developer: [...PERMISSION_KEYS],
-  ceo: PERMISSION_KEYS.filter((key) => key !== 'can_manage_security'),
-  admin: PERMISSION_KEYS.filter((key) => key !== 'can_manage_security'),
+  developer: PERMISSION_KEYS.filter((key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)),
+  ceo: PERMISSION_KEYS.filter(
+    (key) => key !== 'can_manage_security' && !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
+  ),
+  admin: PERMISSION_KEYS.filter(
+    (key) => key !== 'can_manage_security' && !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
+  ),
   project_manager: [
     'can_manage_members',
     'can_manage_investments',
     'can_manage_ious',
-    'can_manage_loans',
     'can_manage_kyc',
     'can_view_reports',
     'can_manage_notices',
@@ -148,6 +159,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
     'can_manage_deposits',
     'can_manage_withdrawals',
     'can_manage_refunds',
+    'can_disburse_loans',
     'can_view_reports',
     'can_manage_chat',
     'can_manage_members',
@@ -209,8 +221,18 @@ function sanitizePermissions(list) {
   return [...new Set(list.map(String).filter((key) => allowed.has(key)))];
 }
 
+function isCashierExclusivePermission(permissionKey) {
+  return CASHIER_EXCLUSIVE_PERMISSIONS.includes(permissionKey);
+}
+
 function userHasPermission(user, permissionKey) {
   if (!user) return false;
+
+  // Loan payout/repayment is Cashier-only — never granted by CEO/developer full-access bypass.
+  if (isCashierExclusivePermission(permissionKey)) {
+    return normalizeRole(user.role) === 'cashier';
+  }
+
   if (isAbsoluteControlRole(user.role) || isFullAccessRole(user.role)) return true;
   const perms = Array.isArray(user.permissions) ? user.permissions : [];
   return perms.includes(permissionKey);
@@ -218,7 +240,6 @@ function userHasPermission(user, permissionKey) {
 
 function userHasAnyPermission(user, permissionKeys) {
   if (!user) return false;
-  if (isAbsoluteControlRole(user.role) || isFullAccessRole(user.role)) return true;
   return permissionKeys.some((key) => userHasPermission(user, key));
 }
 
@@ -230,11 +251,20 @@ function publicUserPayload(userDoc) {
   const role = userDoc.role;
   let permissions;
   if (isAbsoluteControlRole(role)) {
-    permissions = [...PERMISSION_KEYS];
+    permissions = getDefaultPermissions('developer');
   } else if (isFullAccessRole(role)) {
     permissions = getDefaultPermissions('ceo');
   } else {
     permissions = sanitizePermissions(userDoc.permissions || getDefaultPermissions(role));
+  }
+
+  // Keep cashier loan-disbursement capability even if stored permissions predates the new key.
+  if (normalizeRole(role) === 'cashier' && !permissions.includes('can_disburse_loans')) {
+    permissions = [...permissions, 'can_disburse_loans'];
+  }
+  // Never expose cashier-exclusive perms on non-cashier session payloads.
+  if (normalizeRole(role) !== 'cashier') {
+    permissions = permissions.filter((key) => !isCashierExclusivePermission(key));
   }
 
   return {
@@ -256,6 +286,7 @@ module.exports = {
   ALL_ROLES,
   PERMISSIONS,
   PERMISSION_KEYS,
+  CASHIER_EXCLUSIVE_PERMISSIONS,
   DEFAULT_PERMISSIONS_BY_ROLE,
   DASHBOARD_PATHS,
   normalizeRole,
@@ -265,6 +296,7 @@ module.exports = {
   canAccessDeveloperModule,
   getDefaultPermissions,
   sanitizePermissions,
+  isCashierExclusivePermission,
   userHasPermission,
   userHasAnyPermission,
   dashboardPathForRole,

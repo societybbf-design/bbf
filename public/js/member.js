@@ -369,7 +369,7 @@ function buildLoanDisbursementReceivedHtml(loan = {}) {
     if (loan.status === 'approved') {
       return `
         <div class="loan-disbursement-banner loan-disbursement-pending">
-          <strong>Loan Approved — Awaiting Transfer</strong>
+          <strong>Loan Approved — Awaiting Cashier Transfer</strong>
           <p class="table-subtitle">
             Your ${formatLoanTypeLabel(loan.loanType)} loan of ${formatMoney(Number(loan.amount || 0), 2)} is approved.
             The society admin will transfer the money to you soon${loan.paymentMethod ? ` via ${formatPaymentMethodLabel(loan.paymentMethod)}` : ''}.
@@ -406,7 +406,7 @@ function buildLoanDecisionText(loan = {}) {
     return 'Automatically rejected (exceeds 80% savings limit).';
   }
   if (loan.status === 'pending') {
-    return 'Awaiting admin review.';
+    return 'Awaiting CEO review.';
   }
   return '-';
 }
@@ -1354,7 +1354,7 @@ async function loadLoanApplications() {
         <td>${loan.status === 'disbursed'
           ? `${formatMoney(Number(loan.amount || 0), 2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursedAt ? `<br><small>${new Date(loan.disbursedAt).toLocaleString()}</small>` : ''}${loan.disbursementReference ? `<br><small>Ref: ${loan.disbursementReference}</small>` : ''}`
           : loan.status === 'approved'
-            ? '<span class="status-badge status-pending">Awaiting Transfer</span>'
+            ? '<span class="status-badge status-pending">Awaiting Cashier</span>'
             : '-'
         }</td>
         <td>${formatPaymentMethodLabel(loan.paymentMethod)}</td>

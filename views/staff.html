@@ -819,13 +819,100 @@
 
         <div class="panel-card hidden" data-staff-view="loans" id="moduleLoans">
           <div class="panel-card-header">
-            <h2>Loans</h2>
-            <p class="text-secondary">Pending loan applications.</p>
+            <h2>Loan Disbursement &amp; Repayments</h2>
+            <p class="text-secondary">CEO-approved loans appear here for Cashier payout. Record disbursements and member loan repayments.</p>
           </div>
+
+          <div class="stats-grid u-mb-1">
+            <div class="stat-card"><h3 id="cashierLoanAwaitingCount">0</h3><p>Awaiting disbursement</p></div>
+            <div class="stat-card"><h3 id="cashierLoanActiveCount">0</h3><p>Active borrowers</p></div>
+            <div class="stat-card"><h3 id="cashierLoanOutstandingTotal">৳0</h3><p>Total outstanding</p></div>
+          </div>
+
+          <h3>Approved — ready to disburse</h3>
+          <div id="cashierLoanDisburseQueue" class="u-mb-1">
+            <p class="text-secondary" data-i18n="common.loading">Loading…</p>
+          </div>
+          <p id="cashierLoanDisburseMessage" class="message"></p>
+
+          <h3>Record loan repayment</h3>
+          <form id="cashierLoanRepaymentForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Borrower
+                  <select name="memberId" id="cashierLoanRepayMember" required>
+                    <option value="">Select active borrower…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Payment type
+                  <select name="repaymentType" id="cashierLoanRepayType">
+                    <option value="installment">Installment</option>
+                    <option value="full">Full payment</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Amount (৳)
+                  <input type="number" name="amount" id="cashierLoanRepayAmount" min="0.01" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Payment method
+                  <select name="paymentMethod">
+                    <option value="cash">Cash</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="mobile_banking">Mobile Banking</option>
+                    <option value="check">Check</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Note
+                <input type="text" name="adminNote" placeholder="Optional note" />
+              </label>
+            </div>
+            <p class="table-subtitle" id="cashierLoanRepayHint">Select a borrower to load outstanding balance.</p>
+            <button type="submit" class="primary-btn">Record Loan Payment</button>
+            <p id="cashierLoanRepayMessage" class="message"></p>
+          </form>
+
+          <h3 class="u-mt-1">Recent loan applications</h3>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th data-i18n="table.amount">Amount</th><th data-i18n="table.type">Type</th><th data-i18n="table.status">Status</th></tr></thead>
-              <tbody id="cashierLoansBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.type">Type</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th>Transfer</th>
+                </tr>
+              </thead>
+              <tbody id="cashierLoansBody"><tr><td colspan="5" data-i18n="common.loading">Loading…</td></tr></tbody>
+            </table>
+          </div>
+
+          <h3 class="u-mt-1">Repayment history</h3>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.type">Type</th>
+                  <th>Method</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th>Date</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="cashierLoanRepaymentsBody"><tr><td colspan="7" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>

@@ -259,15 +259,15 @@ async function createLoanApplication({
     memberId,
     type: 'loan',
     title: 'Loan Application Submitted',
-    message: `Your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was submitted and is awaiting admin review.`,
+    message: `Your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was submitted and is awaiting CEO review.`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
 
   await createAdminNotification({
     type: 'loan',
-    title: `New ${normalizedType === 'emergency' ? 'Emergency ' : ''}Loan Application from ${member.name}`,
-    message: `${member.name} requested a ${normalizedType} loan of ${formatMoney(normalizedAmount, 2)}. Reason: ${reason.trim()}`,
+    title: `New ${normalizedType === 'emergency' ? 'Emergency ' : ''}Loan Application from ${member.name} (CEO review)`,
+    message: `${member.name} requested a ${normalizedType} loan of ${formatMoney(normalizedAmount, 2)}. Awaiting CEO approval before Cashier disbursement. Reason: ${reason.trim()}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
@@ -626,10 +626,22 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
     memberId: loan.member._id || loan.member,
     type: 'loan',
     title: `Loan Application ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-    message: `Your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`,
+    message: status === 'approved'
+      ? `Your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} was approved by the CEO and forwarded to the Cashier for disbursement.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`
+      : `Your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
+
+  if (status === 'approved') {
+    await createAdminNotification({
+      type: 'loan',
+      title: 'Loan approved — awaiting Cashier disbursement',
+      message: `${member?.name || 'Member'}'s ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was approved and is ready for Cashier payout.`,
+      relatedId: loan._id,
+      relatedModel: 'LoanApplication',
+    });
+  }
 
   return loan;
 }
