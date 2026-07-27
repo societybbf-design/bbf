@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
   <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
+  <link rel="stylesheet" href="/static/css/pdf-language.css" />
 </head>
 <body class="dashboard-layout member-dashboard">
   <aside class="sidebar" id="appSidebar">
@@ -24,48 +25,48 @@
     </div>
 
     <nav class="sidebar-nav">
-      <p class="nav-section-label">Overview</p>
+      <p class="nav-section-label" data-i18n="nav.section.overview">Overview</p>
       <a href="#dashboard" class="nav-item active" data-page="dashboard">
         <span class="nav-icon-wrap"><span class="nav-icon">📊</span></span>
-        <span class="nav-label">Dashboard</span>
+        <span class="nav-label" data-i18n="nav.dashboard">Dashboard</span>
       </a>
       <a href="#investments" class="nav-item" data-page="investments">
         <span class="nav-icon-wrap"><span class="nav-icon">📈</span></span>
-        <span class="nav-label">Investments</span>
+        <span class="nav-label" data-i18n="nav.investments">Investments</span>
       </a>
       <a href="#investment-requests" class="nav-item" data-page="investment-requests">
         <span class="nav-icon-wrap"><span class="nav-icon">✅</span></span>
-        <span class="nav-label">Investment Requests</span>
+        <span class="nav-label" data-i18n="nav.investmentRequests">Investment Requests</span>
       </a>
       <a href="#portfolio" class="nav-item" data-page="portfolio">
         <span class="nav-icon-wrap"><span class="nav-icon">💼</span></span>
-        <span class="nav-label">Portfolio</span>
+        <span class="nav-label" data-i18n="nav.portfolio">Portfolio</span>
       </a>
 
-      <p class="nav-section-label">Account</p>
+      <p class="nav-section-label" data-i18n="nav.section.account">Account</p>
       <a href="#withdrawals" class="nav-item" data-page="withdrawals">
         <span class="nav-icon-wrap"><span class="nav-icon">💸</span></span>
-        <span class="nav-label">Withdrawals</span>
+        <span class="nav-label" data-i18n="nav.withdrawals">Withdrawals</span>
       </a>
       <a href="#refunds" class="nav-item" data-page="refunds">
         <span class="nav-icon-wrap"><span class="nav-icon">↩️</span></span>
-        <span class="nav-label">Refunds</span>
+        <span class="nav-label" data-i18n="nav.refunds">Refunds</span>
       </a>
       <a href="#loans" class="nav-item" data-page="loans">
         <span class="nav-icon-wrap"><span class="nav-icon">🏛️</span></span>
-        <span class="nav-label">Loans</span>
+        <span class="nav-label" data-i18n="nav.loans">Loans</span>
       </a>
       <a href="#messages" class="nav-item" data-page="messages">
         <span class="nav-icon-wrap"><span class="nav-icon">💬</span></span>
-        <span class="nav-label">Messages</span>
+        <span class="nav-label" data-i18n="nav.messages">Messages</span>
       </a>
       <a href="#documents" class="nav-item" data-page="documents">
         <span class="nav-icon-wrap"><span class="nav-icon">📄</span></span>
-        <span class="nav-label">Documents</span>
+        <span class="nav-label" data-i18n="nav.documents">Documents</span>
       </a>
       <a href="#settings" class="nav-item" data-page="settings">
         <span class="nav-icon-wrap"><span class="nav-icon">⚙️</span></span>
-        <span class="nav-label">Settings</span>
+        <span class="nav-label" data-i18n="nav.settings">Settings</span>
       </a>
     </nav>
 
@@ -73,14 +74,14 @@
       <div class="sidebar-user-avatar"><span id="sidebarMemberInitial">M</span></div>
       <div class="sidebar-user-info">
         <strong id="sidebarMemberName">Member</strong>
-        <span id="sidebarMemberStatus">Active Member</span>
+        <span id="sidebarMemberStatus" data-i18n="common.activeMember">Active Member</span>
       </div>
     </div>
 
     <div class="sidebar-footer">
       <button id="logoutBtn" class="logout-btn">
         <span class="logout-icon">⏻</span>
-        <span>Sign Out</span>
+        <span data-i18n="common.signOut">Sign Out</span>
       </button>
     </div>
   </aside>
@@ -724,7 +725,8 @@
   </div>
 
   <script src="/static/js/mobile-menu.js"></script>
-  <script src="/static/js/branding.js"></script>
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/pdf-language.js"></script>
   <script src="/static/js/mobile-menu.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/table-cards.js"></script>

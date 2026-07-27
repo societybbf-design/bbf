@@ -19,6 +19,7 @@ const {
   generateMemberLedgerPdf,
   generateInvestorPortfolioPdf,
 } = require('../services/documentPdfService');
+const { resolveRequestLanguage } = require('../services/i18nService');
 const { listInvestorUsers, getInvestorPortfolio } = require('../services/investmentService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const {
@@ -134,7 +135,8 @@ router.get('/members/deleted/count', async (req, res) => {
 router.get('/members/:id/ledger.pdf', async (req, res) => {
   try {
     const data = await getMemberLedgerDocumentData(req.params.id);
-    const pdfBuffer = await generateMemberLedgerPdf(data, req.session?.user?.name || 'Cashier');
+    const lang = resolveRequestLanguage(req);
+    const pdfBuffer = await generateMemberLedgerPdf(data, req.session?.user?.name || 'Cashier', lang);
     const safeName = String(data.member?.name || 'member').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -180,7 +182,8 @@ router.get('/investors/:id/profile', async (req, res) => {
 router.get('/investors/:id/ledger.pdf', async (req, res) => {
   try {
     const data = await getInvestorLedgerDocumentData(req.params.id);
-    const pdfBuffer = await generateInvestorPortfolioPdf(data, req.session?.user?.name || 'Cashier');
+    const lang = resolveRequestLanguage(req);
+    const pdfBuffer = await generateInvestorPortfolioPdf(data, req.session?.user?.name || 'Cashier', lang);
     const safeName = String(data.investor?.name || 'investor').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(

@@ -3,7 +3,7 @@ const {
   queryAuditTransactions,
   AUDIT_CATEGORIES,
 } = require('../services/transactionAuditService');
-const { generateAuditTrailPdf } = require('../services/documentPdfService');
+const { resolveRequestLanguage } = require('../services/i18nService');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
 router.use(requireAuth, requirePermission('can_manage_deposits', 'can_view_reports'));
@@ -37,7 +37,8 @@ router.get('/export.pdf', async (req, res) => {
       offset: req.query.offset || 0,
     });
 
-    const pdfBuffer = await generateAuditTrailPdf(result, req.session?.user?.name || 'Cashier');
+    const lang = resolveRequestLanguage(req);
+    const pdfBuffer = await generateAuditTrailPdf(result, req.session?.user?.name || 'Cashier', lang);
     const fromPart = req.query.from || 'all';
     const toPart = req.query.to || 'dates';
     res.setHeader('Content-Type', 'application/pdf');

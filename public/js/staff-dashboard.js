@@ -69,12 +69,15 @@ function buildQueryString(params = {}) {
   return query ? `?${query}` : '';
 }
 
-function triggerPdfDownload(button, url, { loadingLabel = 'Generating PDF…' } = {}) {
+function triggerPdfDownload(button, url, options = {}) {
+  if (window.PdfLanguage?.triggerDownload) {
+    return window.PdfLanguage.triggerDownload(button, url, options);
+  }
   if (!button || button.disabled) return;
   const original = button.textContent;
   button.disabled = true;
   button.classList.add('is-loading');
-  button.textContent = button.dataset.loadingLabel || loadingLabel;
+  button.textContent = window.I18n?.t('pdf.generating', 'Generating PDF…');
   window.open(url, '_blank', 'noopener');
   window.setTimeout(() => {
     button.disabled = false;
@@ -152,14 +155,33 @@ function paymentChannelLabel(channel) {
   return labels[channel] || channel || 'Cash';
 }
 
-function navItemHtml({ title, icon, active = false, panel = 'home' }) {
+function navItemHtml({ titleKey, icon, active = false, panel = 'home' }) {
+  const label = window.I18n?.t(titleKey, titleKey) || titleKey;
   return `
     <a href="#${escapeHtml(panel)}" class="nav-item${active ? ' active' : ''}" data-staff-nav="${escapeHtml(panel)}">
       <span class="nav-icon-wrap"><span class="nav-icon" aria-hidden="true">${icon}</span></span>
-      <span class="nav-label">${escapeHtml(title)}</span>
+      <span class="nav-label" data-i18n="${escapeHtml(titleKey)}">${escapeHtml(label)}</span>
     </a>
   `;
 }
+
+const PANEL_I18N_KEYS = {
+  home: 'nav.dashboard',
+  members: 'nav.members',
+  ledger: 'nav.bankLedger',
+  audit: 'nav.transactionAudit',
+  queue: 'nav.paymentQueue',
+  funding: 'nav.advancesBorrow',
+  profit: 'nav.profitPool',
+  deposits: 'nav.deposits',
+  withdrawals: 'nav.withdrawals',
+  investments: 'nav.investments',
+  refunds: 'nav.refunds',
+  loans: 'nav.loans',
+  reports: 'nav.reports',
+  chat: 'nav.chat',
+  ious: 'nav.ious',
+};
 
 const HOME_MODULE_ORDER = [
   'deposits',
@@ -2107,7 +2129,7 @@ function bindLedgerForms() {
 
   const openZ = () => {
     const today = new Date().toISOString().slice(0, 10);
-    window.open(`/api/admin/bank-ledger/z-report.pdf?date=${today}`, '_blank');
+    void window.PdfLanguage?.open?.(`/api/admin/bank-ledger/z-report.pdf?date=${today}`);
   };
   document.getElementById('zReportBtn')?.addEventListener('click', openZ);
   document.getElementById('cashierZReportBtn')?.addEventListener('click', openZ);
@@ -2359,6 +2381,7 @@ function bindModuleForms() {
 
 async function init() {
   try {
+    await window.I18n?.whenReady?.();
     const response = await fetch('/api/session');
     const data = await response.json();
     const user = data.user;
@@ -2386,8 +2409,8 @@ async function init() {
       subtitle: `Signed in as ${user.name}`,
     };
 
-    document.getElementById('dashboardTitle').textContent = meta.title;
-    document.getElementById('dashboardSubtitle').textContent = `${meta.subtitle} · ${user.email}`;
+    document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${user.role}`, meta.title);
+    document.getElementById('dashboardSubtitle').textContent = meta.subtitle;
     document.getElementById('roleTagline').textContent = window.OrganizationBranding?.portalLabel(
       user.role === 'cashier' ? 'cashier' : 'staff'
     ) || roleLabel;
@@ -2404,9 +2427,9 @@ async function init() {
     setText('cashierTopName', user.name || '—');
     setText('cashierTopRole', roleLabel);
     setText('cashierTopAvatar', initials);
-    setText('cashierGreeting', `Hi ${String(user.name || 'there').split(' ')[0]}, ${greetingForHour()}!`);
-    setText('cashierHeroTitle', 'Your cashier workspace');
-    setText('cashierHeroNote', 'Track this month’s collections, open member portfolios, and use the sidebar for all modules.');
+    setText('cashierGreeting', `${window.I18n?.t('page.staff.welcomeBack', 'Welcome back')}, ${String(user.name || 'there').split(' ')[0]}!`);
+    setText('cashierHeroTitle', window.I18n?.t('page.staff.workspaceTitle', 'Your cashier workspace'));
+    setText('cashierHeroNote', window.I18n?.t('page.staff.workspaceNote', 'Track this month\'s collections, open member portfolios, and use the sidebar for all modules.'));
 
     const permissions = new Set(user.permissions || []);
     const seenPanels = new Set();
@@ -2430,9 +2453,9 @@ async function init() {
       + (showMembers && !features.some((f) => f.panel === 'members') ? 1 : 0);
 
     document.getElementById('permissionStats').innerHTML = `
-      <div class="cashier-pill"><strong>${permissions.size}</strong><span>Permissions</span></div>
-      <div class="cashier-pill"><strong>${moduleCount}</strong><span>Modules</span></div>
-      <div class="cashier-pill"><strong>${escapeHtml(roleLabel)}</strong><span>Role</span></div>
+      <div class="cashier-pill"><strong>${permissions.size}</strong><span data-i18n="page.staff.permissions">${window.I18n?.t('page.staff.permissions', 'Permissions')}</span></div>
+      <div class="cashier-pill"><strong>${moduleCount}</strong><span data-i18n="page.staff.modules">${window.I18n?.t('page.staff.modules', 'Modules')}</span></div>
+      <div class="cashier-pill"><strong>${escapeHtml(roleLabel)}</strong><span data-i18n="page.staff.role">${window.I18n?.t('page.staff.role', 'Role')}</span></div>
     `;
 
     const navParts = [];
@@ -2441,38 +2464,39 @@ async function init() {
     const pushNav = (opts) => {
       if (addedPanels.has(opts.panel)) return;
       addedPanels.add(opts.panel);
-      navParts.push(navItemHtml(opts));
+      const titleKey = opts.titleKey || PANEL_I18N_KEYS[opts.panel] || 'nav.dashboard';
+      navParts.push(navItemHtml({ ...opts, titleKey }));
     };
 
-    navParts.push('<p class="nav-section-label">Overview</p>');
-    pushNav({ title: 'Dashboard', icon: '🏠', active: true, panel: 'home' });
+    navParts.push(`<p class="nav-section-label" data-i18n="nav.section.overview">${window.I18n?.t('nav.section.overview', 'Overview')}</p>`);
+    pushNav({ icon: '🏠', active: true, panel: 'home' });
 
-    navParts.push('<p class="nav-section-label">Finance</p>');
-    if (showLedger) pushNav({ title: 'Bank Ledger', icon: '🏛️', panel: 'ledger' });
-    if (showLedger) pushNav({ title: 'Transaction Audit', icon: '📋', panel: 'audit' });
-    if (showQueue) pushNav({ title: 'Payment Queue', icon: '⏳', panel: 'queue' });
-    if (showQueue) pushNav({ title: 'Advances & Borrow', icon: '🔄', panel: 'funding' });
-    if (showProfit) pushNav({ title: 'Profit Pool', icon: '💹', panel: 'profit' });
+    navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
+    if (showLedger) pushNav({ icon: '🏛️', panel: 'ledger' });
+    if (showLedger) pushNav({ icon: '📋', panel: 'audit' });
+    if (showQueue) pushNav({ icon: '⏳', panel: 'queue' });
+    if (showQueue) pushNav({ icon: '🔄', panel: 'funding' });
+    if (showProfit) pushNav({ icon: '💹', panel: 'profit' });
 
     const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding']);
     features.forEach((feature) => {
       if (!financePanels.has(feature.panel)) return;
       const copy = HOME_MODULE_COPY[feature.panel] || {};
       pushNav({
-        title: copy.title || feature.title,
+        titleKey: PANEL_I18N_KEYS[feature.panel],
         icon: copy.icon || feature.icon || '•',
         panel: feature.panel,
       });
     });
 
-    navParts.push('<p class="nav-section-label">Management</p>');
-    if (showMembers) pushNav({ title: 'Members', icon: '👥', panel: 'members' });
+    navParts.push(`<p class="nav-section-label" data-i18n="nav.section.management">${window.I18n?.t('nav.section.management', 'Management')}</p>`);
+    if (showMembers) pushNav({ icon: '👥', panel: 'members' });
 
     features.forEach((feature) => {
       if (financePanels.has(feature.panel) || feature.panel === 'home') return;
       const copy = HOME_MODULE_COPY[feature.panel] || {};
       pushNav({
-        title: copy.title || feature.title,
+        titleKey: PANEL_I18N_KEYS[feature.panel] || `nav.${feature.panel}`,
         icon: copy.icon || feature.icon || '•',
         panel: feature.panel,
       });
@@ -2496,6 +2520,14 @@ async function init() {
           staffSessionUser.role === 'cashier' ? 'cashier' : 'staff'
         ) || (staffSessionUser.role || 'staff').replace(/_/g, ' ');
       }
+      if (staffSessionUser) {
+        const meta = ROLE_META[staffSessionUser.role] || { title: 'Staff Dashboard', subtitle: '' };
+        document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${staffSessionUser.role}`, meta.title);
+        setText('cashierHeroTitle', window.I18n?.t('page.staff.workspaceTitle', 'Your cashier workspace'));
+        setText('cashierHeroNote', window.I18n?.t('page.staff.workspaceNote', ''));
+        setText('cashierGreeting', `${window.I18n?.t('page.staff.welcomeBack', 'Welcome back')}, ${String(staffSessionUser.name || 'there').split(' ')[0]}!`);
+      }
+      window.I18n?.applyI18n?.();
     });
     bindLedgerForms();
     bindProfitPoolForms();

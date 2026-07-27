@@ -239,26 +239,29 @@ function resetPdfPreviewState() {
 }
 
 function openPdfInNewTab(url = currentPdfUrl) {
-  if (!url) {
-    return;
-  }
-  window.open(url, '_blank', 'noopener');
+  if (!url) return;
+  void window.PdfLanguage?.open?.(url);
 }
 
 async function openPdfPreview(url, title = 'Investment Receipt', subtitle = '') {
   if (!pdfPreviewModal) {
-    openPdfInNewTab(url);
+    const localized = await window.PdfLanguage?.open?.(url);
+    if (!localized) openPdfInNewTab(url);
     return;
   }
 
+  const lang = await window.PdfLanguage?.prompt?.({ defaultLang: window.I18n?.getLanguage?.() });
+  if (!lang) return;
+  const localizedUrl = window.PdfLanguage?.withLangParam?.(url, lang) || url;
+
   resetPdfPreviewState();
-  currentPdfUrl = url;
+  currentPdfUrl = localizedUrl;
 
   if (pdfPreviewTitle) {
     pdfPreviewTitle.textContent = title;
   }
   if (pdfPreviewSubtitle) {
-    pdfPreviewSubtitle.textContent = subtitle || 'Your receipt is ready right now. View the PDF below immediately.';
+    pdfPreviewSubtitle.textContent = subtitle || window.I18n?.t('pdf.previewReady', 'Your receipt is ready right now. View the PDF below immediately.');
   }
   if (pdfPreviewLoading) {
     pdfPreviewLoading.classList.remove('hidden');
@@ -267,7 +270,7 @@ async function openPdfPreview(url, title = 'Investment Receipt', subtitle = '') 
   pdfPreviewModal.classList.remove('hidden');
 
   try {
-    const response = await fetch(url, { credentials: 'same-origin' });
+    const response = await fetch(localizedUrl, { credentials: 'same-origin' });
     if (!response.ok) {
       throw new Error('Unable to load PDF');
     }
@@ -1161,6 +1164,28 @@ function navigateToPage(page, sectionId = null) {
   }
 }
 
+const ADMIN_PAGE_I18N_KEYS = {
+  members: 'members',
+  deposits: 'deposits',
+  investments: 'investments',
+  profit: 'profit',
+  sales: 'sales',
+  payments: 'payments',
+  withdrawals: 'withdrawals',
+  loans: 'loans',
+  reports: 'reports',
+  settings: 'settings',
+  messages: 'messages',
+  ceo: 'ceo',
+  investors: 'investors',
+  'project-managers': 'projectManagers',
+};
+
+function adminPageText(page, field, fallback) {
+  const slug = ADMIN_PAGE_I18N_KEYS[page] || 'dashboard';
+  return window.I18n?.t(`page.admin.${slug}.${field}`, fallback) || fallback;
+}
+
 function updatePageContent(page, loanTab = null) {
   const pageTitle = document.getElementById('pageTitle') || document.querySelector('.topbar-left h1');
   const pageNote = document.getElementById('pageNote') || document.querySelector('.topbar-left .topbar-note');
@@ -1169,42 +1194,22 @@ function updatePageContent(page, loanTab = null) {
     return;
   }
 
+  const headerSlug = ADMIN_PAGE_I18N_KEYS[page] || 'dashboard';
+  pageTitle.textContent = adminPageText(page, 'title', pageTitle.textContent);
+  pageNote.textContent = adminPageText(page, 'note', pageNote.textContent);
+
   switch (page) {
-    case 'members':
-      pageTitle.textContent = 'Members';
-      pageNote.textContent = 'Manage all society members.';
-      break;
-    case 'deposits':
-      pageTitle.textContent = 'Deposits';
-      pageNote.textContent = 'View and manage all deposit transactions.';
-      break;
     case 'investments':
-      pageTitle.textContent = 'Investments';
-      pageNote.textContent = 'Manage society investments, investor portfolios, and project manager assignments.';
       void loadInvestments();
       void loadInvestmentFormOptions().then(() => loadInvestorPortfolio()).catch(() => {});
       break;
     case 'profit':
-      pageTitle.textContent = 'Profit & Loss';
-      pageNote.textContent = 'Record investment profit or loss and distribute results to all members.';
       void loadInvestmentProfitHistory();
       break;
     case 'sales':
-      pageTitle.textContent = 'Sell Product / Project';
-      pageNote.textContent = 'Record product sales with auto-fetched investment totals and net profit/loss.';
       void loadSellList();
       break;
-    case 'payments':
-      pageTitle.textContent = 'Payments';
-      pageNote.textContent = 'Manage payments and profit distribution.';
-      break;
-    case 'withdrawals':
-      pageTitle.textContent = 'Withdrawals';
-      pageNote.textContent = 'Review member withdrawal requests and approvals.';
-      break;
     case 'loans':
-      pageTitle.textContent = 'Loans';
-      pageNote.textContent = 'Review loan takers, active borrowers, and all applications.';
       void loadLoanPortfolioSummary();
       void loadLoanTakers();
       void loadActiveBorrowers();
@@ -1215,46 +1220,43 @@ function updatePageContent(page, loanTab = null) {
       }
       break;
     case 'reports':
-      pageTitle.textContent = 'Reports';
-      pageNote.textContent = 'Click Members, Deposits, or Investments to view detailed lists.';
       void refreshReportData();
       void loadFinancialTrendCharts();
       void loadActivityLog();
       break;
     case 'settings':
-      pageTitle.textContent = 'Settings';
-      pageNote.textContent = 'Configure system settings.';
       void loadPendingKycDocuments();
       break;
     case 'messages':
-      pageTitle.textContent = 'Messages';
-      pageNote.textContent = 'Chat directly with members from the inbox.';
       stopChatPolling('admin-page');
       void loadAdminChatInbox(activeAdminChatMemberId);
       break;
     case 'ceo':
-      pageTitle.textContent = 'CEO Panel';
-      pageNote.textContent = 'Inspect staff directory, opening balances, and operational tools. Account creation is in User Management.';
       void initCeoPanel();
       break;
     case 'investors':
-      pageTitle.textContent = 'Investors';
-      pageNote.textContent = 'Browse investors and open detailed portfolios.';
       void loadInvestorsModule();
       break;
     case 'project-managers':
-      pageTitle.textContent = 'Project Managers';
-      pageNote.textContent = 'Browse project managers and open assigned project portfolios.';
       void loadProjectManagersModule();
       break;
     default:
-      pageTitle.textContent = 'Dashboard';
-      pageNote.textContent = 'Manage your society finances efficiently.';
+      if (!ADMIN_PAGE_I18N_KEYS[page]) {
+        pageTitle.textContent = adminPageText('dashboard', 'title', 'Dashboard');
+        pageNote.textContent = adminPageText('dashboard', 'note', pageNote.textContent);
+      }
       void refreshLoanPortfolioData();
       void loadMonthlyContributionDashboard();
       break;
   }
 }
+
+document.addEventListener('bbbf:languagechange', () => {
+  const activePage = document.querySelector('.sidebar-nav .nav-item.active')?.dataset.page || 'dashboard';
+  updatePageContent(activePage);
+  window.I18n?.applyI18n?.();
+  window.SocietyHubMobileMenu?.refreshSections?.();
+});
 
 function closeSidebar() {
   const sidebar = document.getElementById('appSidebar');

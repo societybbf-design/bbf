@@ -16,7 +16,7 @@
     toolbar.className = 'mobile-menu-toolbar';
     toolbar.innerHTML = `
       <button type="button" class="mobile-menu-back" id="mobileMenuClose" aria-label="Close menu">←</button>
-      <h2 class="mobile-menu-title">Menu</h2>
+      <h2 class="mobile-menu-title" data-i18n="nav.section.menu">Menu</h2>
     `;
     sidebar.insertBefore(toolbar, sidebar.firstChild);
 
@@ -34,7 +34,7 @@
 
     nodes.forEach((node) => {
       if (node.matches('.nav-section-label')) {
-        current = { title: node.textContent.trim(), items: [] };
+        current = { title: node.textContent.trim(), i18nKey: node.getAttribute('data-i18n') || '', items: [] };
         sections.push(current);
         return;
       }
@@ -65,7 +65,7 @@
       toggle.className = 'mobile-menu-section-toggle';
       toggle.setAttribute('aria-expanded', 'true');
       toggle.innerHTML = `
-        <span class="mobile-menu-section-title">${section.title}</span>
+        <span class="mobile-menu-section-title"${section.i18nKey ? ` data-i18n="${section.i18nKey}"` : ''}>${section.title}</span>
         <span class="mobile-menu-chevron" aria-hidden="true"></span>
       `;
 
@@ -96,6 +96,7 @@
     nav.appendChild(fragment);
     nav.dataset.mobileMenuEnhanced = 'true';
     nav.classList.add('mobile-menu-enhanced');
+    window.I18n?.applyI18n?.(nav);
   }
 
   function syncPanelHeight(panel, sectionEl) {

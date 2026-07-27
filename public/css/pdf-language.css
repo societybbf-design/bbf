@@ -1,0 +1,21 @@
+.pdf-language-modal {
+  width: min(420px, 100%);
+}
+
+.pdf-language-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.pdf-language-choice {
+  min-height: 48px;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .pdf-language-options {
+    grid-template-columns: 1fr;
+  }
+}

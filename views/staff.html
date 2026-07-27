@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/css/cashier-home.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
   <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
+  <link rel="stylesheet" href="/static/css/pdf-language.css" />
 </head>
 <body class="dashboard-layout staff-dashboard cashier-shell">
   <aside class="sidebar" id="appSidebar">
@@ -35,7 +36,7 @@
       </div>
       <button type="button" class="logout-btn" id="logoutBtn">
         <span class="logout-icon">⏻</span>
-        <span>Sign Out</span>
+        <span data-i18n="common.signOut">Sign Out</span>
       </button>
     </div>
   </aside>
@@ -311,7 +312,7 @@
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
                 <button type="submit" class="primary-btn">Reconcile</button>
-                <button type="button" class="secondary-btn" id="zReportBtn">Download Z-report PDF</button>
+                <button type="button" class="secondary-btn" id="zReportBtn" data-i18n="pdf.downloadZReport">Download Z-report PDF</button>
                 <button type="button" class="ghost-btn" data-staff-nav="audit">Transaction Audit</button>
               </div>
             </div>
@@ -594,7 +595,7 @@
           </div>
           <div class="stats-grid" id="cashierReportStats"></div>
           <div class="form-row-2 u-mt-1">
-            <button type="button" class="secondary-btn" id="cashierZReportBtn">Download today’s Z-report PDF</button>
+            <button type="button" class="secondary-btn" id="cashierZReportBtn" data-i18n="pdf.downloadTodayZReport">Download today's Z-report PDF</button>
             <button type="button" class="ghost-btn" data-staff-nav="audit">Open Transaction Audit</button>
             <button type="button" class="ghost-btn" data-staff-nav="ledger">Open Bank Ledger</button>
           </div>
@@ -619,8 +620,8 @@
             </div>
             <div class="form-row-2 u-mt-1">
               <button type="submit" class="primary-btn" id="auditApplyBtn">Apply filters</button>
-              <button type="button" class="secondary-btn pdf-export-btn" id="auditExportPdfBtn" data-loading-label="Generating PDF…">
-                Export audit PDF
+              <button type="button" class="secondary-btn pdf-export-btn" id="auditExportPdfBtn" data-loading-label-key="pdf.generating">
+                <span data-i18n="pdf.exportAudit">Export audit PDF</span>
               </button>
               <button type="button" class="ghost-btn" id="auditClearBtn">Clear filters</button>
             </div>
@@ -779,8 +780,8 @@
           <p class="table-subtitle" id="cashierMemberProfileSubtitle">Official ledger and transaction history</p>
         </div>
         <div class="modal-header-actions">
-          <button type="button" class="secondary-btn pdf-export-btn hidden" id="cashierMemberPdfBtn" data-loading-label="Generating PDF…">
-            Download official PDF
+          <button type="button" class="secondary-btn pdf-export-btn hidden" id="cashierMemberPdfBtn" data-loading-label-key="pdf.generating">
+            <span data-i18n="pdf.downloadOfficial">Download official PDF</span>
           </button>
           <button type="button" class="modal-close" id="cashierMemberProfileClose" aria-label="Close">&times;</button>
         </div>
@@ -799,8 +800,8 @@
           <p class="table-subtitle" id="cashierInvestorProfileSubtitle">Investments, shares, and project history</p>
         </div>
         <div class="modal-header-actions">
-          <button type="button" class="secondary-btn pdf-export-btn hidden" id="cashierInvestorPdfBtn" data-loading-label="Generating PDF…">
-            Download official PDF
+          <button type="button" class="secondary-btn pdf-export-btn hidden" id="cashierInvestorPdfBtn" data-loading-label-key="pdf.generating">
+            <span data-i18n="pdf.downloadOfficial">Download official PDF</span>
           </button>
           <button type="button" class="modal-close" id="cashierInvestorProfileClose" aria-label="Close">&times;</button>
         </div>
@@ -812,7 +813,8 @@
   </div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-  <script src="/static/js/branding.js"></script>
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/pdf-language.js"></script>
   <script src="/static/js/mobile-menu.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/sidebar-nav.js"></script>

@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="/static/css/admin-dashboard.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
   <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
+  <link rel="stylesheet" href="/static/css/pdf-language.css" />
   <!-- Chart.js loaded deferred at end of body — React was unused and slowed first paint -->
 </head>
 <body class="dashboard-layout admin-dashboard">
@@ -40,88 +41,88 @@
     </div>
 
     <nav class="sidebar-nav">
-      <p class="nav-section-label">Overview</p>
+      <p class="nav-section-label" data-i18n="nav.section.overview">Overview</p>
       <a href="#" class="nav-item active" data-page="dashboard" data-requires-permission="can_view_reports,can_manage_deposits,can_manage_withdrawals,can_manage_members,can_manage_investments,can_manage_profit,can_manage_refunds,can_manage_chat,can_manage_loans,can_manage_notices,can_manage_kyc">
         <span class="nav-icon-wrap"><span class="nav-icon">📊</span></span>
-        <span class="nav-label">Dashboard</span>
+        <span class="nav-label" data-i18n="nav.dashboard">Dashboard</span>
       </a>
       <a href="#" class="nav-item" data-page="reports" data-requires-permission="can_view_reports">
         <span class="nav-icon-wrap"><span class="nav-icon">📋</span></span>
-        <span class="nav-label">Reports</span>
+        <span class="nav-label" data-i18n="nav.reports">Reports</span>
       </a>
 
-      <p class="nav-section-label">Finance</p>
+      <p class="nav-section-label" data-i18n="nav.section.finance">Finance</p>
       <a href="#" class="nav-item" data-page="deposits" data-requires-permission="can_manage_deposits">
         <span class="nav-icon-wrap"><span class="nav-icon">💰</span></span>
-        <span class="nav-label">Deposits</span>
+        <span class="nav-label" data-i18n="nav.deposits">Deposits</span>
       </a>
       <a href="#" class="nav-item" data-page="investments" data-requires-permission="can_manage_investments">
         <span class="nav-icon-wrap"><span class="nav-icon">📈</span></span>
-        <span class="nav-label">Investments</span>
+        <span class="nav-label" data-i18n="nav.investments">Investments</span>
       </a>
       <a href="#" class="nav-item" data-page="profit" data-requires-permission="can_manage_profit">
         <span class="nav-icon-wrap"><span class="nav-icon">💹</span></span>
-        <span class="nav-label">Profit &amp; Loss</span>
+        <span class="nav-label" data-i18n="nav.profitLoss">Profit &amp; Loss</span>
       </a>
       <a href="#" class="nav-item" data-page="sales" data-requires-permission="can_manage_investments,can_manage_profit">
         <span class="nav-icon-wrap"><span class="nav-icon">🏷️</span></span>
-        <span class="nav-label">Sell Product</span>
+        <span class="nav-label" data-i18n="nav.sellProduct">Sell Product</span>
       </a>
       <a href="#" class="nav-item" data-page="withdrawals" data-requires-permission="can_manage_withdrawals">
         <span class="nav-icon-wrap"><span class="nav-icon">🏦</span></span>
-        <span class="nav-label">Withdrawals</span>
+        <span class="nav-label" data-i18n="nav.withdrawals">Withdrawals</span>
       </a>
       <a href="#" class="nav-item" data-page="loans" data-requires-permission="can_manage_loans">
         <span class="nav-icon-wrap"><span class="nav-icon">🏛️</span></span>
-        <span class="nav-label">Loans</span>
+        <span class="nav-label" data-i18n="nav.loans">Loans</span>
       </a>
 
-      <p class="nav-section-label">Management</p>
+      <p class="nav-section-label" data-i18n="nav.section.management">Management</p>
       <a href="#" class="nav-item hidden" data-page="ceo" data-ceo-only>
         <span class="nav-icon-wrap"><span class="nav-icon">👔</span></span>
-        <span class="nav-label">CEO Panel</span>
+        <span class="nav-label" data-i18n="nav.ceoPanel">CEO Panel</span>
       </a>
       <a href="/user-management" class="nav-item hidden" data-developer-nav>
         <span class="nav-icon-wrap"><span class="nav-icon">🛠️</span></span>
-        <span class="nav-label">User Management</span>
+        <span class="nav-label" data-i18n="nav.userManagement">User Management</span>
       </a>
       <a href="#" class="nav-item" data-page="investors" data-requires-permission="can_manage_investments">
         <span class="nav-icon-wrap"><span class="nav-icon">💼</span></span>
-        <span class="nav-label">Investors</span>
+        <span class="nav-label" data-i18n="nav.investors">Investors</span>
       </a>
       <a href="#" class="nav-item" data-page="project-managers" data-requires-permission="can_manage_investments,can_manage_staff">
         <span class="nav-icon-wrap"><span class="nav-icon">🗂️</span></span>
-        <span class="nav-label">Project Managers</span>
+        <span class="nav-label" data-i18n="nav.projectManagers">Project Managers</span>
       </a>
       <a href="#" class="nav-item" data-page="members" data-requires-permission="can_manage_members,can_manage_refunds">
         <span class="nav-icon-wrap"><span class="nav-icon">👥</span></span>
-        <span class="nav-label">Members</span>
+        <span class="nav-label" data-i18n="nav.members">Members</span>
       </a>
       <a href="#" class="nav-item" data-page="messages" data-requires-permission="can_manage_chat">
         <span class="nav-icon-wrap"><span class="nav-icon">💬</span></span>
-        <span class="nav-label">Messages</span>
+        <span class="nav-label" data-i18n="nav.messages">Messages</span>
       </a>
 
-      <p class="nav-section-label">Settings</p>
+      <p class="nav-section-label" data-i18n="nav.section.settings">Settings</p>
       <a href="#" class="nav-item" data-page="settings" data-requires-permission="can_manage_kyc,can_manage_notices,can_view_reports,can_manage_deposits,can_manage_withdrawals,can_manage_refunds,can_manage_chat,can_manage_members,can_manage_profit,can_manage_investments,can_manage_loans">
         <span class="nav-icon-wrap"><span class="nav-icon">⚙️</span></span>
-        <span class="nav-label">Settings</span>
+        <span class="nav-label" data-i18n="nav.settings">Settings</span>
       </a>
       <a href="/dashboard/cashier" class="nav-item hidden" data-staff-home="cashier">
         <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
-        <span class="nav-label">Cashier Home</span>
+        <span class="nav-label" data-i18n="nav.cashierHome">Cashier Home</span>
       </a>
       <a href="/dashboard/project-manager" class="nav-item hidden" data-staff-home="project_manager">
         <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
-        <span class="nav-label">Manager Home</span>
+        <span class="nav-label" data-i18n="nav.managerHome">Manager Home</span>
       </a>
       <a href="/dashboard/employee" class="nav-item hidden" data-staff-home="employee">
         <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
-        <span class="nav-label">Employee Home</span>
+        <span class="nav-label" data-i18n="nav.employeeHome">Employee Home</span>
       </a>
       <a href="/dashboard/investor" class="nav-item hidden" data-staff-home="investor">
         <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
-        <span class="nav-label">Investor Home</span>
+        <span class="nav-label" data-i18n="nav.investorHome">Investor Home</span>
       </a>
     </nav>
 
@@ -129,14 +130,14 @@
       <div class="sidebar-user-avatar"><span id="sidebarAdminInitial">A</span></div>
       <div class="sidebar-user-info">
         <strong id="sidebarAdminName">CEO</strong>
-        <span>CEO Panel</span>
+        <span data-i18n="common.ceoPanel">CEO Panel</span>
       </div>
     </div>
 
     <div class="sidebar-footer">
       <button id="logoutBtn" class="logout-btn">
         <span class="logout-icon">⏻</span>
-        <span>Sign Out</span>
+        <span data-i18n="common.signOut">Sign Out</span>
       </button>
     </div>
   </aside>
@@ -148,7 +149,7 @@
     <!-- Top Bar -->
     <div class="topbar">
       <div class="topbar-left">
-        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" data-i18n-aria-label="common.openNav" aria-label="Open navigation menu">☰</button>
         <div class="topbar-heading">
           <p class="topbar-eyebrow" data-brand-eyebrow data-brand-portal="ceo">CEO Dashboard</p>
           <h1 id="pageTitle">Dashboard</h1>
@@ -161,13 +162,13 @@
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
-        <button type="button" class="notification-bell-btn" id="adminNotificationBtn" title="View Notifications" aria-label="View Notifications">
+        <button type="button" class="notification-bell-btn" id="adminNotificationBtn" data-i18n-title="common.viewNotifications" title="View Notifications" data-i18n-aria-label="common.viewNotifications" aria-label="View Notifications">
           🔔 <span class="notification-badge hidden" id="adminNotificationBadge">0</span>
         </button>
         <div id="adminNotificationPanel" class="notification-panel hidden" hidden>
           <div class="notification-panel-header">
-            <strong>Notifications</strong>
-            <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn">Mark all read</button>
+            <strong data-i18n="common.notifications">Notifications</strong>
+            <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
           </div>
           <div id="adminNotificationList" class="notification-list">
             <p class="table-subtitle notification-empty-state">Click "View Notifications" to load updates.</p>
@@ -2018,7 +2019,8 @@
   </div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-  <script defer src="/static/js/branding.js"></script>
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/pdf-language.js"></script>
   <script defer src="/static/js/mobile-menu.js"></script>
   <script defer src="/static/js/theme.js"></script>
   <script defer src="/static/js/table-cards.js"></script>

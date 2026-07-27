@@ -30,41 +30,41 @@
       <form id="loginForm" class="form-card">
         <div class="form-group">
           <label>
-            Email Address
-            <input type="email" name="email" placeholder="Enter your email" required />
+            <span data-i18n="common.emailAddress">Email Address</span>
+            <input type="email" name="email" data-i18n-placeholder="common.enterEmail" placeholder="Enter your email" required />
           </label>
         </div>
         <div class="form-group">
           <label>
-            Password
-            <input type="password" name="password" placeholder="Enter your password" required />
+            <span data-i18n="common.password">Password</span>
+            <input type="password" name="password" data-i18n-placeholder="common.enterPassword" placeholder="Enter your password" required />
           </label>
         </div>
-        <button type="submit" class="primary-btn">Sign In</button>
+        <button type="submit" class="primary-btn" data-i18n="common.signIn">Sign In</button>
         <p id="message" class="message"></p>
 
         <p class="small-label" style="margin-top:1rem;">
-          <a href="#recovery" id="showRecoveryLink">Forgot password or locked out?</a>
+          <a href="#recovery" id="showRecoveryLink" data-i18n="common.forgotPassword">Forgot password or locked out?</a>
         </p>
       </form>
 
       <form id="otpRequestForm" class="form-card hidden" style="margin-top:1rem;">
-        <h2 style="font-size:1.1rem;margin:0 0 .5rem;">Password recovery OTP</h2>
-        <p class="table-subtitle">We email a one-time code to your registered address. Share that OTP with User Management so they can verify you and set a new password.</p>
+        <h2 style="font-size:1.1rem;margin:0 0 .5rem;" data-i18n="common.passwordRecoveryOtp">Password recovery OTP</h2>
+        <p class="table-subtitle" data-i18n="common.passwordRecoveryHelp">We email a one-time code to your registered address. Share that OTP with User Management so they can verify you and set a new password.</p>
         <div class="form-group">
           <label>
-            Registered email
+            <span data-i18n="common.registeredEmail">Registered email</span>
             <input type="email" name="email" required placeholder="your@email.com" />
           </label>
         </div>
-        <button type="submit" class="primary-btn">Send OTP</button>
-        <button type="button" class="ghost-btn" id="backToLoginBtn" style="margin-top:.5rem;">Back to sign in</button>
+        <button type="submit" class="primary-btn" data-i18n="common.sendOtp">Send OTP</button>
+        <button type="button" class="ghost-btn" id="backToLoginBtn" style="margin-top:.5rem;" data-i18n="common.backToSignIn">Back to sign in</button>
         <p id="otpMessage" class="message"></p>
       </form>
     </div>
   </main>
 
-  <script src="/static/js/branding.js"></script>
+  <script src="/static/js/i18n.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/login.js"></script>
 </body>

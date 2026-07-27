@@ -47,30 +47,42 @@ let memberFinancialData = {
 let activeMemberReportType = null;
 
 // Sidebar Navigation
-const memberPageTitles = {
-  dashboard: ['Dashboard', 'Welcome back! Track your savings, investments, and profits.'],
-  investments: ['Investments', 'View all society investments and receipts.'],
-  'investment-requests': ['Investment Requests', 'Review and approve new investment proposals.'],
-  portfolio: ['Portfolio', 'Track your savings and investment progress.'],
-  withdrawals: ['Withdrawals', 'Submit and track your withdrawal requests.'],
-  refunds: ['Refunds', 'Track refund status for returned deposits.'],
-  loans: ['Loans', 'Apply for society loans and track approval status.'],
-  messages: ['Messages', 'Chat directly with the society admin office.'],
-  documents: ['Documents', 'Complete digital KYC and upload onboarding documents.'],
-  settings: ['Settings', 'Manage your account preferences.'],
+const memberPageKeys = {
+  dashboard: 'dashboard',
+  investments: 'investments',
+  'investment-requests': 'investmentRequests',
+  portfolio: 'portfolio',
+  withdrawals: 'withdrawals',
+  refunds: 'refunds',
+  loans: 'loans',
+  messages: 'messages',
+  documents: 'documents',
+  settings: 'settings',
 };
+
+function memberPageText(page, field, fallback) {
+  const slug = memberPageKeys[page] || 'dashboard';
+  return window.I18n?.t(`page.member.${slug}.${field}`, fallback) || fallback;
+}
 
 function updateMemberPageContent(page) {
   const pageTitle = document.getElementById('pageTitle');
   const pageNote = document.getElementById('pageNote');
-  const meta = memberPageTitles[page] || memberPageTitles.dashboard;
+  const slug = memberPageKeys[page] || 'dashboard';
   if (pageTitle) {
-    pageTitle.textContent = meta[0];
+    pageTitle.textContent = memberPageText(page, 'title', pageTitle.textContent);
   }
   if (pageNote) {
-    pageNote.textContent = meta[1];
+    pageNote.textContent = memberPageText(page, 'note', pageNote.textContent);
   }
 }
+
+document.addEventListener('bbbf:languagechange', () => {
+  const activePage = document.querySelector('.sidebar-nav .nav-item.active')?.dataset.page || 'dashboard';
+  updateMemberPageContent(activePage);
+  window.I18n?.applyI18n?.();
+  window.SocietyHubMobileMenu?.refreshSections?.();
+});
 
 function navigateMemberPage(page) {
   document.querySelectorAll('.nav-item').forEach((item) => {
