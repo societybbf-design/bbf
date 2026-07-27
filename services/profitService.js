@@ -402,13 +402,22 @@ async function applyLossToMembers({
 }
 
 async function assertInvestmentCanBeSold(investment) {
+  if (investment.ledgerLockedAt || investment.status === 'closed') {
+    const error = new Error('This project ledger is locked after sale/settlement.');
+    error.status = 409;
+    throw error;
+  }
+
   if (investment.status === 'sold') {
     const error = new Error('This investment has already been sold.');
     error.status = 400;
     throw error;
   }
 
-  const existingSale = await InvestmentProfit.findOne({ investment: investment._id });
+  const existingSale = await InvestmentProfit.findOne({
+    investment: investment._id,
+    distributionKind: { $in: ['sale', 'loss'] },
+  });
   if (existingSale) {
     const error = new Error('This investment has already been sold.');
     error.status = 400;
@@ -416,11 +425,16 @@ async function assertInvestmentCanBeSold(investment) {
   }
 }
 
-async function markInvestmentAsSold(investment, { saleAmount, outcomeType }) {
-  investment.status = 'sold';
+async function markInvestmentAsSold(investment, { saleAmount, outcomeType, lockLedger = false, recordedBy = 'Admin' }) {
+  investment.status = lockLedger ? 'closed' : 'sold';
   investment.saleAmount = Number(saleAmount) || 0;
   investment.outcomeType = outcomeType;
   investment.soldAt = new Date();
+  if (lockLedger) {
+    investment.closedAt = new Date();
+    investment.ledgerLockedAt = new Date();
+    investment.ledgerLockedBy = String(recordedBy || 'Admin').trim();
+  }
   await investment.save();
 }
 
@@ -507,6 +521,23 @@ async function recordInvestmentProfit({
 }) {
   const investment = await getInvestmentByCode(investmentCode);
   await assertInvestmentCanBeSold(investment);
+
+  // Co-funded / ownership projects use the dedicated liquidation settlement path.
+  if (Number(investment.investorOwnershipPct || 0) > 0) {
+    const { liquidateProject } = require('./projectFinanceService');
+    const normalizedSaleAmount = Number(saleAmount) || 0;
+    let inferredSale = normalizedSaleAmount;
+    if ((!inferredSale || inferredSale <= 0) && Number(profitAmount) > 0) {
+      inferredSale = Number((Number(investment.amount || 0) + Number(profitAmount)).toFixed(2));
+    }
+    return liquidateProject({
+      investmentId: investment._id,
+      saleAmount: inferredSale,
+      notes,
+      recordedBy,
+    });
+  }
+
   const normalizedSaleAmount = Number(saleAmount) || 0;
   let normalizedProfitAmount = Number(profitAmount);
 
@@ -550,6 +581,11 @@ async function recordInvestmentProfit({
     distributionType: societyDistributionType,
     memberCount: distribution.memberCount,
     shares: distribution.shares,
+    societyProfitShare: normalizedProfitAmount,
+    investorProfitShare: 0,
+    societyOwnershipPct: Number(investment.societyOwnershipPct || 100),
+    investorOwnershipPct: Number(investment.investorOwnershipPct || 0),
+    distributionKind: 'sale',
     notes: notes?.trim() || '',
     recordedBy: recordedBy?.trim() || 'Admin',
   });
@@ -557,6 +593,8 @@ async function recordInvestmentProfit({
   await markInvestmentAsSold(investment, {
     saleAmount: normalizedSaleAmount,
     outcomeType: 'profit',
+    lockLedger: true,
+    recordedBy,
   });
 
   let bankLedger = null;

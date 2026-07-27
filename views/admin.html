@@ -1222,7 +1222,7 @@
       <section class="page-section" data-page-section="sales">
         <section class="panel-card card-form-wide">
           <h2 data-i18n="admin.sections.sellProductProject">Sell Product / Project</h2>
-          <p class="table-subtitle">Enter the Investment ID for the project or property. Total historical investments are fetched automatically. Enter Sale Amount, Additional Costs, and Tax — net profit or loss is calculated for you.</p>
+          <p class="table-subtitle">Enter the Investment ID. Sale proceeds are split by society/investor ownership. On settlement the project becomes Closed and ledgers are locked.</p>
           <form id="sellProductForm" class="add-member-form">
             <div class="form-row-2">
               <div class="form-group">
@@ -1912,12 +1912,52 @@
             </label>
           </div>
         </div>
-        <div class="form-group">
-          <label data-i18n="admin.forms.investmentAmountUsd">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label data-i18n="admin.forms.investmentAmountUsd">
                 Investment Amount (৳)
-            <input type="number" name="amount" min="0.01" step="0.01" placeholder="1000.00" required />
-          </label>
+            <input type="number" name="amount" id="investmentTotalAmount" min="0.01" step="0.01" placeholder="1000.00" required />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Return type
+              <select name="returnMode" id="investmentReturnMode">
+                <option value="fixed_term">Fixed / Term (locked until maturity)</option>
+                <option value="monthly">Monthly Return</option>
+              </select>
+            </label>
+          </div>
         </div>
+        <div class="form-row-2" id="investmentTermFields">
+          <div class="form-group">
+            <label>
+              Term (months)
+              <input type="number" name="termMonths" id="investmentTermMonths" min="1" step="1" placeholder="12" />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Maturity date
+              <input type="date" name="maturityDate" id="investmentMaturityDate" />
+            </label>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Society ownership (%)
+              <input type="number" name="societyOwnershipPct" id="investmentSocietyPct" min="0" max="100" step="0.01" value="100" required />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              External investor ownership (%)
+              <input type="number" name="investorOwnershipPct" id="investmentInvestorPct" min="0" max="100" step="0.01" value="0" required />
+            </label>
+          </div>
+        </div>
+        <p class="table-subtitle" id="investmentOwnershipPreview">Society capital ৳0.00 · External capital ৳0.00</p>
         <div class="form-group">
           <label data-i18n="admin.forms.notesOptional">
                 Notes (optional)
@@ -1931,7 +1971,7 @@
           </label>
           <p class="table-subtitle">Upload supporting files for members and cashier to review.</p>
         </div>
-        <p class="table-subtitle">Submit creates a <strong>Pending Member Approval</strong> proposal. Society funds are deducted only after cashier payment.</p>
+        <p class="table-subtitle">Submit creates a <strong>Pending Member Approval</strong> proposal. Society capital is deducted after cashier payment. External investor capital is recorded separately by the Cashier.</p>
         <button type="submit" class="primary-btn" data-i18n="admin.buttons.submitForMemberApproval">Submit for Member Approval</button>
         <p id="investmentMessage" class="message"></p>
       </form>

@@ -7,6 +7,8 @@ const ENTRY_TYPES = [
   'project_sale',
   'monthly_profit',
   'profit_distribution',
+  'external_investment',
+  'investor_payout',
   'adjustment',
 ];
 

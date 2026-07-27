@@ -21,6 +21,13 @@ const {
   createInvestmentType,
   ensureDefaultInvestmentTypes,
 } = require('../services/investmentTypeService');
+const {
+  recordExternalInvestment,
+  recordMonthlyProjectReturn,
+  liquidateProject,
+  listExternalCapitalQueue,
+  listActiveMonthlyProjects,
+} = require('../services/projectFinanceService');
 const { generateInvestmentReceiptPdf, generatePayoutVoucherPdf } = require('../services/notificationService');
 const { saveUploadedFiles } = require('../middleware/upload');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
@@ -106,6 +113,73 @@ router.get('/cashier-queue', requirePermission('can_manage_deposits', 'can_manag
     return res.json({ queue });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load cashier payment queue.' });
+  }
+});
+
+router.get('/external-capital-queue', requirePermission('can_manage_deposits', 'can_manage_investments'), async (req, res) => {
+  try {
+    const queue = await listExternalCapitalQueue();
+    return res.json({ queue });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load external capital queue.' });
+  }
+});
+
+router.get('/monthly-projects', requirePermission('can_manage_deposits', 'can_manage_investments', 'can_manage_profit'), async (req, res) => {
+  try {
+    const projects = await listActiveMonthlyProjects();
+    return res.json({ projects });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load monthly projects.' });
+  }
+});
+
+router.post('/:id/external-capital', requirePermission('can_manage_deposits'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    if (req.session?.user?.role !== 'cashier' && !['ceo', 'admin', 'developer'].includes(req.session?.user?.role)) {
+      // deposits permission already gated; allow cashier primarily
+    }
+    const result = await recordExternalInvestment({
+      investmentId: req.params.id,
+      amount: req.body?.amount,
+      note: req.body?.note,
+      paymentChannel: req.body?.paymentChannel,
+      paymentReference: req.body?.paymentReference,
+      recordedBy: req.session?.user?.name || 'Cashier',
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to record external investment.' });
+  }
+});
+
+router.post('/:id/monthly-return', requirePermission('can_manage_deposits', 'can_manage_profit', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await recordMonthlyProjectReturn({
+      investmentId: req.params.id,
+      profitAmount: req.body?.profitAmount || req.body?.amount,
+      notes: req.body?.notes,
+      recordedBy: req.session?.user?.name || 'Cashier',
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to record monthly return.' });
+  }
+});
+
+router.post('/:id/liquidate', requirePermission('can_manage_investments', 'can_manage_deposits'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await liquidateProject({
+      investmentId: req.params.id,
+      saleAmount: req.body?.saleAmount,
+      additionalCosts: req.body?.additionalCosts,
+      tax: req.body?.tax,
+      notes: req.body?.notes,
+      recordedBy: req.session?.user?.name || 'Admin',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to liquidate project.' });
   }
 });
 
@@ -253,6 +327,13 @@ router.post('/', requirePermission('can_manage_investments'), requirePasswordCon
       partner,
       notes,
       documents,
+      returnMode,
+      termMonths,
+      maturityDate,
+      societyOwnershipPct,
+      investorOwnershipPct,
+      societyAmount,
+      externalAmount,
     } = req.body;
 
     const savedDocuments = saveUploadedFiles(documents || [], 'investments');
@@ -270,6 +351,13 @@ router.post('/', requirePermission('can_manage_investments'), requirePasswordCon
       notes,
       documents: savedDocuments,
       createdBy: req.session?.user?.name || 'Admin',
+      returnMode,
+      termMonths,
+      maturityDate,
+      societyOwnershipPct,
+      investorOwnershipPct,
+      societyAmount,
+      externalAmount,
     });
 
     return res.status(201).json(result);

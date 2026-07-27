@@ -956,19 +956,29 @@ function bindSellProductForm() {
     };
 
     try {
-      const response = await fetch('/api/admin/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const primaryId = sellProjectState?.primary?.id || sellProjectState?.primary?._id || sellProjectState?.investments?.[0]?._id;
+      const response = await fetch(
+        primaryId ? `/api/admin/investments/${primaryId}/liquidate` : '/api/admin/sales',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to record sale.');
 
       if (messageEl) {
-        const book = data.bookBalance ?? data.bankLedger?.ledger?.bookBalance;
-        messageEl.textContent = data.message
-          || `Sale ${data.sale?.saleCode || ''} recorded. Net: ${formatMoney(Number(data.sale?.netProfitLoss || 0), 2)}.`
-            + (book != null ? ` Bank book balance now ${formatMoney(Number(book), 2)}.` : '');
+        const settlement = data.settlement;
+        if (settlement) {
+          messageEl.textContent = data.message
+            || `Sold/closed. Net ${formatMoney(Number(settlement.netProceeds || 0), 2)}. Society profit ${formatMoney(Number(settlement.societyProfitShare || 0), 2)} · Investor payout ${formatMoney(Number(settlement.investorPayout || 0), 2)}. Ledger locked.`;
+        } else {
+          const book = data.bookBalance ?? data.bankLedger?.ledger?.bookBalance;
+          messageEl.textContent = data.message
+            || `Sale ${data.sale?.saleCode || ''} recorded. Net: ${formatMoney(Number(data.sale?.netProfitLoss || 0), 2)}.`
+              + (book != null ? ` Bank book balance now ${formatMoney(Number(book), 2)}.` : '');
+        }
       }
       form.reset();
       sellProjectState = null;
@@ -5613,6 +5623,40 @@ function bindInvestmentActions(investments) {
 }
 
 if (investmentForm) {
+  const refreshOwnershipPreview = () => {
+    const total = Number(document.getElementById('investmentTotalAmount')?.value || 0);
+    const societyPct = Number(document.getElementById('investmentSocietyPct')?.value || 0);
+    const investorPct = Number(document.getElementById('investmentInvestorPct')?.value || 0);
+    const preview = document.getElementById('investmentOwnershipPreview');
+    if (!preview) return;
+    const societyAmt = Number(((total * societyPct) / 100).toFixed(2));
+    const investorAmt = Number((total - societyAmt).toFixed(2));
+    preview.textContent = `Society capital ${formatMoney(societyAmt, 2)} (${societyPct || 0}%) · External capital ${formatMoney(investorAmt, 2)} (${investorPct || 0}%)`;
+  };
+
+  ['investmentTotalAmount', 'investmentSocietyPct', 'investmentInvestorPct'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', refreshOwnershipPreview);
+  });
+  document.getElementById('investmentSocietyPct')?.addEventListener('input', (event) => {
+    const investorInput = document.getElementById('investmentInvestorPct');
+    if (!investorInput) return;
+    const societyPct = Number(event.target.value || 0);
+    investorInput.value = Number((100 - societyPct).toFixed(2));
+    refreshOwnershipPreview();
+  });
+  document.getElementById('investmentInvestorPct')?.addEventListener('input', (event) => {
+    const societyInput = document.getElementById('investmentSocietyPct');
+    if (!societyInput) return;
+    const investorPct = Number(event.target.value || 0);
+    societyInput.value = Number((100 - investorPct).toFixed(2));
+    refreshOwnershipPreview();
+  });
+  document.getElementById('investmentReturnMode')?.addEventListener('change', (event) => {
+    const termFields = document.getElementById('investmentTermFields');
+    if (termFields) termFields.classList.toggle('hidden', event.target.value === 'monthly');
+  });
+  refreshOwnershipPreview();
+
   investmentForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     investmentMessage.textContent = '';
@@ -5636,6 +5680,11 @@ if (investmentForm) {
       dateOfBirth: formData.get('dateOfBirth') || null,
       location: formData.get('location')?.trim(),
       amount: Number(formData.get('amount')),
+      returnMode: formData.get('returnMode') || 'fixed_term',
+      termMonths: formData.get('termMonths') || null,
+      maturityDate: formData.get('maturityDate') || null,
+      societyOwnershipPct: Number(formData.get('societyOwnershipPct')),
+      investorOwnershipPct: Number(formData.get('investorOwnershipPct')),
       notes: formData.get('notes'),
       documents,
     };
@@ -5643,6 +5692,13 @@ if (investmentForm) {
     if (!payload.investorId || !payload.investmentType || !payload.amount || payload.amount <= 0) {
       investmentMessage.classList.add('error');
       investmentMessage.textContent = 'Investor, investment type, and a valid amount are required.';
+      return;
+    }
+
+    if (!Number.isFinite(payload.societyOwnershipPct) || !Number.isFinite(payload.investorOwnershipPct)
+      || Math.abs(payload.societyOwnershipPct + payload.investorOwnershipPct - 100) > 0.05) {
+      investmentMessage.classList.add('error');
+      investmentMessage.textContent = 'Society and investor ownership percentages must add up to 100%.';
       return;
     }
 

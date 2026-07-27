@@ -752,6 +752,168 @@ async function loadCashierQueue() {
   }
 
   await loadCashierExitQueue();
+  await loadCashierExternalCapitalQueue();
+  await loadCashierMonthlyProjects();
+}
+
+async function loadCashierExternalCapitalQueue() {
+  const list = document.getElementById('cashierExternalCapitalList');
+  const messageEl = document.getElementById('cashierExternalCapitalMessage');
+  if (!list) return;
+  try {
+    const response = await fetch('/api/admin/investments/external-capital-queue');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load external capital queue.');
+    const queue = data.queue || [];
+    if (!queue.length) {
+      list.innerHTML = '<p class="text-secondary">No co-funded projects awaiting external capital.</p>';
+      return;
+    }
+    list.innerHTML = queue.map((item) => `
+      <article class="feature-card payout-queue-card" style="margin-bottom: 0.85rem;">
+        <h3>${escapeHtml(item.investmentCode || 'Project')}</h3>
+        <p>${escapeHtml(item.investorName || item.investor?.name || 'Investor')} · External share <strong>${money(item.externalAmount)}</strong> (${Number(item.investorOwnershipPct || 0)}%)</p>
+        <p class="table-subtitle">Total ${money(item.amount)} · Society ${Number(item.societyOwnershipPct || 0)}% · ${escapeHtml(item.returnMode === 'monthly' ? 'Monthly return' : 'Fixed/term')}</p>
+        <form class="cashier-external-capital-form add-member-form" data-investment-id="${item._id}">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Amount (৳)
+                <input type="number" name="amount" min="0.01" step="0.01" value="${Number(item.externalAmount || 0).toFixed(2)}" required />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>Reference
+                <input type="text" name="paymentReference" placeholder="Bank/MFS ref" />
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Note
+              <input type="text" name="note" placeholder="Optional note" />
+            </label>
+          </div>
+          <button type="submit" class="primary-btn">Record External Investment</button>
+          <p class="message cashier-external-capital-msg"></p>
+        </form>
+      </article>
+    `).join('');
+
+    list.querySelectorAll('.cashier-external-capital-form').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const msg = form.querySelector('.cashier-external-capital-msg');
+        const formData = new FormData(form);
+        if (msg) msg.textContent = '';
+        try {
+          const res = await fetch(`/api/admin/investments/${form.dataset.investmentId}/external-capital`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              amount: formData.get('amount'),
+              paymentReference: formData.get('paymentReference'),
+              note: formData.get('note'),
+              paymentChannel: 'bank',
+            }),
+          });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.error || 'Unable to record external capital.');
+          if (msg) {
+            msg.classList.add('success');
+            msg.textContent = payload.message || 'External capital recorded.';
+          }
+          if (messageEl) {
+            messageEl.classList.add('success');
+            messageEl.textContent = payload.message || 'External capital recorded.';
+          }
+          await loadCashierExternalCapitalQueue();
+        } catch (error) {
+          if (msg) {
+            msg.classList.remove('success');
+            msg.textContent = error.message;
+          }
+        }
+      });
+    });
+  } catch (error) {
+    list.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function loadCashierMonthlyProjects() {
+  const list = document.getElementById('cashierMonthlyProjectsList');
+  const messageEl = document.getElementById('cashierMonthlyProjectsMessage');
+  if (!list) return;
+  try {
+    const response = await fetch('/api/admin/investments/monthly-projects');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load monthly projects.');
+    const projects = data.projects || [];
+    if (!projects.length) {
+      list.innerHTML = '<p class="text-secondary">No active monthly-return projects.</p>';
+      return;
+    }
+    list.innerHTML = projects.map((item) => `
+      <article class="feature-card payout-queue-card" style="margin-bottom: 0.85rem;">
+        <h3>${escapeHtml(item.investmentCode || 'Project')}</h3>
+        <p>${escapeHtml(item.investorName || item.investor?.name || 'Investor')} · Ownership Society ${Number(item.societyOwnershipPct || 0)}% / Investor ${Number(item.investorOwnershipPct || 0)}%</p>
+        <p class="table-subtitle">YTD monthly profits ${money(item.monthlyProfitTotal)} · Investor balance ${money(item.investorProfitBalance)}</p>
+        <form class="cashier-monthly-return-form add-member-form" data-investment-id="${item._id}">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Monthly profit (৳)
+                <input type="number" name="profitAmount" min="0.01" step="0.01" required />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>Note
+                <input type="text" name="notes" placeholder="Optional" />
+              </label>
+            </div>
+          </div>
+          <button type="submit" class="primary-btn">Record Monthly Return</button>
+          <p class="message cashier-monthly-return-msg"></p>
+        </form>
+      </article>
+    `).join('');
+
+    list.querySelectorAll('.cashier-monthly-return-form').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const msg = form.querySelector('.cashier-monthly-return-msg');
+        const formData = new FormData(form);
+        if (msg) msg.textContent = '';
+        try {
+          const res = await fetch(`/api/admin/investments/${form.dataset.investmentId}/monthly-return`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profitAmount: formData.get('profitAmount'),
+              notes: formData.get('notes'),
+            }),
+          });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.error || 'Unable to record monthly return.');
+          if (msg) {
+            msg.classList.add('success');
+            msg.textContent = payload.message || 'Monthly return recorded.';
+          }
+          if (messageEl) {
+            messageEl.classList.add('success');
+            messageEl.textContent = payload.message || 'Monthly return recorded.';
+          }
+          form.reset();
+          await loadCashierMonthlyProjects();
+        } catch (error) {
+          if (msg) {
+            msg.classList.remove('success');
+            msg.textContent = error.message;
+          }
+        }
+      });
+    });
+  } catch (error) {
+    list.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+  }
 }
 
 async function loadCashierExitQueue() {

@@ -213,7 +213,7 @@ async function enrichInvestmentsWithSaleData(investments) {
       continue;
     }
 
-    const isSold = plain.status === 'sold' || Boolean(record);
+    const isSold = plain.status === 'sold' || plain.status === 'closed' || Boolean(record);
 
     if (isSold) {
       const outcomeType = plain.outcomeType || record?.outcomeType || 'profit';
@@ -260,7 +260,7 @@ async function enrichInvestmentsWithSaleData(investments) {
 
   return {
     active: enriched.filter((item) => item.status === 'active'),
-    sold: enriched.filter((item) => item.status === 'sold'),
+    sold: enriched.filter((item) => item.status === 'sold' || item.status === 'closed'),
     pendingMemberApproval: enriched.filter((item) => item.status === 'pending_member_approval'),
     pendingCashierPayment: enriched.filter((item) => item.status === 'pending_cashier_payment'),
     pending: enriched.filter((item) => (
@@ -280,6 +280,8 @@ function getInvestmentDisplayStatus(status) {
       return 'Successful';
     case 'sold':
       return 'Sold';
+    case 'closed':
+      return 'Closed';
     case 'rejected':
       return 'Rejected';
     default:
@@ -486,6 +488,13 @@ async function createSocietyInvestment({
   notes = '',
   documents = [],
   createdBy = 'Admin',
+  returnMode = 'fixed_term',
+  termMonths = null,
+  maturityDate = null,
+  societyOwnershipPct = null,
+  investorOwnershipPct = null,
+  societyAmount = null,
+  externalAmount = null,
 }) {
   let investorUser = null;
   if (investorId) {
@@ -537,6 +546,29 @@ async function createSocietyInvestment({
     throw error;
   }
 
+  const { normalizeOwnership } = require('./projectFinanceService');
+  const ownership = normalizeOwnership({
+    amount,
+    societyOwnershipPct,
+    investorOwnershipPct,
+    societyAmount,
+    externalAmount,
+  });
+
+  if (ownership.investorOwnershipPct > 0 && !investorId && !investorName?.trim() && !partner?.trim()) {
+    const error = new Error('An external investor is required when investor ownership is greater than 0%.');
+    error.status = 400;
+    throw error;
+  }
+
+  const normalizedReturnMode = returnMode === 'monthly' ? 'monthly' : 'fixed_term';
+  let parsedMaturity = maturityDate ? new Date(maturityDate) : null;
+  const normalizedTermMonths = termMonths ? Number(termMonths) : null;
+  if (normalizedReturnMode === 'fixed_term' && normalizedTermMonths > 0 && !parsedMaturity) {
+    parsedMaturity = new Date();
+    parsedMaturity.setMonth(parsedMaturity.getMonth() + normalizedTermMonths);
+  }
+
   const eligibleMembers = await User.find({
     role: 'member',
     status: 'active',
@@ -561,7 +593,14 @@ async function createSocietyInvestment({
     investorName: normalizedName,
     dateOfBirth: parsedDateOfBirth && !Number.isNaN(parsedDateOfBirth.getTime()) ? parsedDateOfBirth : null,
     location: normalizedLocation,
-    amount: Number(amount),
+    amount: ownership.amount,
+    returnMode: normalizedReturnMode,
+    termMonths: normalizedTermMonths > 0 ? normalizedTermMonths : null,
+    maturityDate: parsedMaturity && !Number.isNaN(parsedMaturity.getTime()) ? parsedMaturity : null,
+    societyOwnershipPct: ownership.societyOwnershipPct,
+    investorOwnershipPct: ownership.investorOwnershipPct,
+    societyAmount: ownership.societyAmount,
+    externalAmount: ownership.externalAmount,
     sector: normalizedSector,
     partner: normalizedPartner,
     allocation: normalizedSector,
@@ -580,7 +619,7 @@ async function createSocietyInvestment({
   ]);
 
   const notifyTitle = `New investment request ${investment.investmentCode}`;
-  const notifyMessage = `${normalizedName} · ${normalizedType} · ${formatMoney(Number(amount), 2)}. Please review and approve.`;
+  const notifyMessage = `${normalizedName} · ${normalizedType} · ${formatMoney(ownership.amount, 2)} · Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}% (${normalizedReturnMode === 'monthly' ? 'Monthly return' : 'Fixed/term'}). Please review and approve.`;
 
   await Promise.all(eligibleMembers.map((member) => createMemberNotification({
     memberId: member._id,
@@ -831,7 +870,11 @@ async function completeCashierPayment(investmentId, {
     payoutBankName,
   });
 
-  const savingsUpdate = await fundInvestmentFromMembers(investment._id, investment.amount);
+  const societyFundingAmount = Number(Number(
+    investment.societyAmount > 0 ? investment.societyAmount : investment.amount
+  ).toFixed(2));
+
+  const savingsUpdate = await fundInvestmentFromMembers(investment._id, societyFundingAmount);
   investment.status = 'active';
   investment.cashierNote = note?.trim() || '';
   investment.cashierProcessedBy = cashierName?.trim() || 'Cashier';
@@ -846,16 +889,18 @@ async function completeCashierPayment(investmentId, {
   let bankLedger = null;
   try {
     const { tryDebit } = require('./bankLedgerService');
-    bankLedger = await tryDebit({
-      type: 'project_payout',
-      amount: investment.amount,
-      referenceType: 'Investment',
-      referenceId: investment._id,
-      note: `Project payout to ${receiver.name} (${receiver.role}) · ${investment.investmentCode || ''}`,
-      createdBy: cashierName,
-    });
-    if (bankLedger?.entry?._id) {
-      investment.bankLedgerEntryId = bankLedger.entry._id;
+    if (societyFundingAmount > 0) {
+      bankLedger = await tryDebit({
+        type: 'project_payout',
+        amount: societyFundingAmount,
+        referenceType: 'Investment',
+        referenceId: investment._id,
+        note: `Society project payout (${investment.societyOwnershipPct || 100}%) to ${receiver.name} (${receiver.role}) · ${investment.investmentCode || ''}`,
+        createdBy: cashierName,
+      });
+      if (bankLedger?.entry?._id) {
+        investment.bankLedgerEntryId = bankLedger.entry._id;
+      }
     }
   } catch (error) {
     console.warn('[completeCashierPayment] bank ledger debit failed:', error.message);
@@ -866,7 +911,7 @@ async function completeCashierPayment(investmentId, {
   await createAdminNotification({
     type: 'general',
     title: `Investment successful: ${investment.investmentCode}`,
-    message: `Cashier completed payment of ${formatMoney(Number(investment.amount), 2)} to ${receiver.name}.`,
+    message: `Cashier completed society payout of ${formatMoney(societyFundingAmount, 2)} to ${receiver.name}.${investment.externalAmount > 0 ? ` External share ${formatMoney(Number(investment.externalAmount), 2)} still needs recording if not already received.` : ''}`,
     relatedId: investment._id,
     relatedModel: 'Investment',
   });
@@ -878,6 +923,7 @@ async function completeCashierPayment(investmentId, {
     unpaidContributions: (savingsUpdate.contributions || []).filter((c) => c.status === 'unpaid'),
     payoutReceiver: receiver,
     bankLedger,
+    societyFundingAmount,
     voucherUrl: bankLedger?.entry?._id
       ? `/api/admin/bank-ledger/entries/${bankLedger.entry._id}/voucher.pdf`
       : `/api/admin/investments/${investment._id}/payout-voucher.pdf`,

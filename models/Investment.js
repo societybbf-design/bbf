@@ -85,6 +85,87 @@ const InvestmentSchema = new mongoose.Schema({
     min: 0.01,
     default: 0,
   },
+  /** Total project return style */
+  returnMode: {
+    type: String,
+    enum: ['monthly', 'fixed_term'],
+    default: 'fixed_term',
+    index: true,
+  },
+  termMonths: {
+    type: Number,
+    default: null,
+    min: 1,
+  },
+  maturityDate: {
+    type: Date,
+    default: null,
+  },
+  /** Ownership percentages must sum to 100 */
+  societyOwnershipPct: {
+    type: Number,
+    default: 100,
+    min: 0,
+    max: 100,
+  },
+  investorOwnershipPct: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+  },
+  societyAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  externalAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  externalCapitalReceived: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  externalCapitalReceivedAt: {
+    type: Date,
+    default: null,
+  },
+  externalCapitalRecordedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  externalCapitalLedgerEntryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BankLedgerEntry',
+    default: null,
+  },
+  /** Accumulated investor profit share (monthly returns / sale) awaiting settlement */
+  investorProfitBalance: {
+    type: Number,
+    default: 0,
+  },
+  monthlyProfitTotal: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  ledgerLockedAt: {
+    type: Date,
+    default: null,
+  },
+  ledgerLockedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  closedAt: {
+    type: Date,
+    default: null,
+  },
   allocation: {
     type: String,
     trim: true,
@@ -106,6 +187,7 @@ const InvestmentSchema = new mongoose.Schema({
       'pending_cashier_payment',
       'active',
       'sold',
+      'closed',
       'rejected',
     ],
     default: 'pending_member_approval',
@@ -210,6 +292,18 @@ InvestmentSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   if (!this.allocation) {
     this.allocation = this.sector || this.investmentType;
+  }
+  // Keep capital legs aligned with ownership when amount is set.
+  const total = Number(this.amount || 0);
+  const societyPct = Number(this.societyOwnershipPct);
+  const investorPct = Number(this.investorOwnershipPct);
+  if (Number.isFinite(societyPct) && Number.isFinite(investorPct) && total > 0) {
+    if (!this.societyAmount && societyPct >= 0) {
+      this.societyAmount = Number(((total * societyPct) / 100).toFixed(2));
+    }
+    if (!this.externalAmount && investorPct >= 0) {
+      this.externalAmount = Number((total - Number(this.societyAmount || 0)).toFixed(2));
+    }
   }
   next();
 });
