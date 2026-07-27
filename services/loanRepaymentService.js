@@ -9,16 +9,112 @@ const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms, generateLoanRepaymentReceiptPdf, formatPaymentMethodLabel } = require('./notificationService');
 
 function getLoanOutstandingBalance(loan = {}) {
-  if (loan.status !== 'disbursed') {
+  if (loan.status === 'completed' || loan.repaymentStatus === 'paid_off') {
     return 0;
   }
-  if (loan.repaymentStatus === 'paid_off') {
+  if (loan.status !== 'disbursed') {
     return 0;
   }
   if (loan.outstandingBalance !== undefined && loan.outstandingBalance !== null) {
     return Math.max(Number(loan.outstandingBalance) || 0, 0);
   }
   return Math.max(Number(loan.amount || 0) - Number(loan.totalRepaid || 0), 0);
+}
+
+function money2(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+/**
+ * Build an equal-installment schedule from disbursement date for cashier/member display.
+ * Payments already applied are marked paid/partial from totalRepaid.
+ */
+function buildInstallmentSchedule(loan = {}) {
+  const original = money2(loan.amount);
+  const repaid = money2(loan.totalRepaid);
+  const outstanding = getLoanOutstandingBalance(loan);
+  const months = Math.max(1, Math.min(120, Number(loan.installmentMonths) || 12));
+  if (!(original > 0)) {
+    return {
+      installmentMonths: months,
+      installmentAmount: 0,
+      paidInstallments: 0,
+      remainingInstallments: 0,
+      suggestedInstallment: 0,
+      nextDueDate: null,
+      rows: [],
+    };
+  }
+
+  const baseInstallment = money2(original / months);
+  const start = loan.disbursedAt ? new Date(loan.disbursedAt) : new Date(loan.createdAt || Date.now());
+  let paidPool = repaid;
+  const rows = [];
+  let paidInstallments = 0;
+
+  for (let i = 1; i <= months; i += 1) {
+    const dueDate = new Date(start);
+    dueDate.setMonth(dueDate.getMonth() + i);
+    const amount = i === months
+      ? money2(original - baseInstallment * (months - 1))
+      : baseInstallment;
+
+    let status = 'upcoming';
+    let paidToward = 0;
+    if (paidPool >= amount - 0.009) {
+      status = 'paid';
+      paidToward = amount;
+      paidPool = money2(paidPool - amount);
+      paidInstallments += 1;
+    } else if (paidPool > 0) {
+      status = 'partial';
+      paidToward = paidPool;
+      paidPool = 0;
+    }
+
+    rows.push({
+      period: i,
+      dueDate: dueDate.toISOString(),
+      amount,
+      paidToward,
+      remaining: money2(Math.max(0, amount - paidToward)),
+      status,
+    });
+  }
+
+  // First unpaid/partial row is the current due installment.
+  const dueRow = rows.find((row) => row.status === 'partial' || row.status === 'upcoming');
+  if (dueRow && dueRow.status === 'upcoming') {
+    dueRow.status = 'due';
+  }
+
+  const remainingInstallments = rows.filter((row) => row.status !== 'paid').length;
+  const suggestedInstallment = outstanding > 0
+    ? money2(dueRow ? Math.min(outstanding, dueRow.remaining || dueRow.amount) : outstanding)
+    : 0;
+
+  return {
+    installmentMonths: months,
+    installmentAmount: baseInstallment,
+    paidInstallments,
+    remainingInstallments,
+    suggestedInstallment,
+    nextDueDate: dueRow?.dueDate || null,
+    rows,
+  };
+}
+
+function repaymentStatusLabel(loan = {}, outstandingBalance = null) {
+  const outstanding = outstandingBalance == null
+    ? getLoanOutstandingBalance(loan)
+    : Number(outstandingBalance);
+  if (loan.status === 'completed' || loan.repaymentStatus === 'paid_off' || outstanding <= 0) {
+    return 'Completed / Paid';
+  }
+  if (loan.repaymentStatus === 'active' || loan.status === 'disbursed') {
+    return 'Active';
+  }
+  return loan.repaymentStatus || loan.status || '—';
 }
 
 async function getActiveOutstandingLoan(memberId) {
@@ -34,9 +130,10 @@ async function getActiveOutstandingLoan(memberId) {
 
   const outstandingBalance = getLoanOutstandingBalance(loan);
   if (outstandingBalance <= 0) {
-    if (loan.repaymentStatus !== 'paid_off') {
+    if (loan.repaymentStatus !== 'paid_off' || loan.status !== 'completed') {
       loan.outstandingBalance = 0;
       loan.repaymentStatus = 'paid_off';
+      loan.status = 'completed';
       await loan.save();
     }
     return null;
@@ -65,8 +162,10 @@ async function getPendingRepaymentAmount(loanId, excludeRepaymentId = null) {
 async function getLastClearedLoan(memberId) {
   return LoanApplication.findOne({
     member: memberId,
-    status: 'disbursed',
-    repaymentStatus: 'paid_off',
+    $or: [
+      { status: 'completed' },
+      { status: 'disbursed', repaymentStatus: 'paid_off' },
+    ],
   })
     .sort({ updatedAt: -1 })
     .lean();
@@ -76,6 +175,7 @@ async function getMemberOutstandingSummary(memberId) {
   const loan = await getActiveOutstandingLoan(memberId);
   if (!loan) {
     const lastClearedLoan = await getLastClearedLoan(memberId);
+    const schedule = lastClearedLoan ? buildInstallmentSchedule(lastClearedLoan) : null;
     return {
       hasOutstandingLoan: false,
       loan: null,
@@ -88,12 +188,16 @@ async function getMemberOutstandingSummary(memberId) {
       loanCleared: Boolean(lastClearedLoan),
       clearedAt: lastClearedLoan?.updatedAt || null,
       lastClearedLoan,
+      repaymentStatus: lastClearedLoan?.repaymentStatus || 'paid_off',
+      displayStatus: lastClearedLoan ? 'Completed / Paid' : 'No active loan',
+      schedule,
     };
   }
 
   const outstandingBalance = getLoanOutstandingBalance(loan);
   const pendingRepaymentAmount = await getPendingRepaymentAmount(loan._id);
   const availableToPay = Math.max(0, Number((outstandingBalance - pendingRepaymentAmount).toFixed(2)));
+  const schedule = buildInstallmentSchedule(loan);
 
   return {
     hasOutstandingLoan: true,
@@ -108,6 +212,11 @@ async function getMemberOutstandingSummary(memberId) {
     loanCleared: false,
     clearedAt: null,
     lastClearedLoan: null,
+    repaymentStatus: loan.repaymentStatus || 'active',
+    displayStatus: repaymentStatusLabel(loan, outstandingBalance),
+    schedule,
+    suggestedInstallment: schedule.suggestedInstallment,
+    nextDueDate: schedule.nextDueDate,
   };
 }
 
@@ -276,6 +385,9 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
   loan.outstandingBalance = balanceAfter;
   loan.totalRepaid = Number((Number(loan.totalRepaid || 0) + Number(repayment.amount)).toFixed(2));
   loan.repaymentStatus = balanceAfter <= 0 ? 'paid_off' : 'active';
+  if (balanceAfter <= 0) {
+    loan.status = 'completed';
+  }
   await loan.save();
 
   repayment.status = 'approved';
@@ -294,22 +406,43 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
   repayment.receiptPath = saveRepaymentReceiptFile(repayment._id, pdfBuffer);
   await repayment.save();
 
+  let bankLedger = null;
+  try {
+    const { creditInbound } = require('./bankLedgerService');
+    bankLedger = await creditInbound({
+      type: 'loan_repayment',
+      amount: Number(repayment.amount),
+      referenceType: 'LoanRepayment',
+      referenceId: repayment._id,
+      note: `Loan repayment ${repayment.receiptNumber || repayment._id} · ${member?.name || 'member'}`,
+      createdBy: reviewedBy,
+      paymentChannel: repayment.paymentMethod === 'cash'
+        ? 'cash'
+        : (repayment.paymentMethod === 'bank_transfer' ? 'bank' : (repayment.paymentMethod === 'mobile_banking' ? 'mfs' : '')),
+    });
+  } catch (error) {
+    console.warn('[applyApprovedRepayment] ledger credit failed:', error.message);
+  }
+
   if (member) {
+    const clearedNote = balanceAfter <= 0
+      ? ' Loan status is now Completed / Paid.'
+      : ` Remaining outstanding balance: ${formatMoney(balanceAfter, 2)}.`;
     await notifyMemberByEmailAndSms(member, {
-      subject: 'Loan Repayment Recorded',
-      message: `Dear ${member.name}, your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded. Remaining outstanding balance: ${formatMoney(balanceAfter, 2)}.`,
+      subject: balanceAfter <= 0 ? 'Loan Fully Paid' : 'Loan Repayment Recorded',
+      message: `Dear ${member.name}, your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded.${clearedNote}`,
     });
     await createMemberNotification({
       memberId: member._id,
       type: 'repayment',
-      title: 'Loan Repayment Recorded',
-      message: `Your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded by admin. Remaining balance: ${formatMoney(balanceAfter, 2)}.`,
+      title: balanceAfter <= 0 ? 'Loan Completed / Paid' : 'Loan Repayment Recorded',
+      message: `Your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded by cashier.${clearedNote}`,
       relatedId: repayment._id,
       relatedModel: 'LoanRepayment',
     });
   }
 
-  return repayment;
+  return { repayment, bankLedger };
 }
 
 async function recordAdminLoanRepayment({
@@ -372,9 +505,15 @@ async function recordAdminLoanRepayment({
 
   await applyApprovedRepayment(repayment, loan, member, reviewedBy);
 
+  const summary = await getMemberOutstandingSummary(memberId);
   return {
     repayment,
-    summary: await getMemberOutstandingSummary(memberId),
+    summary,
+    loanCleared: Boolean(summary.loanCleared || !summary.hasOutstandingLoan),
+    displayStatus: summary.displayStatus,
+    message: summary.hasOutstandingLoan
+      ? `Payment recorded. Remaining balance ${formatMoney(Number(summary.outstandingBalance || 0), 2)}.`
+      : 'Payment recorded. Loan status is now Completed / Paid.',
   };
 }
 
@@ -435,14 +574,16 @@ async function updateLoanRepaymentStatus(repaymentId, status, adminNote = '', re
   }
 
   repayment.adminNote = adminNote?.trim() || repayment.adminNote || '';
-  await applyApprovedRepayment(repayment, loan, repayment.member, reviewedBy);
-  return repayment;
+  const applied = await applyApprovedRepayment(repayment, loan, repayment.member, reviewedBy);
+  return applied.repayment || repayment;
 }
 
 module.exports = {
   getLoanOutstandingBalance,
   getActiveOutstandingLoan,
   getMemberOutstandingSummary,
+  buildInstallmentSchedule,
+  repaymentStatusLabel,
   createLoanRepaymentRequest,
   recordAdminLoanRepayment,
   getRepaymentsForMember,

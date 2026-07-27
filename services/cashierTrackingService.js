@@ -15,6 +15,8 @@ const TYPE_LABELS = Object.freeze({
   project_sale: 'Project sale / return',
   monthly_profit: 'Monthly profit',
   profit_distribution: 'Profit distribution',
+  loan_disbursement: 'Loan disbursement',
+  loan_repayment: 'Loan repayment',
   adjustment: 'Ledger adjustment',
 });
 
@@ -28,6 +30,8 @@ function genericPayoutDescription(tx) {
   if (tx.type === 'monthly_profit') return 'Monthly profit credited';
   if (tx.type === 'project_sale') return 'Project sale proceeds';
   if (tx.type === 'deposit') return 'Society deposit received';
+  if (tx.type === 'loan_repayment') return 'Loan repayment received';
+  if (tx.type === 'loan_disbursement') return 'Loan disbursement paid';
   if (tx.type === 'opening') return 'Opening bank balance';
   return tx.categoryLabel || 'Society transaction';
 }

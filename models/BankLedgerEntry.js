@@ -9,6 +9,8 @@ const ENTRY_TYPES = [
   'profit_distribution',
   'external_investment',
   'investor_payout',
+  'loan_disbursement',
+  'loan_repayment',
   'adjustment',
 ];
 

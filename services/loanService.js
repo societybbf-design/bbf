@@ -311,10 +311,10 @@ async function getLoanApplicationsForAdmin(filters = {}) {
 }
 
 function getLoanOutstandingAmount(loan = {}) {
-  if (loan.status !== 'disbursed') {
+  if (loan.status === 'completed' || loan.repaymentStatus === 'paid_off') {
     return 0;
   }
-  if (loan.repaymentStatus === 'paid_off') {
+  if (loan.status !== 'disbursed') {
     return 0;
   }
   const outstanding = loan.outstandingBalance !== undefined && loan.outstandingBalance !== null
@@ -687,7 +687,24 @@ async function disburseLoanApplication(loanId, {
   loan.outstandingBalance = Number(loan.amount || 0);
   loan.totalRepaid = 0;
   loan.repaymentStatus = 'active';
+  if (!loan.installmentMonths) {
+    loan.installmentMonths = 12;
+  }
   await loan.save();
+
+  try {
+    const { tryDebit } = require('./bankLedgerService');
+    await tryDebit({
+      type: 'loan_disbursement',
+      amount: Number(loan.amount || 0),
+      referenceType: 'LoanApplication',
+      referenceId: loan._id,
+      note: `Loan disbursement ${loan.loanType || ''} → ${loan.member?.name || 'member'}`,
+      createdBy: disbursedBy,
+    });
+  } catch (error) {
+    console.warn('[disburseLoanApplication] ledger debit failed:', error.message);
+  }
 
   const member = loan.member;
   const paymentLabel = formatPaymentMethodLabel(loan.paymentMethod);

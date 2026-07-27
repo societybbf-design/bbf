@@ -1499,7 +1499,7 @@ function formatRepaymentStatusBadge(status = 'pending') {
 function buildOutstandingLoanHtml(summary = {}) {
   if (summary.loanCleared) {
     return `
-      <p class="table-subtitle"><strong>Loan Cleared.</strong> Your ${formatLoanTypeLabel(summary.loanType)} loan of ${formatMoney(Number(summary.originalAmount || 0), 2)} has been fully repaid.</p>
+      <p class="table-subtitle"><strong>Loan Completed / Paid.</strong> Your ${formatLoanTypeLabel(summary.loanType)} loan of ${formatMoney(Number(summary.originalAmount || 0), 2)} has been fully repaid.</p>
       <p class="table-subtitle">Total repaid: ${formatMoney(Number(summary.totalRepaid || 0), 2)}${summary.clearedAt ? ` — cleared on ${new Date(summary.clearedAt).toLocaleString()}.` : '.'}</p>
     `;
   }
@@ -1508,18 +1508,58 @@ function buildOutstandingLoanHtml(summary = {}) {
     return '<p class="table-subtitle">You have no outstanding loan balance right now.</p>';
   }
 
+  const schedule = summary.schedule || {};
+  const nextDue = summary.nextDueDate || schedule.nextDueDate;
+  const scheduleRows = (schedule.rows || []).slice(0, 6).map((row) => `
+    <tr>
+      <td>${row.period}</td>
+      <td>${row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—'}</td>
+      <td>${formatMoney(Number(row.amount || 0), 2)}</td>
+      <td>${row.status === 'paid' ? 'Paid' : row.status === 'due' ? 'Due now' : row.status === 'partial' ? 'Partial' : 'Upcoming'}</td>
+    </tr>
+  `).join('');
+
   return `
     <div class="member-profile-meta">
       <span class="member-profile-meta-pill">${formatLoanTypeLabel(summary.loanType)} Loan</span>
       <span class="member-profile-meta-pill">Original: ${formatMoney(Number(summary.originalAmount || 0), 2)}</span>
       <span class="member-profile-meta-pill">Repaid: ${formatMoney(Number(summary.totalRepaid || 0), 2)}</span>
+      <span class="member-profile-meta-pill">${summary.displayStatus || 'Active'}</span>
     </div>
     <p class="table-subtitle"><strong>Outstanding Loan:</strong> ${formatMoney(Number(summary.outstandingBalance || 0), 2)}</p>
-    <p class="table-subtitle">Pay at the society office — admin will record your payment and update this balance.</p>
+    ${nextDue ? `<p class="table-subtitle">Next installment due: <strong>${new Date(nextDue).toLocaleDateString()}</strong>${summary.suggestedInstallment ? ` · suggested ${formatMoney(Number(summary.suggestedInstallment), 2)}` : ''}</p>` : ''}
+    <p class="table-subtitle">Pay at the Cashier desk — your balance and history update as soon as payment is recorded.</p>
+    ${scheduleRows ? `
+      <div class="table-wrapper u-mt-1">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Due</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>${scheduleRows}</tbody>
+        </table>
+      </div>
+    ` : ''}
   `;
 }
 
 let latestOutstandingSummary = null;
+let memberLoanSyncTimer = null;
+
+function stopMemberLoanSync() {
+  if (memberLoanSyncTimer) {
+    window.clearInterval(memberLoanSyncTimer);
+    memberLoanSyncTimer = null;
+  }
+}
+
+function startMemberLoanSync() {
+  stopMemberLoanSync();
+  memberLoanSyncTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    const activePage = document.querySelector('.sidebar-nav .nav-item.active')?.dataset.page;
+    if (activePage !== 'dashboard' && activePage !== 'loans') return;
+    void loadOutstandingLoanSummary();
+    void loadLoanRepayments();
+  }, 8000);
+}
 
 async function loadOutstandingLoanSummary() {
   try {
@@ -1536,8 +1576,10 @@ async function loadOutstandingLoanSummary() {
 
     const repaymentPanel = document.getElementById('loanRepaymentPanel');
     if (repaymentPanel) {
-      repaymentPanel.classList.toggle('hidden', !summary.hasOutstandingLoan);
+      repaymentPanel.classList.toggle('hidden', !summary.hasOutstandingLoan && !summary.loanCleared);
     }
+    // Keep polling while member is on dashboard/loans so cashier desk payments appear immediately.
+    startMemberLoanSync();
     return summary;
   } catch (error) {
     console.error('Failed to load outstanding loan:', error);
@@ -2087,6 +2129,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && currentUser) {
       await loadProfile();
+      const activePage = document.querySelector('.sidebar-nav .nav-item.active')?.dataset.page;
+      if (activePage === 'dashboard' || activePage === 'loans') {
+        void loadOutstandingLoanSummary();
+        void loadLoanRepayments();
+      }
     }
   });
 });
