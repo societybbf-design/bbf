@@ -56,7 +56,7 @@ function escapeHtml(value) {
 }
 
 function money(value) {
-  return `$${Number(value || 0).toFixed(2)}`;
+  return `${formatMoney(Number(value || 0), 2)}`;
 }
 
 function buildQueryString(params = {}) {
@@ -938,7 +938,7 @@ async function loadFundingModule() {
       btn.onclick = async () => {
         const msg = document.getElementById('cashierBuyInMessage');
         const required = btn.dataset.required;
-        if (!window.confirm(`Record exact buy-in of $${required} and activate this member?`)) return;
+        if (!window.confirm(`Record exact buy-in of ${formatMoney(required)} and activate this member?`)) return;
         try {
           const res = await fetch('/api/admin/funding/member-buyin', {
             method: 'POST',
@@ -952,7 +952,7 @@ async function loadFundingModule() {
           if (!res.ok) throw new Error(data.error || 'Unable to complete buy-in.');
           if (msg) {
             msg.classList.add('success');
-            msg.textContent = data.message || `Buy-in of $${required} recorded. Member activated.`;
+            msg.textContent = data.message || `Buy-in of ${formatMoney(required)} recorded. Member activated.`;
           }
           await loadFundingModule();
         } catch (error) {

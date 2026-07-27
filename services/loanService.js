@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const LoanApplication = require('../models/LoanApplication');
 const LoanRepayment = require('../models/LoanRepayment');
 const User = require('../models/User');
@@ -218,7 +219,7 @@ async function createLoanApplication({
     status: isOverLimit ? 'rejected' : 'pending',
     autoRejected: isOverLimit,
     rejectionReason: isOverLimit
-      ? `Loan amount exceeds remaining general loan limit. Available: $${eligibility.availableMaxLoan.toFixed(2)} (80% savings limit minus active general loans).`
+      ? `Loan amount exceeds remaining general loan limit. Available: ${formatMoney(eligibility.availableMaxLoan, 2)} (80% savings limit minus active general loans).`
       : '',
     adminNote: isOverLimit
       ? 'Automatically rejected because requested amount is above the remaining 80% savings loan limit.'
@@ -230,15 +231,15 @@ async function createLoanApplication({
       await sendTransactionalEmail({
         to: member.email,
         subject: 'Loan Application Auto-Rejected',
-        text: `Dear ${member.name}, your ${normalizedType} loan application for $${normalizedAmount.toFixed(2)} was automatically rejected. Remaining general loan limit: $${eligibility.availableMaxLoan.toFixed(2)} (total 80% cap: $${eligibility.theoreticalMaxLoan.toFixed(2)}, already used: $${eligibility.usedGeneralLoanAmount.toFixed(2)}).`,
-        html: `<p>Dear ${member.name},</p><p>Your <strong>${normalizedType}</strong> loan application for <strong>$${normalizedAmount.toFixed(2)}</strong> was automatically rejected because it exceeds your <strong>remaining</strong> general loan limit.</p><p>Total savings: $${eligibility.totalSavings.toFixed(2)}<br>80% cap: $${eligibility.theoreticalMaxLoan.toFixed(2)}<br>Already reserved in general loans: $${eligibility.usedGeneralLoanAmount.toFixed(2)}<br>Available now: $${eligibility.availableMaxLoan.toFixed(2)}</p>`,
+        text: `Dear ${member.name}, your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was automatically rejected. Remaining general loan limit: ${formatMoney(eligibility.availableMaxLoan, 2)} (total 80% cap: ${formatMoney(eligibility.theoreticalMaxLoan, 2)}, already used: ${formatMoney(eligibility.usedGeneralLoanAmount, 2)}).`,
+        html: `<p>Dear ${member.name},</p><p>Your <strong>${normalizedType}</strong> loan application for <strong>${formatMoney(normalizedAmount, 2)}</strong> was automatically rejected because it exceeds your <strong>remaining</strong> general loan limit.</p><p>Total savings: ${formatMoney(eligibility.totalSavings, 2)}<br>80% cap: ${formatMoney(eligibility.theoreticalMaxLoan, 2)}<br>Already reserved in general loans: ${formatMoney(eligibility.usedGeneralLoanAmount, 2)}<br>Available now: ${formatMoney(eligibility.availableMaxLoan, 2)}</p>`,
       });
     }
 
     if (member.phone) {
       await sendSms({
         to: member.phone,
-        message: `Loan auto-rejected: exceeds remaining limit. Available: $${eligibility.availableMaxLoan.toFixed(2)}.`,
+        message: `Loan auto-rejected: exceeds remaining limit. Available: ${formatMoney(eligibility.availableMaxLoan, 2)}.`,
       });
     }
 
@@ -246,7 +247,7 @@ async function createLoanApplication({
       memberId,
       type: 'loan',
       title: 'Loan Application Auto-Rejected',
-      message: `Your ${normalizedType} loan application for $${normalizedAmount.toFixed(2)} was auto-rejected.`,
+      message: `Your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was auto-rejected.`,
       relatedId: loan._id,
       relatedModel: 'LoanApplication',
     });
@@ -258,7 +259,7 @@ async function createLoanApplication({
     memberId,
     type: 'loan',
     title: 'Loan Application Submitted',
-    message: `Your ${normalizedType} loan application for $${normalizedAmount.toFixed(2)} was submitted and is awaiting admin review.`,
+    message: `Your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was submitted and is awaiting admin review.`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
@@ -266,7 +267,7 @@ async function createLoanApplication({
   await createAdminNotification({
     type: 'loan',
     title: `New ${normalizedType === 'emergency' ? 'Emergency ' : ''}Loan Application from ${member.name}`,
-    message: `${member.name} requested a ${normalizedType} loan of $${normalizedAmount.toFixed(2)}. Reason: ${reason.trim()}`,
+    message: `${member.name} requested a ${normalizedType} loan of ${formatMoney(normalizedAmount, 2)}. Reason: ${reason.trim()}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
@@ -275,15 +276,15 @@ async function createLoanApplication({
     await sendTransactionalEmail({
       to: process.env.ADMIN_ALERT_EMAIL,
       subject: `New ${normalizedType} Loan Application - ${member.name}`,
-      text: `${member.name} submitted a ${normalizedType} loan application for $${normalizedAmount.toFixed(2)}.`,
-      html: `<p><strong>${member.name}</strong> submitted a <strong>${normalizedType}</strong> loan application for <strong>$${normalizedAmount.toFixed(2)}</strong>.</p><p>Reason: ${reason.trim()}</p>`,
+      text: `${member.name} submitted a ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)}.`,
+      html: `<p><strong>${member.name}</strong> submitted a <strong>${normalizedType}</strong> loan application for <strong>${formatMoney(normalizedAmount, 2)}</strong>.</p><p>Reason: ${reason.trim()}</p>`,
     });
   }
 
   if (process.env.ADMIN_ALERT_PHONE) {
     await sendSms({
       to: process.env.ADMIN_ALERT_PHONE,
-      message: `New ${normalizedType} loan from ${member.name}: $${normalizedAmount.toFixed(2)}`,
+      message: `New ${normalizedType} loan from ${member.name}: ${formatMoney(normalizedAmount, 2)}`,
     });
   }
 
@@ -559,7 +560,7 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
       const theoreticalMaxLoan = calculateLoanEligibility(memberSavings).maxEligibleAmount;
       const availableMaxLoan = Math.max(0, Number((theoreticalMaxLoan - usedGeneralLoanAmount).toFixed(2)));
       if (exceedsAvailableGeneralLoan(loan.amount, availableMaxLoan)) {
-        const error = new Error(`Cannot approve: loan amount exceeds remaining general loan limit ($${availableMaxLoan.toFixed(2)}).`);
+        const error = new Error(`Cannot approve: loan amount exceeds remaining general loan limit (${formatMoney(availableMaxLoan, 2)}).`);
         error.status = 400;
         throw error;
       }
@@ -609,15 +610,15 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
     await sendTransactionalEmail({
       to: member.email,
       subject: `Loan Application ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-      text: `Dear ${member.name}, your ${loan.loanType} loan application for $${Number(loan.amount).toFixed(2)} is now ${status}.${loan.paymentMethod ? ` Payment method: ${paymentLabel}.` : ''}`,
-      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan application for <strong>$${Number(loan.amount).toFixed(2)}</strong> is now <strong>${status}</strong>.</p>${paymentNote}${loan.adminNote ? `<p>Note: ${loan.adminNote}</p>` : ''}${contractNote}`,
+      text: `Dear ${member.name}, your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.paymentMethod ? ` Payment method: ${paymentLabel}.` : ''}`,
+      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan application for <strong>${formatMoney(Number(loan.amount), 2)}</strong> is now <strong>${status}</strong>.</p>${paymentNote}${loan.adminNote ? `<p>Note: ${loan.adminNote}</p>` : ''}${contractNote}`,
     });
   }
 
   if (member?.phone) {
     await sendSms({
       to: member.phone,
-      message: `Loan update: your ${loan.loanType} loan for $${Number(loan.amount).toFixed(2)} is now ${status}.${loan.paymentMethod ? ` Payment: ${paymentLabel}.` : ''}`,
+      message: `Loan update: your ${loan.loanType} loan for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.paymentMethod ? ` Payment: ${paymentLabel}.` : ''}`,
     });
   }
 
@@ -625,7 +626,7 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
     memberId: loan.member._id || loan.member,
     type: 'loan',
     title: `Loan Application ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-    message: `Your ${loan.loanType} loan application for $${Number(loan.amount).toFixed(2)} is now ${status}.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`,
+    message: `Your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
@@ -679,21 +680,21 @@ async function disburseLoanApplication(loanId, {
   const member = loan.member;
   const paymentLabel = formatPaymentMethodLabel(loan.paymentMethod);
   const referenceNote = loan.disbursementReference ? ` Reference: ${loan.disbursementReference}.` : '';
-  const transferMessage = `Dear ${member.name}, your ${loan.loanType} loan of $${Number(loan.amount).toFixed(2)} has been transferred to you via ${paymentLabel}.${referenceNote}`;
+  const transferMessage = `Dear ${member.name}, your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} has been transferred to you via ${paymentLabel}.${referenceNote}`;
 
   if (member?.email) {
     await sendTransactionalEmail({
       to: member.email,
       subject: 'Loan Money Transferred',
       text: transferMessage,
-      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan of <strong>$${Number(loan.amount).toFixed(2)}</strong> has been transferred to you.</p><p><strong>Method:</strong> ${paymentLabel}</p>${loan.disbursementReference ? `<p><strong>Reference:</strong> ${loan.disbursementReference}</p>` : ''}${loan.disbursementNote ? `<p><strong>Note:</strong> ${loan.disbursementNote}</p>` : ''}<p>Please check your member dashboard for full transfer details.</p>`,
+      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan of <strong>${formatMoney(Number(loan.amount), 2)}</strong> has been transferred to you.</p><p><strong>Method:</strong> ${paymentLabel}</p>${loan.disbursementReference ? `<p><strong>Reference:</strong> ${loan.disbursementReference}</p>` : ''}${loan.disbursementNote ? `<p><strong>Note:</strong> ${loan.disbursementNote}</p>` : ''}<p>Please check your member dashboard for full transfer details.</p>`,
     });
   }
 
   if (member?.phone) {
     await sendSms({
       to: member.phone,
-      message: `Loan transferred: $${Number(loan.amount).toFixed(2)} via ${paymentLabel}.${referenceNote}`,
+      message: `Loan transferred: ${formatMoney(Number(loan.amount), 2)} via ${paymentLabel}.${referenceNote}`,
     });
   }
 
@@ -701,7 +702,7 @@ async function disburseLoanApplication(loanId, {
     memberId: loan.member._id || loan.member,
     type: 'loan',
     title: 'Loan Money Transferred',
-    message: `Your ${loan.loanType} loan of $${Number(loan.amount).toFixed(2)} was transferred via ${paymentLabel}.${referenceNote}`,
+    message: `Your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was transferred via ${paymentLabel}.${referenceNote}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });

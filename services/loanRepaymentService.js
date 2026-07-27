@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const path = require('path');
 const fs = require('fs');
 const LoanApplication = require('../models/LoanApplication');
@@ -154,7 +155,7 @@ async function createLoanRepaymentRequest({
   const availableToPay = Math.max(0, outstandingBalance - pendingRepaymentAmount);
 
   if (normalizedAmount > availableToPay) {
-    const error = new Error(`Repayment amount exceeds available outstanding balance ($${availableToPay.toFixed(2)}).`);
+    const error = new Error(`Repayment amount exceeds available outstanding balance (${formatMoney(availableToPay, 2)}).`);
     error.status = 400;
     throw error;
   }
@@ -190,7 +191,7 @@ async function createLoanRepaymentRequest({
     memberId,
     type: 'repayment',
     title: 'Loan Repayment Request Submitted',
-    message: `Your loan repayment request for $${finalAmount.toFixed(2)} was submitted and is awaiting admin verification.`,
+    message: `Your loan repayment request for ${formatMoney(finalAmount, 2)} was submitted and is awaiting admin verification.`,
     relatedId: repayment._id,
     relatedModel: 'LoanRepayment',
   });
@@ -198,14 +199,14 @@ async function createLoanRepaymentRequest({
   await createAdminNotification({
     type: 'loan',
     title: `Loan Repayment Request from ${member.name}`,
-    message: `${member.name} submitted a ${normalizedType} repayment of $${finalAmount.toFixed(2)} for outstanding loan $${outstandingBalance.toFixed(2)}.`,
+    message: `${member.name} submitted a ${normalizedType} repayment of ${formatMoney(finalAmount, 2)} for outstanding loan ${formatMoney(outstandingBalance, 2)}.`,
     relatedId: repayment._id,
     relatedModel: 'LoanRepayment',
   });
 
   await notifyMemberByEmailAndSms(member, {
     subject: 'Loan Repayment Request Submitted',
-    message: `Dear ${member.name}, your loan repayment request for $${finalAmount.toFixed(2)} has been submitted and is awaiting admin verification.`,
+    message: `Dear ${member.name}, your loan repayment request for ${formatMoney(finalAmount, 2)} has been submitted and is awaiting admin verification.`,
   });
 
   return { repayment, summary: await getMemberOutstandingSummary(memberId) };
@@ -266,7 +267,7 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
   const availableToPay = Math.max(0, outstandingBalance - pendingOthers);
 
   if (Number(repayment.amount) > availableToPay) {
-    const error = new Error(`Repayment exceeds available outstanding balance ($${availableToPay.toFixed(2)}).`);
+    const error = new Error(`Repayment exceeds available outstanding balance (${formatMoney(availableToPay, 2)}).`);
     error.status = 400;
     throw error;
   }
@@ -296,13 +297,13 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
   if (member) {
     await notifyMemberByEmailAndSms(member, {
       subject: 'Loan Repayment Recorded',
-      message: `Dear ${member.name}, your loan repayment of $${Number(repayment.amount).toFixed(2)} was recorded. Remaining outstanding balance: $${balanceAfter.toFixed(2)}.`,
+      message: `Dear ${member.name}, your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded. Remaining outstanding balance: ${formatMoney(balanceAfter, 2)}.`,
     });
     await createMemberNotification({
       memberId: member._id,
       type: 'repayment',
       title: 'Loan Repayment Recorded',
-      message: `Your loan repayment of $${Number(repayment.amount).toFixed(2)} was recorded by admin. Remaining balance: $${balanceAfter.toFixed(2)}.`,
+      message: `Your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded by admin. Remaining balance: ${formatMoney(balanceAfter, 2)}.`,
       relatedId: repayment._id,
       relatedModel: 'LoanRepayment',
     });
@@ -353,7 +354,7 @@ async function recordAdminLoanRepayment({
   const finalAmount = normalizedType === 'full' ? availableToPay : normalizedAmount;
 
   if (finalAmount <= 0 || finalAmount > availableToPay) {
-    const error = new Error(`Payment amount must be between $0.01 and $${availableToPay.toFixed(2)}.`);
+    const error = new Error(`Payment amount must be between ৳0.01 and ${formatMoney(availableToPay, 2)}.`);
     error.status = 400;
     throw error;
   }
@@ -418,13 +419,13 @@ async function updateLoanRepaymentStatus(repaymentId, status, adminNote = '', re
     if (repayment.member) {
       await notifyMemberByEmailAndSms(repayment.member, {
         subject: 'Loan Repayment Rejected',
-        message: `Dear ${repayment.member.name}, your loan repayment request for $${Number(repayment.amount).toFixed(2)} was rejected.${adminNote ? ` Note: ${adminNote}` : ''}`,
+        message: `Dear ${repayment.member.name}, your loan repayment request for ${formatMoney(Number(repayment.amount), 2)} was rejected.${adminNote ? ` Note: ${adminNote}` : ''}`,
       });
       await createMemberNotification({
         memberId: repayment.member._id,
         type: 'repayment',
         title: 'Loan Repayment Rejected',
-        message: `Your loan repayment request for $${Number(repayment.amount).toFixed(2)} was rejected.${adminNote ? ` Note: ${adminNote}` : ''}`,
+        message: `Your loan repayment request for ${formatMoney(Number(repayment.amount), 2)} was rejected.${adminNote ? ` Note: ${adminNote}` : ''}`,
         relatedId: repayment._id,
         relatedModel: 'LoanRepayment',
       });

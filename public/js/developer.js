@@ -124,13 +124,13 @@ async function updateMemberBuyInUi(role) {
     const v = data.valuation || {};
     const amount = Number(v.entryAmount || 0);
     box.innerHTML = `
-      <p><strong>Current share valuation: $${amount.toFixed(2)}</strong></p>
+      <p><strong>Current share valuation: ${formatMoney(amount, 2)}</strong></p>
       <p class="table-subtitle">${escapeHtml(v.formula || '')}</p>
-      <p class="table-subtitle">Active members: ${v.activeCount || 0} · Fund: Savings $${Number(v.totalSavings || 0).toFixed(2)} + Profit $${Number(v.totalProfit || 0).toFixed(2)} + Advance $${Number(v.totalAdvance || 0).toFixed(2)} = $${Number(v.totalFund || 0).toFixed(2)}</p>
+      <p class="table-subtitle">Active members: ${v.activeCount || 0} · Fund: Savings ${formatMoney(Number(v.totalSavings || 0), 2)} + Profit ${formatMoney(Number(v.totalProfit || 0), 2)} + Advance ${formatMoney(Number(v.totalAdvance || 0), 2)} = ${formatMoney(Number(v.totalFund || 0), 2)}</p>
     `;
     if (input) {
       input.placeholder = amount > 0
-        ? `Exact $${amount.toFixed(2)} to activate now, or leave blank`
+        ? `Exact ${formatMoney(amount, 2)} to activate now, or leave blank`
         : 'No buy-in required — activates immediately';
       input.dataset.requiredAmount = String(amount);
     }
@@ -192,7 +192,7 @@ async function ensureCreateForm() {
         if (messageEl) {
           const required = result.valuation?.entryAmount;
           const suffix = result.activated === false && required != null
-            ? ` Pending exact buy-in of $${Number(required).toFixed(2)}.`
+            ? ` Pending exact buy-in of ${formatMoney(Number(required), 2)}.`
             : '';
           messageEl.textContent = (result.message || 'Account created.') + suffix;
           messageEl.classList.add('success');
@@ -297,7 +297,7 @@ function lockBadge(user) {
     return `<span class="status-pill">Deleted ${formatDate(user.deletedAt)}</span>`;
   }
   if (user.pendingEntryBuyIn) {
-    return `<span class="status-pill">Buy-in $${Number(user.requiredEntryAmount || 0).toFixed(2)}</span>`;
+    return `<span class="status-pill">Buy-in ${formatMoney(Number(user.requiredEntryAmount || 0), 2)}</span>`;
   }
   if (user.isTemporarilyLocked) return '<span class="status-pill">Locked 24h</span>';
   if (user.hasPendingOtp) return '<span class="status-pill">OTP pending</span>';

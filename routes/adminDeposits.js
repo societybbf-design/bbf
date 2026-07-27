@@ -1,3 +1,4 @@
+const { formatMoney } = require('../services/moneyFormat');
 const router = require('express').Router();
 const Deposit = require('../models/Deposit');
 const { getAllDeposits } = require('../services/depositService');
@@ -81,13 +82,13 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
     let message = 'Deposit recorded.';
     if (result.monthlySplit?.splitApplied) {
       const s = result.monthlySplit;
-      const bits = [`Toward ${s.yearMonth} target: $${Number(s.towardTarget).toFixed(2)}`];
-      if (s.surplus > 0) bits.push(`surplus $${Number(s.surplus).toFixed(2)} → advance`);
-      if (s.remainingUnpaid > 0) bits.push(`still due $${Number(s.remainingUnpaid).toFixed(2)}`);
+      const bits = [`Toward ${s.yearMonth} target: ${formatMoney(Number(s.towardTarget), 2)}`];
+      if (s.surplus > 0) bits.push(`surplus ${formatMoney(Number(s.surplus), 2)} → advance`);
+      if (s.remainingUnpaid > 0) bits.push(`still due ${formatMoney(Number(s.remainingUnpaid), 2)}`);
       message = bits.join(' · ');
     }
     if (result.bookBalance != null) {
-      message += ` · Bank book balance now $${Number(result.bookBalance).toFixed(2)}`;
+      message += ` · Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}`;
     }
     if (result.ledgerWarning) {
       message += ` · Ledger warning: ${result.ledgerWarning}`;

@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { formatInvestmentProfitWindow } = require('./societyConfig');
@@ -96,7 +97,7 @@ function createReceiptPdf(member, deposit, adminName) {
       doc.text(`Payment reference: ${deposit.paymentReference}`);
     }
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Amount: $${deposit.amount.toFixed(2)}`);
+    doc.fontSize(14).fillColor('#111827').text(`Amount: ${formatMoney(deposit.amount, 2)}`);
     if (deposit.type && deposit.type !== 'regular') {
       doc.fontSize(11).fillColor('#374151').text(`Type: ${deposit.type}`);
     }
@@ -150,14 +151,14 @@ function createInvestmentReceiptPdf(investment, adminName = 'Admin') {
     doc.text(`Record Profit Between: ${formatInvestmentProfitWindow(investment.createdAt)} (10-12 months)`);
     doc.text(`Recorded By: ${investment.createdBy || adminName}`);
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Investment Amount: $${amount.toFixed(2)}`);
+    doc.fontSize(14).fillColor('#111827').text(`Investment Amount: ${formatMoney(amount, 2)}`);
     doc.moveDown(1);
     doc.fontSize(13).fillColor('#0f766e').text('Profit Details', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#374151');
-    doc.text(`Profit Earned From This Investment: $${profit.toFixed(2)}`);
-    doc.text(`Withdrawals From This Investment: $${withdrawals.toFixed(2)}`);
-    doc.text(`Current Net Balance: $${netBalance.toFixed(2)}`);
+    doc.text(`Profit Earned From This Investment: ${formatMoney(profit, 2)}`);
+    doc.text(`Withdrawals From This Investment: ${formatMoney(withdrawals, 2)}`);
+    doc.text(`Current Net Balance: ${formatMoney(netBalance, 2)}`);
     doc.moveDown(1);
     doc.text(`Notes: ${investment.notes || 'N/A'}`);
     doc.moveDown(1);
@@ -204,7 +205,7 @@ function createIouReceiptPdf(iou, adminName = 'Admin') {
     doc.text(`Status: ${(iou.status || 'pending').toUpperCase()}`);
     doc.text(`Recorded By: ${iou.createdBy || adminName}`);
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Committed Amount: $${amount.toFixed(2)}`);
+    doc.fontSize(14).fillColor('#111827').text(`Committed Amount: ${formatMoney(amount, 2)}`);
     doc.moveDown(1);
     doc.fontSize(12).fillColor('#374151');
     doc.text(`Notes: ${iou.notes || 'N/A'}`);
@@ -226,8 +227,8 @@ async function sendDepositReceipt(member, deposit, adminName) {
     from: process.env.EMAIL_FROM || brandingEmailFromFallback(),
     to: member.email,
     subject: 'Deposit Receipt',
-    text: `Dear ${member.name},\n\nA deposit of $${deposit.amount.toFixed(2)} was recorded on ${deposit.createdAt.toISOString().slice(0, 10)}.\n\nThank you,\n${adminName}`,
-    html: `<p>Dear ${member.name},</p><p>A deposit of <strong>$${deposit.amount.toFixed(2)}</strong> was recorded on <strong>${deposit.createdAt.toISOString().slice(0, 10)}</strong>.</p><p>Thank you,<br />${adminName}</p>`,
+    text: `Dear ${member.name},\n\nA deposit of ${formatMoney(deposit.amount, 2)} was recorded on ${deposit.createdAt.toISOString().slice(0, 10)}.\n\nThank you,\n${adminName}`,
+    html: `<p>Dear ${member.name},</p><p>A deposit of <strong>${formatMoney(deposit.amount, 2)}</strong> was recorded on <strong>${deposit.createdAt.toISOString().slice(0, 10)}</strong>.</p><p>Thank you,<br />${adminName}</p>`,
     attachments: [
       {
         filename: 'deposit-receipt.pdf',
@@ -325,16 +326,16 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text(`Name: ${member.name || 'N/A'}`);
     doc.text(`Email: ${member.email || 'N/A'}`);
     doc.text(`Phone: ${member.phone || 'N/A'}`);
-    doc.text(`Savings at Application: $${Number(loan.memberSavingsAtApply || member.savings || 0).toFixed(2)}`);
+    doc.text(`Savings at Application: ${formatMoney(Number(loan.memberSavingsAtApply || member.savings || 0), 2)}`);
     doc.moveDown(1);
 
     doc.fontSize(14).fillColor('#111827').text('Loan Terms', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#374151');
     doc.text(`Loan Type: ${loanType}`);
-    doc.text(`Loan Amount: $${amount.toFixed(2)}`);
+    doc.text(`Loan Amount: ${formatMoney(amount, 2)}`);
     doc.text(`Purpose: ${loan.reason || 'N/A'}`);
-    doc.text(`Maximum Eligible (80% of savings): $${Number(loan.maxEligibleAmount || 0).toFixed(2)}`);
+    doc.text(`Maximum Eligible (80% of savings): ${formatMoney(Number(loan.maxEligibleAmount || 0), 2)}`);
     doc.moveDown(1);
 
     doc.fontSize(14).fillColor('#111827').text('Witness', { underline: true });
@@ -402,13 +403,13 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
     doc.text(`Repayment Type: ${repayment.repaymentType === 'full' ? 'Full Payment' : 'Installment'}`);
     doc.moveDown(1);
 
-    doc.fontSize(14).fillColor('#111827').text(`Amount Paid: $${amount.toFixed(2)}`, { underline: true });
+    doc.fontSize(14).fillColor('#111827').text(`Amount Paid: ${formatMoney(amount, 2)}`, { underline: true });
     doc.moveDown(0.75);
     doc.fontSize(12).fillColor('#374151');
     doc.text(`Loan Type: ${loan?.loanType === 'emergency' ? 'Emergency' : 'General'}`);
-    doc.text(`Original Loan Amount: $${Number(loan?.amount || 0).toFixed(2)}`);
-    doc.text(`Balance Before Payment: $${Number(repayment.balanceBefore || 0).toFixed(2)}`);
-    doc.text(`Remaining Outstanding Loan: $${Number(repayment.balanceAfter || 0).toFixed(2)}`);
+    doc.text(`Original Loan Amount: ${formatMoney(Number(loan?.amount || 0), 2)}`);
+    doc.text(`Balance Before Payment: ${formatMoney(Number(repayment.balanceBefore || 0), 2)}`);
+    doc.text(`Remaining Outstanding Loan: ${formatMoney(Number(repayment.balanceAfter || 0), 2)}`);
     if (repayment.memberNote) {
       doc.text(`Member Note: ${repayment.memberNote}`);
     }
@@ -457,16 +458,16 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
     doc.fontSize(14).fillColor('#0f766e').text('Financial Breakdown', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#111827');
-    doc.text(`Sale Amount (manual): $${saleAmount.toFixed(2)}`);
-    doc.text(`Total Historical Investments (auto-fetched): $${totalInvestment.toFixed(2)}`);
-    doc.text(`Additional Costs (manual): $${additionalCosts.toFixed(2)}`);
-    doc.text(`Tax (manual): $${tax.toFixed(2)}`);
+    doc.text(`Sale Amount (manual): ${formatMoney(saleAmount, 2)}`);
+    doc.text(`Total Historical Investments (auto-fetched): ${formatMoney(totalInvestment, 2)}`);
+    doc.text(`Additional Costs (manual): ${formatMoney(additionalCosts, 2)}`);
+    doc.text(`Tax (manual): ${formatMoney(tax, 2)}`);
     doc.moveDown(0.6);
 
     const netLabel = outcome === 'loss' ? 'Net Loss' : outcome === 'profit' ? 'Net Profit' : 'Break Even';
     const netColor = outcome === 'loss' ? '#b91c1c' : outcome === 'profit' ? '#047857' : '#334155';
     doc.fontSize(14).fillColor(netColor).text(
-      `${netLabel}: $${Math.abs(net).toFixed(2)}  (${net >= 0 ? '+' : '-'}$${Math.abs(net).toFixed(2)})`
+      `${netLabel}: ${formatMoney(Math.abs(net), 2)}  (${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)})`
     );
     doc.moveDown(0.4);
     doc.fontSize(10).fillColor('#64748b').text(
@@ -481,7 +482,7 @@ function createSaleReportPdf(sale, adminName = 'Admin') {
       doc.fontSize(11).fillColor('#374151');
       lines.forEach((line, index) => {
         doc.text(
-          `${index + 1}. ${line.investmentCode || 'INV'} — $${Number(line.amount || 0).toFixed(2)}`
+          `${index + 1}. ${line.investmentCode || 'INV'} — ${formatMoney(Number(line.amount || 0), 2)}`
         );
       });
       doc.moveDown(1);
@@ -533,11 +534,11 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
     doc.text(`Bank: ${investment.payoutBankName || '—'}`);
     doc.moveDown(0.8);
 
-    doc.fontSize(14).fillColor('#111827').text(`Amount paid: $${amount.toFixed(2)}`);
+    doc.fontSize(14).fillColor('#111827').text(`Amount paid: ${formatMoney(amount, 2)}`);
     if (ledgerEntry) {
       doc.fontSize(11).fillColor('#374151');
       doc.text(`Ledger entry: ${ledgerEntry._id}`);
-      doc.text(`Book balance after: $${Number(ledgerEntry.balanceAfter || 0).toFixed(2)}`);
+      doc.text(`Book balance after: ${formatMoney(Number(ledgerEntry.balanceAfter || 0), 2)}`);
     }
     if (investment.cashierNote) {
       doc.moveDown(0.5);
@@ -569,24 +570,24 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
     doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Generated by: ${generatedBy}`);
     doc.text(`Generated at: ${new Date().toLocaleString()}`);
-    doc.text(`Book bank balance: $${Number(summary.bookBalance || 0).toFixed(2)}`);
+    doc.text(`Book bank balance: ${formatMoney(Number(summary.bookBalance || 0), 2)}`);
     if (summary.actualBalance !== null && summary.actualBalance !== undefined) {
-      doc.text(`Last reconciled actual: $${Number(summary.actualBalance).toFixed(2)}`);
-      doc.text(`Difference: $${Number(summary.difference || 0).toFixed(2)}${summary.mismatched ? ' ⚠ MISMATCH' : ''}`);
+      doc.text(`Last reconciled actual: ${formatMoney(Number(summary.actualBalance), 2)}`);
+      doc.text(`Difference: ${formatMoney(Number(summary.difference || 0), 2)}${summary.mismatched ? ' ⚠ MISMATCH' : ''}`);
     }
     doc.moveDown(1);
 
     doc.fontSize(13).fillColor('#0f172a').text('Daily totals', { underline: true });
     doc.moveDown(0.4);
     doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
-    doc.text(`Deposits (cash-in): $${Number(totals.deposits || 0).toFixed(2)}`);
-    doc.text(`Project sales / returns: $${Number(totals.sales || 0).toFixed(2)}`);
-    doc.text(`Monthly profits logged: $${Number(totals.monthlyProfits || 0).toFixed(2)}`);
-    doc.text(`Project payouts (cash-out): $${Number(totals.payouts || 0).toFixed(2)}`);
-    doc.text(`Profit distributions: $${Number(totals.distributions || 0).toFixed(2)}`);
-    doc.text(`Total in: $${Number(totals.totalIn || 0).toFixed(2)}`);
-    doc.text(`Total out: $${Number(totals.totalOut || 0).toFixed(2)}`);
-    doc.text(`Net for day: $${Number(totals.net || 0).toFixed(2)}`);
+    doc.text(`Deposits (cash-in): ${formatMoney(Number(totals.deposits || 0), 2)}`);
+    doc.text(`Project sales / returns: ${formatMoney(Number(totals.sales || 0), 2)}`);
+    doc.text(`Monthly profits logged: ${formatMoney(Number(totals.monthlyProfits || 0), 2)}`);
+    doc.text(`Project payouts (cash-out): ${formatMoney(Number(totals.payouts || 0), 2)}`);
+    doc.text(`Profit distributions: ${formatMoney(Number(totals.distributions || 0), 2)}`);
+    doc.text(`Total in: ${formatMoney(Number(totals.totalIn || 0), 2)}`);
+    doc.text(`Total out: ${formatMoney(Number(totals.totalOut || 0), 2)}`);
+    doc.text(`Net for day: ${formatMoney(Number(totals.net || 0), 2)}`);
     doc.moveDown(1);
 
     const entries = summary.entries || [];
@@ -597,7 +598,7 @@ function createZReportPdf(summary, generatedBy = 'Cashier') {
       entries.forEach((entry, index) => {
         const when = new Date(entry.createdAt).toLocaleTimeString();
         doc.text(
-          `${index + 1}. ${when} · ${entry.type} · ${entry.direction} $${Number(entry.amount).toFixed(2)} · bal $${Number(entry.balanceAfter).toFixed(2)}`
+          `${index + 1}. ${when} · ${entry.type} · ${entry.direction} ${formatMoney(Number(entry.amount), 2)} · bal ${formatMoney(Number(entry.balanceAfter), 2)}`
         );
       });
     } else {
@@ -624,7 +625,7 @@ function createProfitDistributionPdf(distribution) {
     doc.font('Helvetica').fontSize(12).fillColor('#1f2937');
     doc.text(`Distributed by: ${distribution.distributedBy || '—'}`);
     doc.text(`Date: ${new Date(distribution.createdAt || Date.now()).toLocaleString()}`);
-    doc.text(`Total amount: $${Number(distribution.totalAmount || 0).toFixed(2)}`);
+    doc.text(`Total amount: ${formatMoney(Number(distribution.totalAmount || 0), 2)}`);
     doc.text(`Members: ${distribution.memberCount || 0}`);
     doc.text(`Type: ${distribution.distributionType || 'equal'}`);
     if (distribution.notes) doc.text(`Notes: ${distribution.notes}`);
@@ -635,7 +636,7 @@ function createProfitDistributionPdf(distribution) {
     doc.fontSize(10).fillColor('#374151');
     (distribution.shares || []).forEach((share, index) => {
       doc.text(
-        `${index + 1}. ${share.memberName || 'Member'} — $${Number(share.amount || 0).toFixed(2)} (profit ${Number(share.previousProfit || 0).toFixed(2)} → ${Number(share.newProfit || 0).toFixed(2)})`
+        `${index + 1}. ${share.memberName || 'Member'} — ${formatMoney(Number(share.amount || 0), 2)} (profit ${Number(share.previousProfit || 0).toFixed(2)} → ${Number(share.newProfit || 0).toFixed(2)})`
       );
     });
 

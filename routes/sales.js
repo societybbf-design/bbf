@@ -1,3 +1,4 @@
+const { formatMoney } = require('../services/moneyFormat');
 const router = require('express').Router();
 const {
   lookupProjectInvestments,
@@ -93,7 +94,7 @@ router.post('/', writeSales, requirePasswordConfirmation, async (req, res) => {
     });
     let message = `Sale recorded. Full proceeds credited to the central bank ledger.`;
     if (bookBalance != null) {
-      message += ` Book balance now $${Number(bookBalance).toFixed(2)}.`;
+      message += ` Book balance now ${formatMoney(Number(bookBalance), 2)}.`;
     }
     if (ledgerWarning) {
       message += ` Ledger warning: ${ledgerWarning}`;

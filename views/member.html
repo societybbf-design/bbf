@@ -138,7 +138,7 @@
             <div class="metric-icon">💰</div>
             <div class="metric-content">
               <span class="metric-label">Total Society Savings</span>
-              <strong class="metric-value" id="memberTotalSavings">$0</strong>
+              <strong class="metric-value" id="memberTotalSavings">৳0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-1">
@@ -213,7 +213,7 @@
           <div class="metric-icon">💰</div>
           <div class="metric-content">
             <span class="metric-label">Total Savings</span>
-            <strong class="metric-value" id="memberSavings">$0</strong>
+            <strong class="metric-value" id="memberSavings">৳0</strong>
           </div>
         </button>
 
@@ -221,7 +221,7 @@
           <div class="metric-icon">📈</div>
           <div class="metric-content">
             <span class="metric-label">Your Profit Share</span>
-            <strong class="metric-value" id="memberProfit">$0</strong>
+            <strong class="metric-value" id="memberProfit">৳0</strong>
           </div>
         </button>
 
@@ -229,7 +229,7 @@
           <div class="metric-icon">💼</div>
           <div class="metric-content">
             <span class="metric-label">Total Investment</span>
-            <strong class="metric-value" id="investmentValue">$0</strong>
+            <strong class="metric-value" id="investmentValue">৳0</strong>
           </div>
         </button>
 
@@ -237,7 +237,7 @@
           <div class="metric-icon">📊</div>
           <div class="metric-content">
             <span class="metric-label">Total Withdrawn</span>
-            <strong class="metric-value" id="totalWithdrawn">$0</strong>
+            <strong class="metric-value" id="totalWithdrawn">৳0</strong>
           </div>
         </button>
 
@@ -245,7 +245,7 @@
           <div class="metric-icon">🏛️</div>
           <div class="metric-content">
             <span class="metric-label">Max Loan (80%)</span>
-            <strong class="metric-value" id="dashboardMaxLoan">$0</strong>
+            <strong class="metric-value" id="dashboardMaxLoan">৳0</strong>
             <span class="kpi-footnote" id="dashboardLoanUsedNote">Available now</span>
           </div>
         </button>
@@ -370,7 +370,7 @@
             <div class="form-row-2">
               <div class="form-group">
                 <label>
-                  Amount ($)
+                  Amount (৳)
                   <input type="number" name="amount" min="0.01" step="0.01" required />
                 </label>
               </div>
@@ -410,14 +410,14 @@
             <div class="metric-icon">💰</div>
             <div class="metric-content">
               <span class="metric-label">Total Savings</span>
-              <strong class="metric-value" id="loanTotalSavings">$0</strong>
+              <strong class="metric-value" id="loanTotalSavings">৳0</strong>
             </div>
           </div>
           <div class="metric-card metric-card-1">
             <div class="metric-icon">📊</div>
             <div class="metric-content">
               <span class="metric-label">Max Loan (80%)</span>
-              <strong class="metric-value" id="loanMaxEligible">$0</strong>
+              <strong class="metric-value" id="loanMaxEligible">৳0</strong>
               <span class="kpi-footnote" id="loanMaxEligibleNote">Available for general loan</span>
             </div>
           </div>
@@ -434,7 +434,7 @@
           <form id="generalLoanForm" class="add-member-form loan-application-form" data-loan-type="general">
             <div class="form-grid-2">
               <div class="form-group">
-                <label>Loan Amount ($) <input type="number" name="amount" min="0.01" step="0.01" required /></label>
+                <label>Loan Amount (৳) <input type="number" name="amount" min="0.01" step="0.01" required /></label>
                 <p class="table-subtitle" id="generalLoanMaxHint"></p>
               </div>
               <div class="form-group">
@@ -466,7 +466,7 @@
           <form id="emergencyLoanForm" class="add-member-form loan-application-form" data-loan-type="emergency">
             <div class="form-grid-2">
               <div class="form-group">
-                <label>Loan Amount ($) <input type="number" name="amount" min="0.01" step="0.01" required /></label>
+                <label>Loan Amount (৳) <input type="number" name="amount" min="0.01" step="0.01" required /></label>
                 <p class="table-subtitle loan-unlimited-hint">সর্বোচ্চ সীমা: <strong>আনলিমিটেড</strong> (৮০% নিয়ম প্রযোজ্য নয়)</p>
               </div>
               <div class="form-group">
@@ -800,7 +800,7 @@
           <p class="table-subtitle">Your share of society profits distributed monthly</p>
           <dl class="details-list">
             <dt>Latest Share</dt>
-            <dd id="monthlyAllocation">$0</dd>
+            <dd id="monthlyAllocation">৳0</dd>
             <dt>Last Distribution</dt>
             <dd id="lastDistribution">--</dd>
             <dt>Distribution Rate</dt>
@@ -837,6 +837,7 @@
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/table-cards.js"></script>
   <script src="/static/js/chat-shared.js"></script>
+  <script src="/static/js/money.js"></script>
   <script src="/static/js/cashier-tracking.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="/static/js/member.js"></script>

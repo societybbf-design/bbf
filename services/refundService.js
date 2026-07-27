@@ -1,3 +1,4 @@
+const { formatMoney } = require('./moneyFormat');
 const Refund = require('../models/Refund');
 const User = require('../models/User');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
@@ -70,19 +71,19 @@ async function updateRefundStatus(refundId, status, adminNote = '') {
       memberId: member._id,
       type: 'refund',
       title: `Refund ${status}`,
-      message: `Your refund of $${Number(refund.amount).toFixed(2)} is now ${status}.`,
+      message: `Your refund of ${formatMoney(Number(refund.amount), 2)} is now ${status}.`,
       relatedId: refund._id,
       relatedModel: 'Refund',
     });
     await notifyMemberByEmailAndSms(member, {
       subject: `Refund Status: ${status}`,
-      message: `Dear ${member.name}, your refund of $${Number(refund.amount).toFixed(2)} is now ${status}.`,
+      message: `Dear ${member.name}, your refund of ${formatMoney(Number(refund.amount), 2)} is now ${status}.`,
     });
     if (status === 'completed' && previousStatus !== 'completed') {
       await createAdminNotification({
         type: 'refund',
         title: `Refund completed for ${member.name}`,
-        message: `Refund of $${Number(refund.amount).toFixed(2)} completed.`,
+        message: `Refund of ${formatMoney(Number(refund.amount), 2)} completed.`,
         relatedId: refund._id,
         relatedModel: 'Refund',
       });
