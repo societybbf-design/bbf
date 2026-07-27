@@ -136,9 +136,9 @@
               <div id="devMemberBuyInBlock" class="permissions-block hidden">
                 <div class="permissions-header">
                   <div>
-                    <h3 data-i18n="um.buyInTitle">Member share valuation (buy-in)</h3>
+                    <h3 data-i18n="um.buyInTitle">Member share / entry fee (manual)</h3>
                     <p class="text-secondary" id="devEntryValuationNote" data-i18n="um.buyInHelp">
-                      Current equal-share value of active capital + profit pool. Exact amount required to activate.
+                      Enter the share or entry fee manually. Suggested equal-share valuation is shown for reference only. After submit, status is Pending until CEO approves and Cashier confirms payment.
                     </p>
                   </div>
                 </div>
@@ -146,11 +146,11 @@
                   <p class="table-subtitle" data-i18n="um.selectMemberRole">Select role “Member” to load live valuation.</p>
                 </div>
                 <div class="form-group">
-                  <label data-i18n="um.buyInAmount">
-                    Buy-in amount paid now (exact)
-                    <input data-i18n-placeholder="um.buyInPlaceholder" type="number" name="entryAmountPaid" id="devEntryAmountPaid" min="0" step="0.01" placeholder="Leave blank to create inactive pending buy-in" />
+                  <label data-i18n="um.shareEntryAmount">
+                    Share / entry fee amount (৳) — manual
+                    <input data-i18n-placeholder="um.shareEntryPlaceholder" type="number" name="shareEntryAmount" id="devShareEntryAmount" min="0" step="0.01" required placeholder="Enter share or entry fee manually" />
                   </label>
-                  <p class="text-secondary" data-i18n="um.buyInNote">Leave blank to create the account inactive until cashier records the exact buy-in. Enter the exact valuation to activate immediately.</p>
+                  <p class="text-secondary" data-i18n="um.shareEntryNote">Required. Account is submitted as Pending for CEO approval. Cashier confirms payment only after CEO approval — then the account becomes Active.</p>
                 </div>
               </div>
               <div class="permissions-block">
@@ -183,6 +183,8 @@
                 <input data-i18n-placeholder="common.searchNameEmail" type="search" id="userSearch" placeholder="Search name or email" />
                 <select id="userStatusFilter">
                   <option data-i18n="status.allStatuses" value="">All statuses</option>
+                  <option data-i18n="status.pending" value="pending">Pending / Submitted</option>
+                  <option data-i18n="status.approved" value="approved">Approved (awaiting payment)</option>
                   <option data-i18n="status.active" value="active">Active</option>
                   <option data-i18n="status.inactive" value="inactive">Inactive</option>
                   <option data-i18n="status.blocked" value="blocked">Blocked</option>

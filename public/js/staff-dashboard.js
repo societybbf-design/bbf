@@ -1285,9 +1285,9 @@ async function loadFundingModule() {
     const valuation = buyIns.valuation || {};
     if (buyInValBox) {
       buyInValBox.innerHTML = `
-        <p><strong>Current join share valuation: ${money(valuation.entryAmount)}</strong></p>
+        <p><strong>Suggested equal-share (reference): ${money(valuation.entryAmount)}</strong></p>
         <p class="text-secondary">${escapeHtml(valuation.formula || '')}</p>
-        <p class="text-secondary">Active members: ${valuation.activeCount || 0} · Fund ${money(valuation.totalFund)} (savings ${money(valuation.totalSavings)} + profit ${money(valuation.totalProfit)} + advance ${money(valuation.totalAdvance)})</p>
+        <p class="text-secondary">Active members: ${valuation.activeCount || 0} · Fund ${money(valuation.totalFund)}. Payment amount is the manual share fee set at registration (CEO-approved).</p>
       `;
     }
 
@@ -1297,25 +1297,25 @@ async function loadFundingModule() {
         ? pendingMembers.map((m) => `
           <tr>
             <td>${escapeHtml(m.name)}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
-            <td>${money(m.requiredEntryAmount)}</td>
-            <td>${escapeHtml(m.status)}</td>
+            <td>${money(m.requiredEntryAmount ?? m.shareEntryAmount)}</td>
+            <td>${escapeHtml(m.statusLabel || m.status)}</td>
             <td>
               <button type="button" class="primary-btn"
                 data-complete-buyin="${m.id}"
-                data-required="${Number(m.requiredEntryAmount || 0).toFixed(2)}">
-                Record ${money(m.requiredEntryAmount)}
+                data-required="${Number(m.requiredEntryAmount || m.shareEntryAmount || 0).toFixed(2)}">
+                Confirm ${money(m.requiredEntryAmount ?? m.shareEntryAmount)} received
               </button>
             </td>
           </tr>
         `).join('')
-        : '<tr><td colspan="4">No pending buy-ins.</td></tr>';
+        : '<tr><td colspan="4">No CEO-approved members awaiting payment confirmation.</td></tr>';
     }
 
     document.querySelectorAll('[data-complete-buyin]').forEach((btn) => {
       btn.onclick = async () => {
         const msg = document.getElementById('cashierBuyInMessage');
         const required = btn.dataset.required;
-        if (!window.confirm(`Record exact buy-in of ${formatMoney(required)} and activate this member?`)) return;
+        if (!window.confirm(`Confirm successful payment of ${formatMoney(required)}? This activates the member and adjusts balances.`)) return;
         try {
           const res = await fetch('/api/admin/funding/member-buyin', {
             method: 'POST',
@@ -1326,15 +1326,16 @@ async function loadFundingModule() {
             }),
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Unable to complete buy-in.');
+          if (!res.ok) throw new Error(data.error || 'Unable to confirm payment.');
           if (msg) {
             msg.classList.add('success');
-            msg.textContent = data.message || `Buy-in of ${formatMoney(required)} recorded. Member activated.`;
+            msg.textContent = data.message || `Payment of ${formatMoney(required)} confirmed. Member activated.`;
           }
           await loadFundingModule();
         } catch (error) {
           if (msg) {
             msg.classList.remove('success');
+            msg.classList.add('error');
             msg.textContent = error.message;
           }
         }

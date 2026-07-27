@@ -49,16 +49,43 @@ const UserSchema = new mongoose.Schema({
     default: 0,
     min: 0,
   },
-  /** New member must pay current share valuation before activation */
+  /**
+   * New-member onboarding:
+   * pending (submitted) → CEO approved → cashier payment confirm → active
+   */
   pendingEntryBuyIn: {
     type: Boolean,
     default: false,
     index: true,
   },
+  /** Manual share / entry fee entered at registration (not auto-locked). */
+  shareEntryAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   requiredEntryAmount: {
     type: Number,
     default: 0,
     min: 0,
+  },
+  membershipSubmittedAt: {
+    type: Date,
+    default: null,
+  },
+  ceoApprovedAt: {
+    type: Date,
+    default: null,
+  },
+  ceoApprovedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  membershipRejectionReason: {
+    type: String,
+    trim: true,
+    default: '',
   },
   entryBuyInPaidAt: {
     type: Date,
@@ -173,7 +200,8 @@ const UserSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'inactive', 'deleted', 'blocked'],
+    // pending = submitted (awaiting CEO); approved = CEO OK, awaiting payment; active = paid & live
+    enum: ['pending', 'submitted', 'approved', 'active', 'inactive', 'deleted', 'blocked'],
     default: 'active',
     index: true,
   },
