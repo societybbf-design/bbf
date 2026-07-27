@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Member Dashboard - Society Management</title>
+  <script src="/static/js/theme-boot.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260714notify2" />
+  <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
+</head>
+<body class="dashboard-layout member-dashboard">
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-copy">
+        <h2>SocietyHub</h2>
+        <p class="brand-tagline">Member Portal</p>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <p class="nav-section-label">Overview</p>
+      <a href="#dashboard" class="nav-item active" data-page="dashboard">
+        <span class="nav-icon-wrap"><span class="nav-icon">📊</span></span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="#investments" class="nav-item" data-page="investments">
+        <span class="nav-icon-wrap"><span class="nav-icon">📈</span></span>
+        <span class="nav-label">Investments</span>
+      </a>
+      <a href="#investment-requests" class="nav-item" data-page="investment-requests">
+        <span class="nav-icon-wrap"><span class="nav-icon">✅</span></span>
+        <span class="nav-label">Investment Requests</span>
+      </a>
+      <a href="#portfolio" class="nav-item" data-page="portfolio">
+        <span class="nav-icon-wrap"><span class="nav-icon">💼</span></span>
+        <span class="nav-label">Portfolio</span>
+      </a>
+
+      <p class="nav-section-label">Account</p>
+      <a href="#withdrawals" class="nav-item" data-page="withdrawals">
+        <span class="nav-icon-wrap"><span class="nav-icon">💸</span></span>
+        <span class="nav-label">Withdrawals</span>
+      </a>
+      <a href="#refunds" class="nav-item" data-page="refunds">
+        <span class="nav-icon-wrap"><span class="nav-icon">↩️</span></span>
+        <span class="nav-label">Refunds</span>
+      </a>
+      <a href="#loans" class="nav-item" data-page="loans">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏛️</span></span>
+        <span class="nav-label">Loans</span>
+      </a>
+      <a href="#messages" class="nav-item" data-page="messages">
+        <span class="nav-icon-wrap"><span class="nav-icon">💬</span></span>
+        <span class="nav-label">Messages</span>
+      </a>
+      <a href="#documents" class="nav-item" data-page="documents">
+        <span class="nav-icon-wrap"><span class="nav-icon">📄</span></span>
+        <span class="nav-label">Documents</span>
+      </a>
+      <a href="#settings" class="nav-item" data-page="settings">
+        <span class="nav-icon-wrap"><span class="nav-icon">⚙️</span></span>
+        <span class="nav-label">Settings</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-user-card">
+      <div class="sidebar-user-avatar"><span id="sidebarMemberInitial">M</span></div>
+      <div class="sidebar-user-info">
+        <strong id="sidebarMemberName">Member</strong>
+        <span id="sidebarMemberStatus">Active Member</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button id="logoutBtn" class="logout-btn">
+        <span class="logout-icon">⏻</span>
+        <span>Sign Out</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+
+  <!-- Main Content -->
+  <div class="main-container">
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <div class="topbar-heading">
+          <p class="topbar-eyebrow">SocietyHub Member</p>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p class="topbar-note" id="pageNote">Welcome back! Track your savings, investments, and profits.</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+          <span class="theme-icon-sun" aria-hidden="true">☀️</span>
+          <span class="theme-icon-moon" aria-hidden="true">🌙</span>
+        </button>
+        <button type="button" class="notification-bell-btn" id="memberNotificationBtn" title="View Notifications" aria-label="View Notifications">
+          🔔 <span class="notification-badge hidden" id="memberNotificationBadge">0</span>
+        </button>
+        <div id="memberNotificationPanel" class="notification-panel hidden" hidden>
+          <div class="notification-panel-header">
+            <strong>Notifications</strong>
+            <button type="button" class="secondary-btn" id="markAllMemberNotificationsReadBtn">Mark all read</button>
+          </div>
+          <div id="memberNotificationList" class="notification-list">
+            <p class="table-subtitle notification-empty-state">Click "View Notifications" to load updates.</p>
+          </div>
+        </div>
+        <div class="user-profile" title="Profile">
+          <span id="userInitial">👤</span>
+        </div>
+      </div>
+    </div>
+
+    <main class="page-layout page-grid-responsive">
+      <div id="profitUpdateAlert" class="message hidden" role="status"></div>
+
+      <section class="page-section" data-page-section="investments">
+        <div class="metrics-grid">
+          <div class="metric-card metric-card-3">
+            <div class="metric-icon">💰</div>
+            <div class="metric-content">
+              <span class="metric-label">Total Society Savings</span>
+              <strong class="metric-value" id="memberTotalSavings">$0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-1">
+            <div class="metric-icon">🟢</div>
+            <div class="metric-content">
+              <span class="metric-label">Running Investments</span>
+              <strong class="metric-value" id="memberActiveCount">0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-4">
+            <div class="metric-icon">✅</div>
+            <div class="metric-content">
+              <span class="metric-label">Sold Investments</span>
+              <strong class="metric-value" id="memberSoldCount">0</strong>
+            </div>
+          </div>
+        </div>
+
+        <section class="panel-card table-card-wide investment-panel-running">
+          <h2>Running Investments</h2>
+          <p class="table-subtitle">এখনো চলমান society investments</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Investment ID</th>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Amount</th>
+                  <th>Date of Birth</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="memberActiveInvestmentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide investment-panel-sold">
+          <h2>Sold Investments</h2>
+          <p class="table-subtitle">বিক্রি হয়ে যাওয়া investments — profit বা loss সহ</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Investment ID</th>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Invested</th>
+                  <th>Sale Amount</th>
+                  <th>Profit / Loss</th>
+                  <th>Sold Date</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="memberSoldInvestmentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section active" data-page-section="dashboard">
+      <section class="panel-card member-self-profile-card" id="memberSelfProfileCard">
+        <p class="table-subtitle">Loading your profile...</p>
+      </section>
+
+      <!-- Metric Cards -->
+      <div class="metrics-grid report-metrics-grid">
+        <button type="button" class="metric-card metric-card-1 report-metric-card member-metric-card" data-member-report-type="savings" aria-pressed="false">
+          <div class="metric-icon">💰</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Savings</span>
+            <strong class="metric-value" id="memberSavings">$0</strong>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-2 report-metric-card member-metric-card" data-member-report-type="profit" aria-pressed="false">
+          <div class="metric-icon">📈</div>
+          <div class="metric-content">
+            <span class="metric-label">Your Profit Share</span>
+            <strong class="metric-value" id="memberProfit">$0</strong>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-3 report-metric-card member-metric-card" data-member-report-type="investments" aria-pressed="false">
+          <div class="metric-icon">💼</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Investment</span>
+            <strong class="metric-value" id="investmentValue">$0</strong>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-4 report-metric-card member-metric-card" data-member-report-type="withdrawals" aria-pressed="false">
+          <div class="metric-icon">📊</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Withdrawn</span>
+            <strong class="metric-value" id="totalWithdrawn">$0</strong>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-5 report-metric-card member-metric-card" id="dashboardMaxLoanCard">
+          <div class="metric-icon">🏛️</div>
+          <div class="metric-content">
+            <span class="metric-label">Max Loan (80%)</span>
+            <strong class="metric-value" id="dashboardMaxLoan">$0</strong>
+            <span class="kpi-footnote" id="dashboardLoanUsedNote">Available now</span>
+          </div>
+        </button>
+      </div>
+
+      <section class="panel-card table-card-wide" id="loanRepaymentDashboardPanel">
+        <div class="member-profile-section-header">
+          <div>
+            <h2>Loan Payment Status</h2>
+            <p class="table-subtitle">Payments are recorded manually by admin at the society office.</p>
+          </div>
+          <button type="button" class="primary-btn" id="goToLoansPageBtn">View Loans</button>
+        </div>
+        <div id="dashboardOutstandingLoanContent">
+          <p class="table-subtitle">Loading outstanding loan...</p>
+        </div>
+      </section>
+
+      <section class="panel-card table-card-wide" id="loanDashboardPanel">
+        <div class="member-profile-section-header">
+          <div>
+            <h2>Loan Status & Decisions</h2>
+            <p class="table-subtitle">Track your loan application status, admin decisions, and contracts.</p>
+          </div>
+          <button type="button" class="receipt-button" id="goToLoansPageBtn">Apply / View Loans</button>
+        </div>
+        <div id="loanDashboardContent">
+          <p class="table-subtitle">Loading loan status...</p>
+        </div>
+      </section>
+
+      <section class="panel-card table-card-wide" id="memberDetailPanel">
+        <h2 id="memberDetailTitle">Select a summary</h2>
+        <p class="table-subtitle" id="memberDetailSubtitle">Click Total Savings, Your Profit Share, Total Investment, or Total Withdrawn above to view your activity list.</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead id="memberDetailHead">
+              <tr><th>Activity</th></tr>
+            </thead>
+            <tbody id="memberDetailBody">
+              <tr><td>Choose a card above to load your activity list.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Welcome Card -->
+      <section class="panel-card card-highlight">
+        <h2>Welcome, <span id="memberName">Member</span></h2>
+        <p class="topbar-note">Your account is active and in good standing. Track all your financial activities below.</p>
+        <div class="investment-summary">
+          <div>
+            <p class="small-label">Account Status</p>
+            <strong id="accountStatus">Active</strong>
+          </div>
+          <div>
+            <p class="small-label">Member Since</p>
+            <strong id="memberJoined">--</strong>
+          </div>
+          <div>
+            <p class="small-label">Total Members</p>
+            <strong id="totalMembers">--</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-card">
+        <h2>Payment Reminder</h2>
+        <div id="duesAlert"></div>
+      </section>
+      </section>
+
+      <section class="page-section" data-page-section="investment-requests">
+        <section class="panel-card table-card-wide">
+          <h2>New Investment Requests</h2>
+          <p class="table-subtitle">Review proposed investments, open documents, and approve. Your approval is required before cashier payment.</p>
+          <div id="memberInvestmentRequestsList"></div>
+          <p id="memberInvestmentRequestMessage" class="message"></p>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="portfolio">
+        <section class="panel-card">
+          <h2>Portfolio Overview</h2>
+          <p class="table-subtitle">Track your savings and investment progress.</p>
+          <div id="noticeBoard" class="member-roster-list"></div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="withdrawals">
+        <section class="panel-card card-form-wide">
+          <h2>Submit a Withdrawal Request</h2>
+          <form id="withdrawalForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Amount ($)
+                  <input type="number" name="amount" min="0.01" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Reason
+                  <input type="text" name="reason" placeholder="Emergency withdrawal" />
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Submit Request</button>
+            <p id="withdrawalMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Your Withdrawal Requests</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="withdrawalTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="loans">
+        <div class="metrics-grid">
+          <div class="metric-card metric-card-3">
+            <div class="metric-icon">💰</div>
+            <div class="metric-content">
+              <span class="metric-label">Total Savings</span>
+              <strong class="metric-value" id="loanTotalSavings">$0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-1">
+            <div class="metric-icon">📊</div>
+            <div class="metric-content">
+              <span class="metric-label">Max Loan (80%)</span>
+              <strong class="metric-value" id="loanMaxEligible">$0</strong>
+              <span class="kpi-footnote" id="loanMaxEligibleNote">Available for general loan</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-tabs" role="tablist" aria-label="Loan application types">
+          <button type="button" class="profile-tab active" data-loan-tab="general">General Loan</button>
+          <button type="button" class="profile-tab" data-loan-tab="emergency">Emergency Loan</button>
+        </div>
+
+        <section class="panel-card card-form-wide loan-tab-panel" data-loan-panel="general">
+          <h2>General Loan Application</h2>
+          <p class="table-subtitle">সাধারণ ঋণের জন্য উদ্দেশ্য, সাক্ষীর তথ্য এবং প্রয়োজনীয় নথি জমা দিন। ঋণের পরিমাণ সঞ্চয়ের ৮০% (Max Loan) এর বেশি হতে পারবে না।</p>
+          <form id="generalLoanForm" class="add-member-form loan-application-form" data-loan-type="general">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Loan Amount ($) <input type="number" name="amount" min="0.01" step="0.01" required /></label>
+                <p class="table-subtitle" id="generalLoanMaxHint"></p>
+              </div>
+              <div class="form-group">
+                <label>Purpose / Reason <input type="text" name="reason" placeholder="Business, education, etc." required /></label>
+              </div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Witness Name <input type="text" name="witnessName" required /></label>
+              </div>
+              <div class="form-group">
+                <label>Witness Phone <input type="text" name="witnessPhone" required /></label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Witness Relation <input type="text" name="witnessRelation" placeholder="Friend, colleague, etc." /></label>
+            </div>
+            <div class="form-group">
+              <label>Supporting Documents <input type="file" name="documents" accept=".jpg,.jpeg,.png,.pdf,.webp" multiple required /></label>
+            </div>
+            <button type="submit" class="primary-btn">Submit General Loan</button>
+            <p class="message loan-form-message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card card-form-wide loan-tab-panel hidden" data-loan-panel="emergency">
+          <h2>Emergency Loan Application</h2>
+          <p class="table-subtitle">জরুরি ঋণের জন্য কারণ, সাক্ষীর তথ্য এবং প্রয়োজনীয় নথি অবশ্যই দিতে হবে। জরুরি ঋণে কোনো সর্বোচ্চ সীমা নেই — প্রয়োজন অনুযায়ী আবেদন করতে পারবেন।</p>
+          <form id="emergencyLoanForm" class="add-member-form loan-application-form" data-loan-type="emergency">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Loan Amount ($) <input type="number" name="amount" min="0.01" step="0.01" required /></label>
+                <p class="table-subtitle loan-unlimited-hint">সর্বোচ্চ সীমা: <strong>আনলিমিটেড</strong> (৮০% নিয়ম প্রযোজ্য নয়)</p>
+              </div>
+              <div class="form-group">
+                <label>Emergency Reason <input type="text" name="reason" placeholder="Medical emergency, family crisis, etc." required /></label>
+              </div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Witness Name <input type="text" name="witnessName" required /></label>
+              </div>
+              <div class="form-group">
+                <label>Witness Phone <input type="text" name="witnessPhone" required /></label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Witness Relation <input type="text" name="witnessRelation" placeholder="Relative, neighbor, etc." /></label>
+            </div>
+            <div class="form-group">
+              <label>Supporting Documents <input type="file" name="documents" accept=".jpg,.jpeg,.png,.pdf,.webp" multiple required /></label>
+            </div>
+            <button type="submit" class="primary-btn">Submit Emergency Loan</button>
+            <p class="message loan-form-message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card card-form-wide" id="loanDisbursementPanel">
+          <h2>Loan Transfer Status</h2>
+          <p class="table-subtitle">See when your approved loan money was transferred to you by the admin office.</p>
+          <div id="loanDisbursementContent">
+            <p class="table-subtitle">Loading transfer status...</p>
+          </div>
+        </section>
+
+        <section class="panel-card card-form-wide" id="loanRepaymentPanel">
+          <h2>Loan Payment</h2>
+          <p class="table-subtitle">Loan payments are processed manually by the admin office. Visit the society office or contact admin to pay your installment.</p>
+          <div id="loanOutstandingSummary" class="loan-dashboard-highlight">
+            <p class="table-subtitle">Loading outstanding loan...</p>
+          </div>
+          <div class="member-manual-payment-note panel-card">
+            <strong>Manual payment only</strong>
+            <p class="table-subtitle">Your payment will be recorded by admin and will appear in the repayment history below once processed.</p>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Loan Repayment History</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Type</th>
+                  <th>Payment</th>
+                  <th>Status</th>
+                  <th>Balance After</th>
+                  <th>Date</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="loanRepaymentsBody">
+                <tr><td colspan="7">Loading repayment history...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Your Loan Applications</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>Decision / Note</th>
+                  <th>Transfer</th>
+                  <th>Payment</th>
+                  <th>Contract</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="loanApplicationsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="refunds">
+        <section class="panel-card table-card-wide">
+          <h2>Refund History</h2>
+          <p class="table-subtitle">Track whether your deposited savings have been returned and the current refund status.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>Admin Note</th>
+                  <th>Requested</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="refundTableBody">
+                <tr><td colspan="6">Loading refund history...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="documents">
+        <section class="panel-card card-form-wide">
+          <h2>Digital KYC Onboarding</h2>
+          <p class="table-subtitle">নতুন সদস্য অনবোর্ডিংয়ের জন্য আপনার তথ্য ও ডকুমেন্ট আপলোড করুন।</p>
+          <form id="kycProfileForm" class="add-member-form">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Phone <input type="text" name="phone" required /></label>
+              </div>
+              <div class="form-group">
+                <label>NID Number <input type="text" name="nidNumber" required /></label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Address <input type="text" name="address" required /></label>
+            </div>
+            <button type="submit" class="secondary-btn">Save KYC Profile</button>
+            <p id="kycProfileMessage" class="message"></p>
+          </form>
+          <form id="kycDocumentForm" class="add-member-form">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Document Type
+                  <select name="documentType">
+                    <option value="nid">NID</option>
+                    <option value="photo">Photo</option>
+                    <option value="address_proof">Address Proof</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Upload Documents <input type="file" name="documents" accept=".jpg,.jpeg,.png,.pdf,.webp" multiple required /></label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Upload KYC Documents</button>
+            <p id="kycDocumentMessage" class="message"></p>
+          </form>
+        </section>
+        <section class="panel-card table-card-wide">
+          <h2>Uploaded Documents</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>File</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="kycDocumentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="messages">
+        <section class="panel-card">
+          <h2>Messages</h2>
+          <p class="table-subtitle">Chat with the society cashier / office. Send text, images, or documents — replies stay threaded.</p>
+        </section>
+        <section class="panel-card chat-thread-panel chat-thread-panel-single">
+          <div class="chat-thread-header">
+            <h3>Society Office</h3>
+            <p class="table-subtitle">Direct support chat with the cashier</p>
+          </div>
+          <div class="chat-thread" id="memberChatThread" aria-live="polite">
+            <p class="table-subtitle chat-empty-state">Loading messages...</p>
+          </div>
+          <div id="memberChatReplyBar" class="chat-reply-bar hidden">
+            <div>
+              <strong id="memberChatReplyName">Reply</strong>
+              <span id="memberChatReplyPreview"></span>
+            </div>
+            <button type="button" class="modal-close" id="memberChatReplyClear" aria-label="Cancel reply">&times;</button>
+          </div>
+          <form class="chat-compose-form" id="memberChatComposeForm">
+            <textarea name="body" rows="3" maxlength="2000" placeholder="Write your message…"></textarea>
+            <div class="chat-compose-actions">
+              <label class="secondary-btn chat-attach-btn">
+                Attach
+                <input type="file" name="files" id="memberChatFiles" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden />
+              </label>
+              <span id="memberChatFileLabel" class="text-secondary"></span>
+              <button type="submit" class="primary-btn">Send Message</button>
+            </div>
+            <p class="message chat-compose-message"></p>
+          </form>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="settings">
+        <section class="panel-card">
+          <h2>Account Settings</h2>
+          <p class="table-subtitle">Manage your account preferences and password.</p>
+          <form id="memberSelfPasswordForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Current password
+                  <input type="password" name="currentPassword" required autocomplete="current-password" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  New password
+                  <input type="password" name="newPassword" minlength="6" required autocomplete="new-password" />
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Update password</button>
+            <p id="memberSelfPasswordMessage" class="message"></p>
+          </form>
+        </section>
+      </section>
+
+      <!-- Account Details & Documents -->
+      <div class="grid-row-2">
+        <section class="panel-card">
+          <h2>Account Details</h2>
+          <dl class="details-list">
+            <dt>Name</dt>
+            <dd id="fullName">--</dd>
+            <dt>Email</dt>
+            <dd id="memberEmail">--</dd>
+            <dt>Role</dt>
+            <dd id="memberRole">Member</dd>
+            <dt>Account Status</dt>
+            <dd id="accountStatus">Active</dd>
+          </dl>
+        </section>
+
+        <section class="panel-card">
+          <h2>Profit Distribution</h2>
+          <p class="table-subtitle">Your share of society profits distributed monthly</p>
+          <dl class="details-list">
+            <dt>Latest Share</dt>
+            <dd id="monthlyAllocation">$0</dd>
+            <dt>Last Distribution</dt>
+            <dd id="lastDistribution">--</dd>
+            <dt>Distribution Rate</dt>
+            <dd id="distributionRate">Equal Share</dd>
+          </dl>
+        </section>
+      </div>
+
+      <section class="panel-card table-card-wide">
+        <h2>Your Profit History</h2>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Investment ID</th>
+                <th>Share Received</th>
+                <th>Total Profit After</th>
+                <th>Type</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="profitHistoryTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/table-cards.js"></script>
+  <script src="/static/js/chat-shared.js"></script>
+  <script src="/static/js/member.js"></script>
+</body>
+</html>

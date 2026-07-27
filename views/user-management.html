@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Management - SocietyHub</title>
+  <script src="/static/js/theme-boot.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/utilities.css" />
+  <link rel="stylesheet" href="/static/css/admin-dashboard.css" />
+  <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
+</head>
+<body class="dashboard-layout admin-dashboard" data-um-dashboard="true">
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-copy">
+        <h2>SocietyHub</h2>
+        <p class="brand-tagline">User Management</p>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <p class="nav-section-label">Account control</p>
+      <a href="#" class="nav-item active" data-dev-tab="overview">
+        <span class="nav-icon-wrap"><span class="nav-icon">📊</span></span>
+        <span class="nav-label">Overview</span>
+      </a>
+      <a href="#" class="nav-item" data-dev-tab="create">
+        <span class="nav-icon-wrap"><span class="nav-icon">➕</span></span>
+        <span class="nav-label">Create Account</span>
+      </a>
+      <a href="#" class="nav-item" data-dev-tab="users">
+        <span class="nav-icon-wrap"><span class="nav-icon">👥</span></span>
+        <span class="nav-label">All Accounts</span>
+      </a>
+      <a href="#" class="nav-item" data-dev-tab="recovery">
+        <span class="nav-icon-wrap"><span class="nav-icon">🔑</span></span>
+        <span class="nav-label">OTP Recovery</span>
+      </a>
+      <a href="#" class="nav-item" data-dev-tab="audits">
+        <span class="nav-icon-wrap"><span class="nav-icon">📋</span></span>
+        <span class="nav-label">Security Audit</span>
+      </a>
+      <a href="#" class="nav-item" data-dev-tab="security">
+        <span class="nav-icon-wrap"><span class="nav-icon">🔒</span></span>
+        <span class="nav-label">My Security</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-user-card">
+      <div class="sidebar-user-avatar"><span id="umSidebarInitial">U</span></div>
+      <div class="sidebar-user-info">
+        <strong id="umSidebarName">User Management</strong>
+        <span>Account control only</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button id="logoutBtn" class="logout-btn" type="button">
+        <span class="logout-icon">⏻</span>
+        <span>Sign Out</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+
+  <div class="main-container">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <div class="topbar-heading">
+          <p class="topbar-eyebrow">SocietyHub User Management</p>
+          <h1 id="pageTitle">User Management</h1>
+          <p class="topbar-note" id="pageNote">Create accounts, directory search/filters, lock/active states, passwords, soft-delete/restore, OTP, and audits.</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+          <span class="theme-icon-sun" aria-hidden="true">☀️</span>
+          <span class="theme-icon-moon" aria-hidden="true">🌙</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="page-layout dashboard-content">
+      <div id="ceoDeveloperModule" class="ceo-developer-module">
+        <section class="content-section" data-dev-panel="overview">
+          <div class="stats-grid" id="devStatsGrid"></div>
+          <section class="panel-card">
+            <h2>Your focused workspace</h2>
+            <p class="table-subtitle">This dashboard is only for account lifecycle and security. CEO finance modules (deposits, investments, loans, portfolios) are not shown here.</p>
+          </section>
+        </section>
+
+        <section class="content-section hidden" data-dev-panel="create">
+          <section class="panel-card">
+            <h2>Create account</h2>
+            <p class="table-subtitle">Exclusive path for members, investors, project managers, cashiers, employees, and CEOs.</p>
+            <form id="devCreateUserForm" class="add-member-form">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>
+                    Full Name
+                    <input type="text" name="name" placeholder="e.g. Ayesha Rahman" required />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>
+                    Email
+                    <input type="email" name="email" placeholder="user@example.com" required />
+                  </label>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>
+                    Temporary Password
+                    <input type="password" name="password" minlength="6" placeholder="Min. 6 characters" required />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>
+                    Role
+                    <select name="role" id="devRoleSelect" required></select>
+                  </label>
+                </div>
+              </div>
+              <div id="devMemberBuyInBlock" class="permissions-block hidden">
+                <div class="permissions-header">
+                  <div>
+                    <h3>Member share valuation (buy-in)</h3>
+                    <p class="text-secondary" id="devEntryValuationNote">
+                      Current equal-share value of active capital + profit pool. Exact amount required to activate.
+                    </p>
+                  </div>
+                </div>
+                <div id="devEntryValuationBox" class="panel-card u-mb-1">
+                  <p class="table-subtitle">Select role “Member” to load live valuation.</p>
+                </div>
+                <div class="form-group">
+                  <label>
+                    Buy-in amount paid now (exact)
+                    <input type="number" name="entryAmountPaid" id="devEntryAmountPaid" min="0" step="0.01" placeholder="Leave blank to create inactive pending buy-in" />
+                  </label>
+                  <p class="text-secondary">Leave blank to create the account inactive until cashier records the exact buy-in. Enter the exact valuation to activate immediately.</p>
+                </div>
+              </div>
+              <div class="permissions-block">
+                <div class="permissions-header">
+                  <div>
+                    <h3>Permissions</h3>
+                    <p class="text-secondary">Role change loads recommended defaults. Adjust as needed (ignored for members).</p>
+                  </div>
+                  <div class="inline-actions">
+                    <button type="button" class="secondary-btn" id="devSelectAllPerms">Select all</button>
+                    <button type="button" class="secondary-btn" id="devClearPerms">Clear</button>
+                  </div>
+                </div>
+                <div class="permissions-grid" id="devPermissionsGrid"></div>
+              </div>
+              <button type="submit" class="primary-btn">Create Account</button>
+              <p id="devCreateMessage" class="message"></p>
+            </form>
+          </section>
+        </section>
+
+        <section class="content-section hidden" data-dev-panel="users">
+          <section class="panel-card table-card-wide">
+            <div class="panel-card-header ceo-dev-toolbar">
+              <div>
+                <h2>Account directory</h2>
+                <p class="table-subtitle">Browse accounts by role. Soft-deleted accounts remain in their role list for restore — never hard-deleted.</p>
+              </div>
+              <div class="form-row-2 ceo-dev-filters">
+                <input type="search" id="userSearch" placeholder="Search name or email" />
+                <select id="userStatusFilter">
+                  <option value="">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="deleted">Deleted</option>
+                </select>
+                <button type="button" class="primary-btn" id="refreshUsersBtn">Refresh</button>
+              </div>
+            </div>
+
+            <div class="um-role-tabs profile-tabs profile-tabs-v2" role="tablist" aria-label="Account roles">
+              <button type="button" class="profile-tab active" role="tab" aria-selected="true" data-um-role-tab="member">
+                Members <span class="um-role-count" data-um-role-count="member">0</span>
+              </button>
+              <button type="button" class="profile-tab" role="tab" aria-selected="false" data-um-role-tab="investor">
+                Investors <span class="um-role-count" data-um-role-count="investor">0</span>
+              </button>
+              <button type="button" class="profile-tab" role="tab" aria-selected="false" data-um-role-tab="ceo">
+                CEOs <span class="um-role-count" data-um-role-count="ceo">0</span>
+              </button>
+              <button type="button" class="profile-tab" role="tab" aria-selected="false" data-um-role-tab="project_manager">
+                Managers <span class="um-role-count" data-um-role-count="project_manager">0</span>
+              </button>
+              <button type="button" class="profile-tab" role="tab" aria-selected="false" data-um-role-tab="cashier">
+                Cashiers <span class="um-role-count" data-um-role-count="cashier">0</span>
+              </button>
+              <button type="button" class="profile-tab" role="tab" aria-selected="false" data-um-role-tab="employee">
+                Employees <span class="um-role-count" data-um-role-count="employee">0</span>
+              </button>
+              <button type="button" class="profile-tab" role="tab" aria-selected="false" data-um-role-tab="developer">
+                UM Admins <span class="um-role-count" data-um-role-count="developer">0</span>
+              </button>
+            </div>
+
+            <p class="table-subtitle um-role-panel-label" id="umRolePanelLabel">Showing Members</p>
+
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Lock / OTP</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="devUsersTable">
+                  <tr><td colspan="6">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="devUsersMessage" class="message"></p>
+          </section>
+        </section>
+
+        <section class="content-section hidden" data-dev-panel="recovery">
+          <section class="panel-card">
+            <h2>OTP password recovery</h2>
+            <p class="table-subtitle">When a locked or forgotten-password user shares their OTP, select their account, enter the OTP, and set a new password.</p>
+            <form id="otpResetForm" class="add-member-form">
+              <div class="form-group">
+                <label>
+                  User account
+                  <select name="userId" id="otpUserSelect" required>
+                    <option value="">Select user with pending OTP…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>
+                    OTP from user
+                    <input type="text" name="otp" inputmode="numeric" maxlength="8" required placeholder="6-digit code" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>
+                    New password
+                    <input type="password" name="newPassword" minlength="6" required />
+                  </label>
+                </div>
+              </div>
+              <button type="submit" class="primary-btn">Verify OTP &amp; Reset Password</button>
+              <p id="otpResetMessage" class="message"></p>
+            </form>
+          </section>
+        </section>
+
+        <section class="content-section hidden" data-dev-panel="audits">
+          <section class="panel-card table-card-wide">
+            <h2>Security audit trail</h2>
+            <p class="table-subtitle">Login failures, lockouts, OTP requests, password changes, and email updates.</p>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Target</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody id="devAuditsTable">
+                  <tr><td colspan="5">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="content-section hidden" data-dev-panel="security">
+          <section class="panel-card">
+            <h2>Change my password</h2>
+            <form id="devSelfPasswordForm" class="add-member-form">
+              <div class="form-group">
+                <label>
+                  Current password
+                  <input type="password" name="currentPassword" required autocomplete="current-password" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  New password
+                  <input type="password" name="newPassword" minlength="6" required autocomplete="new-password" />
+                </label>
+              </div>
+              <button type="submit" class="primary-btn">Update password</button>
+              <p id="devSelfPasswordMessage" class="message"></p>
+            </form>
+          </section>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="devUserModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="devUserModalTitle">
+    <div class="modal-content">
+      <div class="modal-header um-modal-header">
+        <div class="um-modal-identity">
+          <p class="um-modal-eyebrow" id="devUserModalEyebrow">Updating profile for</p>
+          <h2 id="devUserModalTitle">Manage account</h2>
+          <p class="um-modal-email" id="devUserModalEmail"></p>
+          <p class="um-modal-meta" id="devUserModalMeta"></p>
+        </div>
+        <button type="button" class="modal-close" id="closeDevUserModal" aria-label="Close">×</button>
+      </div>
+      <div id="devUserModalBody"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/sidebar-nav.js"></script>
+  <script src="/static/js/table-cards.js"></script>
+  <script src="/static/js/password-confirm.js"></script>
+  <script src="/static/js/developer.js"></script>
+</body>
+</html>

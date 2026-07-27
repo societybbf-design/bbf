@@ -1,0 +1,307 @@
+/* Global mobile-first polish — phones & tablets */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body.sidebar-open {
+  overflow: hidden;
+}
+
+/* Safer touch targets */
+@media (max-width: 768px) {
+  .sidebar-toggle {
+    display: inline-grid !important;
+    place-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    flex-shrink: 0;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .topbar-left {
+    flex: 1;
+    min-width: 0;
+    gap: 0.65rem;
+  }
+
+  .topbar-heading {
+    min-width: 0;
+  }
+
+  .topbar-heading h1,
+  .topbar-left h1 {
+    font-size: 1.25rem;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  .topbar-note,
+  .topbar-eyebrow {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .topbar-right {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.55rem;
+  }
+
+  .search-wrapper {
+    width: 100%;
+    order: 3;
+  }
+
+  .search-input {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .page-layout,
+  .staff-dashboard .page-layout,
+  .ceo-dashboard .page-layout {
+    padding: 1rem !important;
+    gap: 1rem;
+    max-width: 100%;
+  }
+
+  .panel-card {
+    padding: 1rem;
+    border-radius: 16px;
+    margin-bottom: 1rem;
+  }
+
+  .panel-card-header h2 {
+    font-size: 1.1rem;
+  }
+
+  .stats-grid,
+  .metrics-grid,
+  .form-row-2,
+  .form-grid-2,
+  .ceo-form .form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .primary-btn,
+  .secondary-btn,
+  .ghost-btn {
+    min-height: 44px;
+    padding: 0.7rem 1rem;
+  }
+
+  /* Tables: horizontal scroll container when needed */
+  .table-wrapper,
+  .table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    border-radius: 14px;
+    margin: 0;
+  }
+
+  .data-table {
+    min-width: 0;
+  }
+
+  /* Card-stack tables (preferred on phones) */
+  .table-cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .table-cards,
+  .table-cards tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .table-cards tr {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-card);
+    box-shadow: 0 6px 16px var(--shadow-color);
+  }
+
+  .table-cards td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.85rem;
+    width: 100%;
+    padding: 0.45rem 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+    font-size: 0.9rem;
+    word-break: break-word;
+  }
+
+  .table-cards td:last-child {
+    border-bottom: 0;
+    padding-bottom: 0.15rem;
+  }
+
+  .table-cards td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-align: left;
+    flex: 0 1 42%;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .table-cards td:empty::after {
+    content: '—';
+    color: var(--text-secondary);
+  }
+
+  /* Modals / portfolio */
+  .modal {
+    padding: 0.5rem;
+    align-items: flex-end;
+  }
+
+  .modal-content,
+  .modal-large {
+    width: 100% !important;
+    max-width: 100%;
+    max-height: min(94vh, 100%);
+    border-radius: 18px 18px 12px 12px;
+    padding: 1rem;
+    margin: 0;
+  }
+
+  .modal-header {
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .modal-header h2 {
+    font-size: 1.1rem;
+    line-height: 1.3;
+  }
+
+  .member-profile-section {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+
+  .member-profile-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .member-profile-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .member-profile-stats,
+  .member-profile-stats.stats-grid,
+  .member-profile-financial-grid,
+  .member-profile-contact-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .member-profile-hero-v2,
+  .member-profile-hero-v2-main,
+  .member-profile-quick-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chat-page-layout {
+    grid-template-columns: 1fr !important;
+    min-height: 70vh;
+  }
+
+  .notification-panel {
+    right: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .member-profile-stats,
+  .member-profile-stats.stats-grid,
+  .member-profile-financial-grid,
+  .member-profile-contact-grid,
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .topbar-right .user-profile-menu,
+  .topbar-right .cashier-profile-chip {
+    max-width: 100%;
+  }
+
+  .cashier-profile-chip span,
+  .topbar-note {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@supports (padding: max(0px)) {
+  @media (max-width: 768px) {
+    .page-layout,
+    .staff-dashboard .page-layout,
+    .ceo-dashboard .page-layout {
+      padding-left: max(1rem, env(safe-area-inset-left)) !important;
+      padding-right: max(1rem, env(safe-area-inset-right)) !important;
+      padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+    }
+
+    .sidebar {
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+
+    .modal-content,
+    .modal-large {
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* Keep portfolio sections readable in light mode */
+[data-theme="light"] .member-profile-section {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="dark"] .member-profile-section {
+  background: rgba(15, 23, 42, 0.72);
+}

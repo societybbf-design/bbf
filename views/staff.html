@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Dashboard - SocietyHub</title>
+  <script src="/static/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/utilities.css" />
+  <link rel="stylesheet" href="/static/css/cashier-home.css" />
+  <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
+</head>
+<body class="dashboard-layout staff-dashboard cashier-shell">
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-copy">
+        <h2>SocietyHub</h2>
+        <p class="brand-tagline" id="roleTagline">Staff Dashboard</p>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="featureNav" aria-label="Staff modules"></nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user-card" id="cashierSidebarUser">
+        <div class="sidebar-user-avatar" id="cashierSidebarAvatar">C</div>
+        <div class="sidebar-user-info">
+          <strong id="cashierSidebarName">Cashier</strong>
+          <span id="cashierSidebarRole">Staff</span>
+        </div>
+      </div>
+      <button type="button" class="logout-btn" id="logoutBtn">
+        <span class="logout-icon">⏻</span>
+        <span>Sign Out</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+
+  <div class="main-container">
+    <header class="topbar cashier-topbar">
+      <div class="topbar-left">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <div class="topbar-heading">
+          <h1 id="dashboardTitle">Dashboard</h1>
+          <p class="topbar-note text-secondary" id="dashboardSubtitle">Loading your workspace…</p>
+        </div>
+      </div>
+      <div class="topbar-right cashier-topbar-right">
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+          <span class="theme-icon-sun" aria-hidden="true">☀️</span>
+          <span class="theme-icon-moon" aria-hidden="true">🌙</span>
+        </button>
+        <div class="cashier-profile-chip">
+          <div class="cashier-profile-avatar" id="cashierTopAvatar">C</div>
+          <div>
+            <strong id="cashierTopName">—</strong>
+            <span id="cashierTopRole">Cashier</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-layout">
+      <section class="content-section">
+        <!-- HOME -->
+        <div data-staff-view="home" id="staffHomeView">
+          <div class="cashier-home-layout">
+            <div class="cashier-home-main">
+              <div class="cashier-hero-banner">
+                <div>
+                  <p class="cashier-eyebrow" id="cashierGreeting">Welcome back</p>
+                  <h2 id="cashierHeroTitle">Cashier workspace</h2>
+                  <p class="text-secondary" id="cashierHeroNote">Track this month’s collections, open member portfolios, and use the sidebar for all modules.</p>
+                </div>
+                <div class="cashier-hero-pills" id="permissionStats"></div>
+              </div>
+
+              <section class="cashier-summary-grid" aria-label="Monthly payment status">
+                <article class="cashier-summary-card cashier-summary-paid">
+                  <div class="cashier-summary-head">
+                    <div>
+                      <p class="cashier-summary-label">Paid members</p>
+                      <h3 id="cashierPaidCount">—</h3>
+                      <p class="text-secondary" id="cashierPaidSubtitle">Current month</p>
+                    </div>
+                    <div class="cashier-summary-amount">
+                      <span class="text-secondary">Collected</span>
+                      <strong id="cashierPaidTotal">—</strong>
+                    </div>
+                  </div>
+                  <ul class="cashier-member-status-list" id="cashierPaidList">
+                    <li class="text-secondary">Loading…</li>
+                  </ul>
+                </article>
+
+                <article class="cashier-summary-card cashier-summary-unpaid">
+                  <div class="cashier-summary-head">
+                    <div>
+                      <p class="cashier-summary-label">Unpaid members</p>
+                      <h3 id="cashierUnpaidCount">—</h3>
+                      <p class="text-secondary" id="cashierUnpaidSubtitle">Still due this month</p>
+                    </div>
+                    <div class="cashier-summary-amount">
+                      <span class="text-secondary">Outstanding</span>
+                      <strong id="cashierUnpaidTotal">—</strong>
+                    </div>
+                  </div>
+                  <ul class="cashier-member-status-list" id="cashierUnpaidList">
+                    <li class="text-secondary">Loading…</li>
+                  </ul>
+                </article>
+              </section>
+
+              <section class="cashier-analytics-card" aria-label="Monthly collection analytics">
+                <div class="cashier-section-head">
+                  <h3>Collection analytics</h3>
+                  <p class="text-secondary" id="cashierAnalyticsNote">Paid vs unpaid for the current month</p>
+                </div>
+                <div class="cashier-analytics-grid">
+                  <div class="cashier-analytics-chart">
+                    <div class="cashier-collection-ring" id="cashierCollectionRing" style="--paid-pct: 0">
+                      <div class="cashier-collection-ring-center">
+                        <strong id="cashierCollectionRate">0%</strong>
+                        <span>collected</span>
+                      </div>
+                    </div>
+                    <div class="cashier-chart-legend">
+                      <span><i class="legend-paid"></i> Paid <strong id="cashierLegendPaid">0</strong></span>
+                      <span><i class="legend-unpaid"></i> Unpaid <strong id="cashierLegendUnpaid">0</strong></span>
+                    </div>
+                  </div>
+                  <div class="cashier-analytics-bars">
+                    <div class="cashier-bar-row">
+                      <div class="cashier-bar-meta">
+                        <span>Paid amount</span>
+                        <strong id="cashierBarPaidLabel">$0</strong>
+                      </div>
+                      <div class="cashier-bar-track">
+                        <div class="cashier-bar-fill cashier-bar-paid" id="cashierBarPaid" style="width:0%"></div>
+                      </div>
+                    </div>
+                    <div class="cashier-bar-row">
+                      <div class="cashier-bar-meta">
+                        <span>Outstanding</span>
+                        <strong id="cashierBarUnpaidLabel">$0</strong>
+                      </div>
+                      <div class="cashier-bar-track">
+                        <div class="cashier-bar-fill cashier-bar-unpaid" id="cashierBarUnpaid" style="width:0%"></div>
+                      </div>
+                    </div>
+                    <div class="cashier-target-chip">
+                      <span class="text-secondary">Month target / member</span>
+                      <strong id="cashierMonthTarget">—</strong>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="cashier-members-launch" aria-label="Members module">
+                <button type="button" class="cashier-members-card" data-staff-nav="members" id="cashierOpenMembers">
+                  <span class="cashier-members-card-icon" aria-hidden="true">👥</span>
+                  <span class="cashier-members-card-copy">
+                    <strong>Members</strong>
+                    <span>Open the full member directory — names, IDs, and contact details. Select anyone to view their portfolio ledger.</span>
+                  </span>
+                  <span class="cashier-members-card-cta">Open list →</span>
+                </button>
+                <p class="message" id="dashMessage"></p>
+              </section>
+
+              <section class="panel-card cashier-security-card">
+                <div class="panel-card-header">
+                  <h2>Account security</h2>
+                  <p class="text-secondary">Update your password. Sensitive payment actions will ask you to confirm your password again.</p>
+                </div>
+                <form id="staffSelfPasswordForm" class="add-member-form">
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>
+                        Current password
+                        <input type="password" name="currentPassword" required autocomplete="current-password" />
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        New password
+                        <input type="password" name="newPassword" minlength="6" required autocomplete="new-password" />
+                      </label>
+                    </div>
+                  </div>
+                  <button type="submit" class="primary-btn">Update password</button>
+                  <p id="staffSelfPasswordMessage" class="message"></p>
+                </form>
+              </section>
+            </div>
+
+            <aside class="cashier-home-rail" aria-label="Society KPIs">
+              <section class="cashier-kpi-card">
+                <div class="cashier-kpi-head">
+                  <h3>Society pulse</h3>
+                  <button type="button" class="cashier-link-btn" id="cashierRefreshKpis">Refresh</button>
+                </div>
+                <div class="cashier-kpi-rings" id="cashierKpiRings">
+                  <div class="cashier-ring-item">
+                    <div class="cashier-ring" data-ring="projects"><span id="kpiActiveProjects">—</span></div>
+                    <strong>Active projects</strong>
+                    <span class="text-secondary">Live investments</span>
+                  </div>
+                  <div class="cashier-ring-item">
+                    <div class="cashier-ring" data-ring="sales"><span id="kpiSalesUnits">—</span></div>
+                    <strong>Sales units</strong>
+                    <span class="text-secondary">Recorded sales</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="cashier-metric-stack">
+                <article class="cashier-metric-tile">
+                  <div class="cashier-metric-icon" aria-hidden="true">📈</div>
+                  <div>
+                    <p class="text-secondary">Total investment</p>
+                    <strong id="kpiTotalInvestment">—</strong>
+                  </div>
+                  <svg class="cashier-spark" viewBox="0 0 64 24" aria-hidden="true">
+                    <polyline fill="none" stroke="currentColor" stroke-width="2" points="0,18 10,14 20,16 30,10 40,12 50,6 64,8" />
+                  </svg>
+                </article>
+                <article class="cashier-metric-tile">
+                  <div class="cashier-metric-icon cashier-metric-icon-profit" aria-hidden="true">⬆</div>
+                  <div>
+                    <p class="text-secondary">Profit generated</p>
+                    <strong id="kpiProfitGenerated">—</strong>
+                  </div>
+                  <div class="cashier-mini-bars" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span><span></span>
+                  </div>
+                </article>
+                <article class="cashier-metric-tile">
+                  <div class="cashier-metric-icon" aria-hidden="true">🏦</div>
+                  <div>
+                    <p class="text-secondary">Bank book balance</p>
+                    <strong id="kpiBookBalance">—</strong>
+                  </div>
+                </article>
+              </section>
+
+              <section class="cashier-kpi-card">
+                <div class="cashier-kpi-head">
+                  <h3>Recent ledger</h3>
+                  <a href="#ledger" class="cashier-link-btn" data-staff-nav="ledger">View all</a>
+                </div>
+                <ul class="cashier-history-list" id="cashierRecentLedger">
+                  <li class="text-secondary">Loading…</li>
+                </ul>
+              </section>
+            </aside>
+          </div>
+        </div>
+
+        <!-- BANK LEDGER -->
+        <div class="panel-card hidden" data-staff-view="ledger" id="bankLedgerPanel">
+          <div class="panel-card-header">
+            <h2>Banking Ledger</h2>
+            <p class="text-secondary">Society central bank balance. Set an opening balance once, then new deposits and payouts update the book balance automatically.</p>
+          </div>
+          <div class="stats-grid" id="bankLedgerStats">
+            <div class="stat-card"><h3 id="ledgerBookBalance">—</h3><p>Book balance</p></div>
+            <div class="stat-card"><h3 id="ledgerActualBalance">—</h3><p>Last actual balance</p></div>
+            <div class="stat-card"><h3 id="ledgerDifference">—</h3><p>Difference</p></div>
+          </div>
+          <div id="ledgerMismatchAlert" class="ledger-mismatch-alert hidden" role="alert"></div>
+          <div id="ledgerOpeningFormWrap" class="hidden">
+            <form id="ledgerOpeningForm" class="add-member-form">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>
+                    Opening bank balance
+                    <input type="number" name="amount" min="0" step="0.01" required placeholder="0.00" />
+                  </label>
+                </div>
+                <div class="form-group" style="display:flex;align-items:flex-end;">
+                  <button type="submit" class="primary-btn">Set opening balance</button>
+                </div>
+              </div>
+            </form>
+          </div>
+          <form id="ledgerReconcileForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Actual bank / physical balance
+                  <input type="number" name="actualBalance" step="0.01" required placeholder="Enter statement balance" />
+                </label>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap;">
+                <button type="submit" class="primary-btn">Reconcile</button>
+                <button type="button" class="secondary-btn" id="zReportBtn">Download Z-report PDF</button>
+              </div>
+            </div>
+          </form>
+          <p id="ledgerMessage" class="message"></p>
+          <h3 class="u-mt-1">Recent ledger entries</h3>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead>
+                <tr><th>When</th><th>Type</th><th>Dir</th><th>Amount</th><th>Balance</th><th>Note</th></tr>
+              </thead>
+              <tbody id="ledgerEntriesBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- PAYMENT QUEUE -->
+        <div class="panel-card hidden" data-staff-view="queue" id="cashierQueuePanel">
+          <div class="panel-card-header">
+            <h2>Investment Payment Queue</h2>
+            <p class="text-secondary">Approved project payouts. Completing payment deducts society savings and the central bank ledger, then issues a payment voucher.</p>
+          </div>
+          <div id="cashierQueueList"></div>
+          <p id="cashierQueueMessage" class="message"></p>
+        </div>
+
+        <!-- PROFIT POOL -->
+        <div class="panel-card hidden" data-staff-view="profit" id="profitPoolPanel">
+          <div class="panel-card-header">
+            <h2>Profit &amp; Dividends</h2>
+            <p class="text-secondary">Log monthly project profits and distribute equally to all active members. Credits/debits the bank ledger and generates a PDF report.</p>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card"><h3 id="profitPoolBalance">$0.00</h3><p>Pool balance</p></div>
+            <div class="stat-card"><h3 id="profitPoolBookBalance">—</h3><p>Live bank book balance</p></div>
+          </div>
+          <form id="monthlyProfitForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Monthly profit / dividend amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
+              </div>
+              <div class="form-group">
+                <label>Source (optional)<input type="text" name="source" placeholder="Project or month label" /></label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Note<input type="text" name="note" placeholder="Optional note" /></label>
+            </div>
+            <button type="submit" class="primary-btn">Log monthly profit</button>
+          </form>
+          <form id="distributeProfitForm" class="add-member-form u-mt-1">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Distribute amount (blank = full pool)<input type="number" name="amount" min="0.01" step="0.01" placeholder="Full pool" /></label>
+              </div>
+              <div class="form-group">
+                <label>Note<input type="text" name="note" placeholder="Equal distribution to members" /></label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Distribute equally to members</button>
+          </form>
+          <p id="profitPoolMessage" class="message"></p>
+          <div id="profitPoolRecent" class="u-mt-1"></div>
+        </div>
+
+        <!-- ADVANCES & INTERNAL BORROWING -->
+        <div class="panel-card hidden" data-staff-view="funding" id="moduleFunding">
+          <div class="panel-card-header">
+            <h2>Advances, Buy-ins &amp; Internal Borrowing</h2>
+            <p class="text-secondary">Record advance balances, complete new-member buy-ins at current share valuation, cover unpaid project shares, and settle repayments (credits the bank ledger).</p>
+          </div>
+
+          <h3>Pending member buy-ins</h3>
+          <p class="text-secondary">New members stay inactive until the exact share-valuation amount is deposited. Valuation refreshes with society capital + profit.</p>
+          <div id="cashierBuyInValuationBox" class="panel-card u-mb-1">
+            <p class="table-subtitle">Loading current share valuation…</p>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Member</th><th>Required</th><th>Status</th><th>Record exact payment</th></tr></thead>
+              <tbody id="cashierPendingBuyInBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="cashierBuyInMessage" class="message"></p>
+
+          <h3 class="u-mt-1">Record advance deposit</h3>
+          <form id="cashierAdvanceForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Member
+                  <select name="memberId" id="cashierAdvanceMember" required>
+                    <option value="">Select member…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Advance amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Note<input type="text" name="notes" placeholder="Optional" /></label>
+            </div>
+            <button type="submit" class="primary-btn">Credit advance balance</button>
+            <p id="cashierAdvanceMessage" class="message"></p>
+          </form>
+
+          <h3 class="u-mt-1">Member advance balances</h3>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Member</th><th>Savings</th><th>Advance</th><th>Profit</th></tr></thead>
+              <tbody id="cashierAdvanceBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+            </table>
+          </div>
+
+          <h3 class="u-mt-1">Unpaid project shares</h3>
+          <p class="text-secondary">Flagged when a member could not cover their equal share. Project still proceeds — cover via borrow or record repayment.</p>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Investment</th><th>Member</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="cashierUnpaidBody"><tr><td colspan="5">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="cashierUnpaidMessage" class="message"></p>
+
+          <h3 class="u-mt-1">Create internal borrow</h3>
+          <form id="cashierBorrowForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Unpaid contribution
+                  <select name="contributionKey" id="cashierBorrowContribution" required>
+                    <option value="">Select unpaid share…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Lender (has advance)
+                  <select name="lenderId" id="cashierBorrowLender" required>
+                    <option value="">Select lender…</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Amount<input type="number" name="amount" id="cashierBorrowAmount" min="0.01" step="0.01" required /></label>
+              </div>
+              <div class="form-group">
+                <label>Note<input type="text" name="note" placeholder="Optional" /></label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Borrow from advance</button>
+            <p id="cashierBorrowMessage" class="message"></p>
+          </form>
+
+          <h3 class="u-mt-1">Open borrowings — settle repayment</h3>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>When</th><th>Borrower</th><th>Lender</th><th>Amount</th><th>Outstanding</th><th>Settle</th></tr></thead>
+              <tbody id="cashierBorrowingsBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="cashierSettleMessage" class="message"></p>
+        </div>
+
+        <!-- DEPOSITS -->
+        <div class="panel-card hidden" data-staff-view="deposits" id="moduleDeposits">
+          <div class="panel-card-header">
+            <h2>Deposits</h2>
+            <p class="text-secondary">Record member deposits against this month’s fixed target. Extra → Advance; shortfall → unpaid dues. Each deposit instantly credits the central bank book balance.</p>
+          </div>
+          <div class="stats-grid u-mb-1">
+            <div class="stat-card"><h3 id="cashierDepositsBookBalance">—</h3><p>Live bank book balance</p></div>
+          </div>
+          <div id="cashierMonthTargetBox" class="panel-card u-mb-1">
+            <p class="table-subtitle">Loading month target…</p>
+          </div>
+          <form id="cashierDepositForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Member
+                  <select name="memberId" id="cashierDepositMember" required>
+                    <option value="">Select member…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Amount
+                  <input type="number" name="amount" id="cashierDepositAmount" min="0.01" step="0.01" required />
+                </label>
+              </div>
+            </div>
+            <p class="text-secondary" id="cashierDepositHint">Enter any amount. Surplus above the month target is credited to Advance.</p>
+            <button type="submit" class="primary-btn">Record deposit</button>
+            <p id="cashierDepositMessage" class="message"></p>
+            <p id="cashierDepositReceipt" class="u-mt-1"></p>
+          </form>
+          <h3 class="u-mt-1">Unpaid monthly dues</h3>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Member</th><th>Month</th><th>Expected</th><th>Paid</th><th>Still due</th><th>Status</th></tr></thead>
+              <tbody id="cashierMonthlyDuesBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <h3 class="u-mt-1">Recent deposits</h3>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Date</th><th>Member</th><th>Amount</th><th>Receipt</th></tr></thead>
+              <tbody id="cashierDepositsBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- WITHDRAWALS -->
+        <div class="panel-card hidden" data-staff-view="withdrawals" id="moduleWithdrawals">
+          <div class="panel-card-header">
+            <h2>Withdrawals</h2>
+            <p class="text-secondary">Review and process member withdrawal requests in your cashier workspace.</p>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Member</th><th>Amount</th><th>Status</th><th>Reason</th><th>Actions</th></tr></thead>
+              <tbody id="cashierWithdrawalsBody"><tr><td colspan="5">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="cashierWithdrawalsMessage" class="message"></p>
+        </div>
+
+        <!-- REFUNDS -->
+        <div class="panel-card hidden" data-staff-view="refunds" id="moduleRefunds">
+          <div class="panel-card-header">
+            <h2>Refunds</h2>
+            <p class="text-secondary">Create a refund for a member. Select the member, enter amount and reason.</p>
+          </div>
+          <form id="cashierRefundForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Member
+                  <select name="memberId" id="cashierRefundMember" required>
+                    <option value="">Select member…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Reason<input type="text" name="reason" placeholder="Optional reason" /></label>
+            </div>
+            <button type="submit" class="primary-btn">Create refund</button>
+            <p id="cashierRefundMessage" class="message"></p>
+          </form>
+        </div>
+
+        <!-- REPORTS -->
+        <div class="panel-card hidden" data-staff-view="reports" id="moduleReports">
+          <div class="panel-card-header">
+            <h2>Reports</h2>
+            <p class="text-secondary">Society summary for cashiers. Download the daily Z-report from Bank Ledger for cash closing.</p>
+          </div>
+          <div class="stats-grid" id="cashierReportStats"></div>
+          <div class="form-row-2 u-mt-1">
+            <button type="button" class="secondary-btn" id="cashierZReportBtn">Download today’s Z-report PDF</button>
+            <button type="button" class="ghost-btn" data-staff-nav="ledger">Open Bank Ledger</button>
+          </div>
+          <p id="cashierReportsMessage" class="message"></p>
+        </div>
+
+        <!-- CHAT / MESSENGER -->
+        <div class="panel-card hidden" data-staff-view="chat" id="moduleChat">
+          <div class="panel-card-header">
+            <h2>Messenger</h2>
+            <p class="text-secondary">Chat with members in real time. Send text, images, documents, and reply to specific messages.</p>
+          </div>
+          <div class="chat-page-layout">
+            <aside class="chat-inbox-panel">
+              <div class="member-profile-section-header">
+                <div>
+                  <h3>Members</h3>
+                  <p class="table-subtitle">Select a member to open their thread</p>
+                </div>
+                <button type="button" class="secondary-btn" id="cashierChatRefreshBtn">Refresh</button>
+              </div>
+              <input type="search" id="cashierChatSearch" class="chat-member-search" placeholder="Search members…" />
+              <div class="chat-inbox-list" id="cashierChatInboxList">
+                <p class="table-subtitle">Loading members…</p>
+              </div>
+            </aside>
+            <section class="chat-thread-panel">
+              <div id="cashierChatThreadHeader" class="chat-thread-header">
+                <h3>Select a member</h3>
+                <p class="table-subtitle">Choose someone from the list to start chatting.</p>
+              </div>
+              <div class="chat-thread" id="cashierChatThread" aria-live="polite">
+                <p class="table-subtitle chat-empty-state">No conversation selected.</p>
+              </div>
+              <div id="cashierChatReplyBar" class="chat-reply-bar hidden">
+                <div>
+                  <strong id="cashierChatReplyName">Reply</strong>
+                  <span id="cashierChatReplyPreview"></span>
+                </div>
+                <button type="button" class="modal-close" id="cashierChatReplyClear" aria-label="Cancel reply">&times;</button>
+              </div>
+              <form class="chat-compose-form hidden" id="cashierChatComposeForm">
+                <textarea name="body" rows="3" maxlength="2000" placeholder="Write a message…"></textarea>
+                <div class="chat-compose-actions">
+                  <label class="secondary-btn chat-attach-btn">
+                    Attach
+                    <input type="file" name="files" id="cashierChatFiles" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden />
+                  </label>
+                  <span id="cashierChatFileLabel" class="text-secondary"></span>
+                  <button type="submit" class="primary-btn">Send</button>
+                </div>
+                <p class="message chat-compose-message" id="cashierChatComposeMessage"></p>
+              </form>
+            </section>
+          </div>
+          <p id="cashierChatMessage" class="message"></p>
+        </div>
+
+        <!-- GENERIC FALLBACK MODULES -->
+        <div class="panel-card hidden" data-staff-view="members" id="moduleMembers">
+          <div class="panel-card-header">
+            <h2>Members</h2>
+            <p class="text-secondary">All registered members. Click a row to open their detailed portfolio — deposits, dues, and full ledger history.</p>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table table-cards" id="cashierMembersTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Member ID</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Savings</th>
+                  <th>Profile</th>
+                </tr>
+              </thead>
+              <tbody id="cashierMembersBody"><tr><td colspan="7">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card hidden" data-staff-view="loans" id="moduleLoans">
+          <div class="panel-card-header">
+            <h2>Loans</h2>
+            <p class="text-secondary">Pending loan applications.</p>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead><tr><th>Member</th><th>Amount</th><th>Type</th><th>Status</th></tr></thead>
+              <tbody id="cashierLoansBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card hidden" data-staff-view="investments" id="moduleInvestments">
+          <div class="panel-card-header">
+            <h2>Investments</h2>
+            <p class="text-secondary">Use Payment Queue for payouts. Summary of recent investments:</p>
+          </div>
+          <div id="cashierInvestmentsList"><p class="text-secondary">Loading…</p></div>
+          <button type="button" class="secondary-btn u-mt-1" data-staff-nav="queue">Open Payment Queue</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="cashierMemberProfileModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="cashierMemberProfileTitle">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="cashierMemberProfileTitle">Member profile</h2>
+        <button type="button" class="modal-close" id="cashierMemberProfileClose" aria-label="Close">&times;</button>
+      </div>
+      <div id="cashierMemberProfileContent" class="member-profile-content">
+        <p class="text-secondary">Select a member to load their ledger.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/sidebar-nav.js"></script>
+  <script src="/static/js/table-cards.js"></script>
+  <script src="/static/js/password-confirm.js"></script>
+  <script src="/static/js/chat-shared.js"></script>
+  <script src="/static/js/staff-dashboard.js"></script>
+</body>
+</html>

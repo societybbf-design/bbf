@@ -1,0 +1,392 @@
+/**
+ * admin-dashboard.css
+ * CEO dashboard layout: KPI cards, Total Investment breakdown,
+ * section spacing, and mobile single-column behavior.
+ *
+ * Loaded after styles.css so these rules can refine shared components
+ * without inlining CSS in admin.html.
+ */
+
+/* ----- Dashboard section rhythm ----- */
+.admin-dashboard .page-layout > .dashboard-quick-actions,
+.admin-dashboard .page-layout > .metrics-grid,
+.admin-dashboard .page-layout > .dashboard-finance-grid,
+.admin-dashboard .page-layout > .dashboard-main-grid,
+.admin-dashboard .page-layout > .panel-card,
+.admin-dashboard .page-layout > .dashboard-nav-list {
+  margin-bottom: 1.5rem;
+}
+
+.admin-dashboard .metrics-grid,
+.admin-dashboard .dashboard-kpi-grid {
+  gap: 1.25rem;
+}
+
+.admin-dashboard .dashboard-finance-grid {
+  gap: 1.25rem;
+  margin-top: 0.25rem;
+}
+
+.admin-dashboard .dashboard-snapshot-grid {
+  gap: 1rem;
+}
+
+.admin-dashboard .panel-card + .panel-card {
+  margin-top: 0.25rem;
+}
+
+.admin-dashboard .metric-card {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ----- Total Investment card: stacked rows (no overlapping amounts) ----- */
+.admin-dashboard .dashboard-investment-kpi-card {
+  align-items: flex-start;
+  min-height: auto;
+  grid-column: span 1;
+}
+
+@media (min-width: 900px) {
+  .admin-dashboard .dashboard-investment-kpi-card {
+    grid-column: span 2;
+  }
+}
+
+.admin-dashboard .dashboard-investment-kpi-card .metric-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1;
+  width: 100%;
+}
+
+.admin-dashboard .investment-kpi-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.admin-dashboard .investment-kpi-breakdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.28);
+  min-width: 0;
+}
+
+.admin-dashboard .investment-kpi-breakdown-label {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.admin-dashboard .investment-kpi-breakdown-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary, #f8fafc);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.admin-dashboard .investment-kpi-breakdown-item.is-total {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(79, 70, 229, 0.12));
+}
+
+.admin-dashboard .investment-kpi-breakdown-item.is-active {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.1));
+}
+
+.admin-dashboard .investment-kpi-breakdown-item.is-sold {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.1));
+}
+
+.admin-dashboard .investment-kpi-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
+}
+
+.admin-dashboard .dashboard-investment-kpi-card .investment-kpi-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+/* Legacy orb markup (kept for safety if any remnant HTML remains) */
+.admin-dashboard .investment-kpi-orbs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.admin-dashboard .investment-kpi-orb {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: auto;
+  padding: 0.45rem 0.65rem;
+  border-radius: 12px;
+}
+
+.admin-dashboard .investment-kpi-orb span,
+.admin-dashboard .investment-kpi-orb strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  width: auto;
+  line-height: 1.25;
+}
+
+.admin-dashboard .investment-kpi-orb strong {
+  text-align: right;
+  font-size: 0.95rem;
+}
+
+/* ----- Tablet / mobile: single-column stacking ----- */
+@media (max-width: 900px) {
+  .admin-dashboard .dashboard-kpi-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .admin-dashboard .dashboard-kpi-grid .dashboard-monthly-kpi-card,
+  .admin-dashboard .dashboard-investment-kpi-card {
+    grid-column: span 1;
+  }
+
+  .admin-dashboard .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-dashboard .dashboard-finance-grid,
+  .admin-dashboard .dashboard-main-grid,
+  .admin-dashboard .dashboard-finance-body {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-dashboard .page-layout {
+    padding: 1rem 1rem 2rem;
+  }
+
+  .admin-dashboard .metric-card {
+    flex-direction: row;
+    align-items: flex-start;
+    text-align: left;
+    padding: 1.15rem;
+    gap: 1rem;
+  }
+
+  .admin-dashboard .dashboard-quick-actions {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-dashboard .dashboard-snapshot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-dashboard .monthly-kpi-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-dashboard .monthly-kpi-side {
+    justify-items: start;
+    flex-direction: row;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .admin-dashboard .metric-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-dashboard .metric-icon {
+    font-size: 1.75rem;
+  }
+}
+
+/* Light theme readability for investment rows */
+[data-theme="light"] .admin-dashboard .investment-kpi-breakdown-item {
+  background: rgba(248, 250, 252, 0.9);
+}
+
+[data-theme="light"] .admin-dashboard .investment-kpi-breakdown-value {
+  color: #0f172a;
+}
+
+[data-theme="dark"] .admin-dashboard .investment-kpi-breakdown-value {
+  color: #f8fafc;
+}
+
+/* ----- Developer module embedded in CEO Panel ----- */
+.ceo-developer-module {
+  margin-bottom: 1.5rem;
+}
+
+.ceo-dev-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.ceo-dev-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.ceo-dev-filters {
+  gap: 0.5rem;
+  max-width: 560px;
+}
+
+.ceo-dev-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.um-role-tabs {
+  margin: 1rem 0 0.75rem;
+}
+
+.um-role-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text-secondary);
+}
+
+.profile-tab.active .um-role-count {
+  background: rgba(99, 102, 241, 0.28);
+  color: var(--text-primary);
+}
+
+.um-role-panel-label {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+}
+
+.um-modal-header {
+  align-items: flex-start;
+}
+
+.um-modal-identity {
+  min-width: 0;
+  flex: 1;
+  padding-right: 0.75rem;
+}
+
+.um-modal-eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.um-modal-identity h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.um-modal-email {
+  margin: 0.4rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--primary);
+  word-break: break-all;
+}
+
+.um-modal-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.um-modal-subject {
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.um-modal-subject-line {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.um-modal-subject-email {
+  margin: 0.35rem 0 0;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.ceo-developer-module .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.ceo-developer-module .stat-card {
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+@media (max-width: 640px) {
+  .ceo-dev-toolbar,
+  .ceo-dev-filters {
+    flex-direction: column;
+    align-items: stretch;
+    max-width: none;
+  }
+}

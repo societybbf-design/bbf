@@ -1,0 +1,1993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CEO Dashboard - SocietyHub</title>
+  <!--
+    Architecture (CEO dashboard):
+    - Markup: views/admin.html
+    - Shared styles: public/css/styles.css
+    - Dashboard layout: public/css/admin-dashboard.css
+    - Utility helpers: public/css/utilities.css
+    - Theme boot (pre-paint): public/js/theme-boot.js
+    - Theme toggle: public/js/theme.js
+    - Dashboard behavior: public/js/admin.js
+    - CEO Panel module (inspect directory / operational tools; no account creation)
+    - User Management lives on /user-management (separate focused dashboard)
+    - Password confirm modal: public/js/password-confirm.js
+  -->
+  <script src="/static/js/theme-boot.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/utilities.css" />
+  <link rel="stylesheet" href="/static/css/admin-dashboard.css" />
+  <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
+  <!-- Chart.js loaded deferred at end of body — React was unused and slowed first paint -->
+</head>
+<body class="dashboard-layout admin-dashboard">
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-copy">
+        <h2>SocietyHub</h2>
+        <p class="brand-tagline">CEO Dashboard</p>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <p class="nav-section-label">Overview</p>
+      <a href="#" class="nav-item active" data-page="dashboard" data-requires-permission="can_view_reports,can_manage_deposits,can_manage_withdrawals,can_manage_members,can_manage_investments,can_manage_profit,can_manage_refunds,can_manage_chat,can_manage_loans,can_manage_notices,can_manage_kyc">
+        <span class="nav-icon-wrap"><span class="nav-icon">📊</span></span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="#" class="nav-item" data-page="reports" data-requires-permission="can_view_reports">
+        <span class="nav-icon-wrap"><span class="nav-icon">📋</span></span>
+        <span class="nav-label">Reports</span>
+      </a>
+
+      <p class="nav-section-label">Finance</p>
+      <a href="#" class="nav-item" data-page="deposits" data-requires-permission="can_manage_deposits">
+        <span class="nav-icon-wrap"><span class="nav-icon">💰</span></span>
+        <span class="nav-label">Deposits</span>
+      </a>
+      <a href="#" class="nav-item" data-page="investments" data-requires-permission="can_manage_investments">
+        <span class="nav-icon-wrap"><span class="nav-icon">📈</span></span>
+        <span class="nav-label">Investments</span>
+      </a>
+      <a href="#" class="nav-item" data-page="profit" data-requires-permission="can_manage_profit">
+        <span class="nav-icon-wrap"><span class="nav-icon">💹</span></span>
+        <span class="nav-label">Profit &amp; Loss</span>
+      </a>
+      <a href="#" class="nav-item" data-page="sales" data-requires-permission="can_manage_investments,can_manage_profit">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏷️</span></span>
+        <span class="nav-label">Sell Product</span>
+      </a>
+      <a href="#" class="nav-item" data-page="withdrawals" data-requires-permission="can_manage_withdrawals">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏦</span></span>
+        <span class="nav-label">Withdrawals</span>
+      </a>
+      <a href="#" class="nav-item" data-page="loans" data-requires-permission="can_manage_loans">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏛️</span></span>
+        <span class="nav-label">Loans</span>
+      </a>
+
+      <p class="nav-section-label">Management</p>
+      <a href="#" class="nav-item hidden" data-page="ceo" data-ceo-only>
+        <span class="nav-icon-wrap"><span class="nav-icon">👔</span></span>
+        <span class="nav-label">CEO Panel</span>
+      </a>
+      <a href="/user-management" class="nav-item hidden" data-developer-nav>
+        <span class="nav-icon-wrap"><span class="nav-icon">🛠️</span></span>
+        <span class="nav-label">User Management</span>
+      </a>
+      <a href="#" class="nav-item" data-page="investors" data-requires-permission="can_manage_investments">
+        <span class="nav-icon-wrap"><span class="nav-icon">💼</span></span>
+        <span class="nav-label">Investors</span>
+      </a>
+      <a href="#" class="nav-item" data-page="project-managers" data-requires-permission="can_manage_investments,can_manage_staff">
+        <span class="nav-icon-wrap"><span class="nav-icon">🗂️</span></span>
+        <span class="nav-label">Project Managers</span>
+      </a>
+      <a href="#" class="nav-item" data-page="members" data-requires-permission="can_manage_members,can_manage_refunds">
+        <span class="nav-icon-wrap"><span class="nav-icon">👥</span></span>
+        <span class="nav-label">Members</span>
+      </a>
+      <a href="#" class="nav-item" data-page="messages" data-requires-permission="can_manage_chat">
+        <span class="nav-icon-wrap"><span class="nav-icon">💬</span></span>
+        <span class="nav-label">Messages</span>
+      </a>
+
+      <p class="nav-section-label">System</p>
+      <a href="#" class="nav-item" data-page="settings" data-requires-permission="can_manage_kyc,can_manage_notices,can_view_reports,can_manage_deposits,can_manage_withdrawals,can_manage_refunds,can_manage_chat,can_manage_members,can_manage_profit,can_manage_investments,can_manage_loans">
+        <span class="nav-icon-wrap"><span class="nav-icon">⚙️</span></span>
+        <span class="nav-label">Settings</span>
+      </a>
+      <a href="/dashboard/cashier" class="nav-item hidden" data-staff-home="cashier">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
+        <span class="nav-label">Cashier Home</span>
+      </a>
+      <a href="/dashboard/project-manager" class="nav-item hidden" data-staff-home="project_manager">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
+        <span class="nav-label">Manager Home</span>
+      </a>
+      <a href="/dashboard/employee" class="nav-item hidden" data-staff-home="employee">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
+        <span class="nav-label">Employee Home</span>
+      </a>
+      <a href="/dashboard/investor" class="nav-item hidden" data-staff-home="investor">
+        <span class="nav-icon-wrap"><span class="nav-icon">🏠</span></span>
+        <span class="nav-label">Investor Home</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-user-card">
+      <div class="sidebar-user-avatar"><span id="sidebarAdminInitial">A</span></div>
+      <div class="sidebar-user-info">
+        <strong id="sidebarAdminName">CEO</strong>
+        <span>CEO Panel</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button id="logoutBtn" class="logout-btn">
+        <span class="logout-icon">⏻</span>
+        <span>Sign Out</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+
+  <!-- Main Content -->
+  <div class="main-container">
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <div class="topbar-heading">
+          <p class="topbar-eyebrow">SocietyHub CEO</p>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p class="topbar-note" id="pageNote">Manage your society finances efficiently.</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+          <span class="theme-icon-sun" aria-hidden="true">☀️</span>
+          <span class="theme-icon-moon" aria-hidden="true">🌙</span>
+        </button>
+        <button type="button" class="notification-bell-btn" id="adminNotificationBtn" title="View Notifications" aria-label="View Notifications">
+          🔔 <span class="notification-badge hidden" id="adminNotificationBadge">0</span>
+        </button>
+        <div id="adminNotificationPanel" class="notification-panel hidden" hidden>
+          <div class="notification-panel-header">
+            <strong>Notifications</strong>
+            <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn">Mark all read</button>
+          </div>
+          <div id="adminNotificationList" class="notification-list">
+            <p class="table-subtitle notification-empty-state">Click "View Notifications" to load updates.</p>
+          </div>
+        </div>
+        <div class="search-wrapper">
+          <span class="search-icon" aria-hidden="true">🔍</span>
+          <input type="search" class="search-input" id="memberSearch" placeholder="Search members by name..." aria-label="Search members" />
+          <div id="searchMemberDetails" class="search-member-details hidden"></div>
+        </div>
+        <div class="user-profile-menu">
+          <button class="user-profile" id="profileBtn" title="Administrator Profile">
+            <span id="adminInitial">👤</span>
+          </button>
+          <div class="profile-dropdown" id="profileDropdown">
+            <div class="profile-header">
+              <div class="profile-avatar">👤</div>
+              <div>
+                <p id="adminName">Administrator</p>
+                <p id="adminEmail">admin@example.com</p>
+              </div>
+            </div>
+            <a href="#" class="profile-item">Profile Settings</a>
+            <a href="#" class="profile-item">Activity Log</a>
+            <button id="logoutDropdown" class="profile-item logout-item">Logout</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <main class="page-layout page-grid-responsive">
+      <section class="page-section" data-page-section="dashboard">
+      <div class="dashboard-quick-actions" aria-label="Quick actions">
+        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-notice" data-quick-nav="settings">
+          <span class="dashboard-quick-icon">📢</span>
+          <span>Send Notice</span>
+        </button>
+        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-deposit" data-quick-nav="deposits">
+          <span class="dashboard-quick-icon">💰</span>
+          <span>Record Deposit</span>
+        </button>
+        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-loan" data-quick-nav="loans">
+          <span class="dashboard-quick-icon">🏛️</span>
+          <span>Review Loans</span>
+        </button>
+        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-member" data-quick-nav="members">
+          <span class="dashboard-quick-icon">👥</span>
+          <span>Manage Members</span>
+        </button>
+        <a href="/user-management" class="dashboard-quick-btn dashboard-quick-btn-ceo hidden" data-developer-nav>
+          <span class="dashboard-quick-icon">🛠️</span>
+          <span>User Management</span>
+        </a>
+        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-notice hidden" data-quick-nav="ceo" data-ceo-only>
+          <span class="dashboard-quick-icon">👔</span>
+          <span>CEO Panel</span>
+        </button>
+      </div>
+
+      <!-- One-Number KPI Cards -->
+      <div class="metrics-grid report-metrics-grid dashboard-kpi-grid">
+        <article class="metric-card metric-card-3 dashboard-kpi-card dashboard-monthly-kpi-card monthly-contribution-paid">
+          <div class="metric-icon">✅</div>
+          <div class="metric-content metric-content-wide">
+            <div class="monthly-kpi-head">
+              <div>
+                <span class="metric-label">Deposited This Month</span>
+                <strong class="metric-value kpi-one-number" id="monthlyGivenCountNumber">0</strong>
+                <span class="kpi-footnote" id="monthlyGivenSubtitle">members paid</span>
+              </div>
+              <div class="monthly-kpi-side">
+                <strong class="monthly-kpi-amount" id="monthlyGivenTotal">$0</strong>
+                <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="paid">PDF</button>
+              </div>
+            </div>
+            <ul class="monthly-contribution-list monthly-contribution-list-compact" id="monthlyGivenList">
+              <li class="table-subtitle">Loading...</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="metric-card metric-card-2 dashboard-kpi-card dashboard-monthly-kpi-card monthly-contribution-unpaid">
+          <div class="metric-icon">⚠️</div>
+          <div class="metric-content metric-content-wide">
+            <div class="monthly-kpi-head">
+              <div>
+                <span class="metric-label">Not Deposited This Month</span>
+                <strong class="metric-value kpi-one-number" id="monthlyNotGivenCountNumber">0</strong>
+                <span class="kpi-footnote" id="monthlyNotGivenSubtitle">members not paid</span>
+              </div>
+              <div class="monthly-kpi-side">
+                <strong class="monthly-kpi-amount monthly-kpi-amount-warn" id="monthlyNotGivenTotal">$0</strong>
+                <button type="button" class="secondary-btn monthly-kpi-pdf-btn" data-monthly-pdf="unpaid">PDF</button>
+              </div>
+            </div>
+            <ul class="monthly-contribution-list monthly-contribution-list-compact" id="monthlyNotGivenList">
+              <li class="table-subtitle">Loading...</li>
+            </ul>
+          </div>
+        </article>
+
+        <button type="button" class="metric-card metric-card-1 report-metric-card admin-dashboard-card dashboard-kpi-card" data-admin-dashboard-type="members" aria-pressed="false">
+          <div class="metric-icon">👥</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Members</span>
+            <strong class="metric-value kpi-one-number" id="totalMembers">0</strong>
+            <span class="kpi-footnote" id="kpiActiveMembers">0 active</span>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-2 report-metric-card admin-dashboard-card dashboard-kpi-card" data-admin-dashboard-type="deposits" aria-pressed="false">
+          <div class="metric-icon">💰</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Deposits</span>
+            <strong class="metric-value kpi-one-number" id="totalDeposits">0</strong>
+            <span class="kpi-footnote">Recorded payments</span>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-3 report-metric-card admin-dashboard-card dashboard-kpi-card" data-admin-dashboard-type="savings" aria-pressed="false">
+          <div class="metric-icon">📊</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Savings</span>
+            <strong class="metric-value kpi-one-number" id="totalSavings">$0</strong>
+            <span class="kpi-footnote">Society fund</span>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-4 report-metric-card admin-dashboard-card dashboard-kpi-card" data-admin-dashboard-type="profit" aria-pressed="false">
+          <div class="metric-icon">📈</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Profit</span>
+            <strong class="metric-value kpi-one-number" id="totalProfit">$0</strong>
+            <span class="kpi-footnote">Distributed earnings</span>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-5 report-metric-card admin-dashboard-card dashboard-kpi-card dashboard-investment-kpi-card" data-admin-dashboard-type="investments" aria-pressed="false">
+          <div class="metric-icon">💼</div>
+          <div class="metric-content">
+            <span class="metric-label">Total Investment</span>
+            <ul class="investment-kpi-breakdown" aria-label="Investment amount breakdown">
+              <li class="investment-kpi-breakdown-item is-total">
+                <span class="investment-kpi-breakdown-label">Total</span>
+                <strong class="investment-kpi-breakdown-value" id="dashboardTotalInvestment">$0</strong>
+              </li>
+              <li class="investment-kpi-breakdown-item is-active">
+                <span class="investment-kpi-breakdown-label">Invested</span>
+                <strong class="investment-kpi-breakdown-value" id="dashboardInvestmentActiveAmount">$0</strong>
+              </li>
+              <li class="investment-kpi-breakdown-item is-sold">
+                <span class="investment-kpi-breakdown-label">Sold</span>
+                <strong class="investment-kpi-breakdown-value" id="dashboardInvestmentSoldAmount">$0</strong>
+              </li>
+            </ul>
+            <div class="investment-kpi-meta-row">
+              <span class="kpi-footnote investment-kpi-meta" id="dashboardInvestmentInvestedNote">0 running</span>
+              <span class="kpi-footnote investment-kpi-meta" id="dashboardInvestmentSoldNote">0 sold</span>
+            </div>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-loan-takers dashboard-loan-kpi-card" data-loans-tab-nav="takers" aria-pressed="false">
+          <div class="metric-icon">🏛️</div>
+          <div class="metric-content">
+            <span class="metric-label">Loan Takers</span>
+            <strong class="metric-value kpi-one-number" id="dashboardLoanTakersCount">0</strong>
+            <span class="kpi-footnote" id="dashboardLoanTakersNote">Members who received loan money</span>
+          </div>
+        </button>
+
+        <button type="button" class="metric-card metric-card-loan-active dashboard-loan-kpi-card" data-loans-tab-nav="active" data-loans-month-filter="not_paid" aria-pressed="false">
+          <div class="metric-icon">📋</div>
+          <div class="metric-content">
+            <span class="metric-label">Active Borrowers</span>
+            <strong class="metric-value kpi-one-number" id="dashboardActiveBorrowersCount">0</strong>
+            <span class="kpi-footnote" id="dashboardTotalLoanOutstanding">0 not paid this month</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="dashboard-finance-grid">
+        <section class="panel-card dashboard-finance-panel">
+          <div class="member-profile-section-header">
+            <div>
+              <h2>Society Finances</h2>
+              <p class="table-subtitle">Savings, profit, and deposit overview at a glance.</p>
+            </div>
+          </div>
+          <div class="dashboard-finance-body">
+            <ul class="dashboard-finance-list" id="dashboardFinanceList">
+              <li><span class="finance-dot finance-dot-savings"></span> Total Savings <strong id="financeListSavings">$0</strong></li>
+              <li><span class="finance-dot finance-dot-profit"></span> Total Profit <strong id="financeListProfit">$0</strong></li>
+              <li><span class="finance-dot finance-dot-deposits"></span> Deposit Records <strong id="financeListDeposits">0</strong></li>
+              <li><span class="finance-dot finance-dot-investments"></span> Total Investment <strong id="financeListInvestments">$0</strong></li>
+            </ul>
+            <div class="dashboard-chart-wrap">
+              <canvas id="depositChart" height="220"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card dashboard-snapshot-panel">
+          <div class="member-profile-section-header">
+            <div>
+              <h2>Live Snapshot</h2>
+              <p class="table-subtitle">Pending actions that need admin attention.</p>
+            </div>
+          </div>
+          <div class="dashboard-snapshot-grid">
+            <div class="dashboard-snapshot-card">
+              <span class="snapshot-label">Pending Loans</span>
+              <strong class="kpi-one-number snapshot-number" id="snapshotPendingLoans">0</strong>
+              <button type="button" class="secondary-btn" data-quick-nav="loans">Review</button>
+            </div>
+            <div class="dashboard-snapshot-card">
+              <span class="snapshot-label">Pending Withdrawals</span>
+              <strong class="kpi-one-number snapshot-number" id="snapshotPendingWithdrawals">0</strong>
+              <button type="button" class="secondary-btn" data-quick-nav="withdrawals">Review</button>
+            </div>
+            <div class="dashboard-snapshot-card">
+              <span class="snapshot-label">Active Members</span>
+              <strong class="kpi-one-number snapshot-number" id="snapshotActiveMembers">0</strong>
+              <button type="button" class="secondary-btn" data-quick-nav="members">View</button>
+            </div>
+            <div class="dashboard-snapshot-card">
+              <span class="snapshot-label">Unread Alerts</span>
+              <strong class="kpi-one-number snapshot-number" id="snapshotUnreadAlerts">0</strong>
+              <button type="button" class="secondary-btn view-notifications-btn" id="snapshotOpenNotificationsBtn">View Notifications</button>
+            </div>
+          </div>
+          <div class="table-wrapper dashboard-live-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Recent Loan Requests</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardLiveLoansBody">
+                <tr><td colspan="3">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="dashboard-main-grid">
+        <section class="panel-card dashboard-nav-panel">
+          <h2>Dashboard Menu</h2>
+          <p class="table-subtitle">Select a section to open it on the site.</p>
+          <nav class="dashboard-nav-list" aria-label="Dashboard shortcuts">
+            <button type="button" class="dashboard-nav-bar" data-dashboard-nav="reports">Select a Summary</button>
+            <button type="button" class="dashboard-nav-bar" data-dashboard-nav="profit" data-dashboard-section="profit-investment-tracking">Investment Profit Tracking</button>
+            <button type="button" class="dashboard-nav-bar" data-dashboard-nav="profit" data-dashboard-section="profit-investment-loss">Record Investment Loss</button>
+            <button type="button" class="dashboard-nav-bar" data-dashboard-nav="profit" data-dashboard-section="profit-distribute">Distribute Profit to All Members</button>
+            <button type="button" class="dashboard-nav-bar" data-dashboard-nav="profit" data-dashboard-section="profit-member-status">Member Profit Status</button>
+            <div class="dashboard-nav-bar dashboard-nav-bar-empty">
+              <label for="dashboardNotesInput">Your Notes</label>
+              <textarea id="dashboardNotesInput" class="dashboard-notes-input" rows="4" placeholder="Write anything here..."></textarea>
+            </div>
+          </nav>
+        </section>
+
+        <section class="panel-card dashboard-members-panel">
+          <div class="member-profile-section-header">
+            <div>
+              <h2>Members</h2>
+              <p class="table-subtitle">Click a member to open their profile.</p>
+            </div>
+            <button type="button" class="secondary-btn" data-quick-nav="members">Manage All</button>
+          </div>
+          <div id="dashboardMembersList" class="dashboard-members-list member-roster-list">
+            <p class="table-subtitle">Loading members...</p>
+          </div>
+        </section>
+      </div>
+
+      </section>
+
+      <section class="page-section" data-page-section="deposits">
+        <section class="panel-card card-form-wide">
+          <h2>Month-wise fixed contribution target</h2>
+          <p class="table-subtitle">Set the mandatory deposit for each calendar month. Deposits above the target go to Advance; shortfalls are flagged as unpaid dues for that month.</p>
+          <form id="monthlyTargetForm" class="deposit-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Month
+                  <input type="month" name="yearMonth" id="monthlyTargetMonth" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Fixed target amount
+                  <input type="number" name="amount" id="monthlyTargetAmount" min="0" step="0.01" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>
+                Notes
+                <input type="text" name="notes" id="monthlyTargetNotes" placeholder="Optional" />
+              </label>
+            </div>
+            <button type="submit" class="primary-btn">Save month target</button>
+            <p id="monthlyTargetMessage" class="message"></p>
+          </form>
+          <div id="activeMonthTargetBox" class="panel-card u-mt-1">
+            <p class="table-subtitle">Loading active month target…</p>
+          </div>
+          <div class="table-wrapper u-mt-1">
+            <table class="data-table">
+              <thead><tr><th>Month</th><th>Target</th><th>Set by</th><th>Notes</th></tr></thead>
+              <tbody id="monthlyTargetsBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card card-form-wide">
+          <h2>Record Deposit</h2>
+          <p class="table-subtitle">Compared against this month’s fixed target. Extra → Advance balance. Shortfall → unpaid dues for the month.</p>
+          <form id="adminDepositForm" class="deposit-form">
+            <div class="form-group">
+              <label>
+                Select Member
+                <select id="selectedMemberId" name="memberId" required>
+                  <option value="">Choose a member</option>
+                </select>
+              </label>
+              <input type="hidden" id="selectedMemberName" />
+            </div>
+            <div class="form-group">
+              <label>
+                Amount ($)
+                <input type="number" id="depositAmount" min="0.01" step="0.01" placeholder="0.00" required />
+              </label>
+              <p class="table-subtitle" id="depositAmountHint">Enter the deposit amount for this member.</p>
+            </div>
+            <button type="submit" class="primary-btn" id="adminDepositSubmitBtn">Record Deposit</button>
+            <a id="latestReceiptLink" class="receipt-button" target="_blank" hidden>Download Receipt</a>
+            <p id="depositMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Recent Deposits</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Email</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="depositHistory"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="members">
+        <div class="page-actions">
+          <p class="table-subtitle">Browse and inspect members here. Create, soft-delete, deactivate, and password changes are handled only in User Management.</p>
+        </div>
+
+        <div class="member-list-tabs profile-tabs profile-tabs-v2" role="tablist" aria-label="Member lists">
+          <button type="button" class="profile-tab active" data-member-list-tab="active">Active Members</button>
+          <button type="button" class="profile-tab" data-member-list-tab="deleted">
+            Deleted Members <span class="member-list-count-badge" id="deletedMembersCountBadge">0</span>
+          </button>
+        </div>
+
+        <div id="activeMembersPanel" class="member-list-panel">
+          <div class="members-layout">
+            <section class="panel-card table-card-wide">
+              <h2>Members List</h2>
+              <p class="table-subtitle">Click a member to record a deposit or open their profile.</p>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Status</th>
+                      <th>Savings</th>
+                      <th>Profit</th>
+                      <th>Profile</th>
+                    </tr>
+                  </thead>
+                  <tbody id="membersList"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <aside class="panel-card member-roster-card">
+              <h2>Member Roster</h2>
+              <div id="memberRosterList" class="member-roster-list"></div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="deletedMembersPanel" class="member-list-panel hidden">
+          <section class="panel-card table-card-wide member-deleted-panel">
+            <div class="member-profile-section-header">
+              <div>
+                <h2>Deleted Members</h2>
+                <p class="table-subtitle">Soft-deleted members (view only). Restore and password/status changes are handled in User Management.</p>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Removed</th>
+                    <th>Reason</th>
+                    <th>Savings</th>
+                    <th>Profit</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="deletedMembersList">
+                  <tr><td colspan="7">Loading deleted members...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page-section" data-page-section="loans">
+        <section class="panel-card">
+          <h2>Loan Control Center</h2>
+          <p class="table-subtitle">See who has taken loans, who still owes money, and review every application from one place.</p>
+          <div class="loan-portfolio-stats" id="loanPortfolioStats">
+            <button type="button" class="profile-finance-card profile-finance-loans loan-stat-card" data-loan-list-tab="takers">
+              <span>Loan Takers</span>
+              <strong id="loanPageTakersCount">0</strong>
+              <small>Received loan money</small>
+            </button>
+            <button type="button" class="profile-finance-card profile-finance-deposits loan-stat-card" data-loan-list-tab="active">
+              <span>Active Borrowers</span>
+              <strong id="loanPageActiveBorrowersCount">0</strong>
+              <small id="loanPageNotPaidCount">0 not paid this month</small>
+            </button>
+            <article class="profile-finance-card profile-finance-profit">
+              <span>Total Outstanding</span>
+              <strong id="loanPageTotalOutstanding">$0</strong>
+              <small id="loanPageMonthLabel">This month</small>
+            </article>
+          </div>
+        </section>
+
+        <div class="loan-list-tabs profile-tabs profile-tabs-v2" role="tablist" aria-label="Loan lists">
+          <button type="button" class="profile-tab" data-loan-list-tab="takers">All Loan Takers</button>
+          <button type="button" class="profile-tab" data-loan-list-tab="active">Active Borrowers</button>
+          <button type="button" class="profile-tab active" data-loan-list-tab="applications">All Applications</button>
+        </div>
+
+        <div id="loanTakersPanel" class="loan-list-panel hidden">
+          <section class="panel-card table-card-wide">
+            <h2>All Loan Takers</h2>
+            <p class="table-subtitle">Members who received at least one disbursed loan from the society.</p>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Applications</th>
+                    <th>Total Borrowed</th>
+                    <th>Outstanding</th>
+                    <th>Last Loan</th>
+                    <th>Last Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="loanTakersList">
+                  <tr><td colspan="7">Loading loan takers...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="loanActiveBorrowersPanel" class="loan-list-panel hidden">
+          <section class="panel-card table-card-wide">
+            <h2>Active Borrowers</h2>
+            <p class="table-subtitle">Members with outstanding loan balance. See who paid this month and who did not.</p>
+            <div class="loan-admin-filters">
+              <label>
+                This Month
+                <select id="loanActiveBorrowerMonthFilter">
+                  <option value="">All active borrowers</option>
+                  <option value="paid">Paid this month</option>
+                  <option value="not_paid">Not paid this month</option>
+                </select>
+              </label>
+              <button type="button" class="secondary-btn" id="refreshActiveBorrowersBtn">Refresh</button>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Outstanding</th>
+                    <th>Total Repaid</th>
+                    <th>This Month</th>
+                    <th>Last Payment</th>
+                    <th>Last Loan</th>
+                    <th>Last Type</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="loanActiveBorrowersList">
+                  <tr><td colspan="8">Loading active borrowers...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="loanApplicationsPanel" class="loan-list-panel">
+        <section class="panel-card">
+          <h2>Loan Review Control</h2>
+          <p class="table-subtitle">সদস্যদের সাধারণ ও জরুরি ঋণ আবেদন পর্যালোচনা করুন, ডকুমেন্ট চেক করুন এবং Approve/Reject সিদ্ধান্ত নিন। ৮০% এর বেশি আবেদন স্বয়ংক্রিয়ভাবে বাতিল হয়।</p>
+          <div class="loan-admin-filters">
+            <label>
+              Status
+              <select id="loanFilterStatus">
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="disbursed">Disbursed</option>
+              </select>
+            </label>
+            <label>
+              Type
+              <select id="loanFilterType">
+                <option value="">All</option>
+                <option value="general">General</option>
+                <option value="emergency">Emergency</option>
+              </select>
+            </label>
+            <button type="button" class="secondary-btn" id="refreshLoanApplicationsBtn">Refresh</button>
+          </div>
+        </section>
+        <section class="panel-card table-card-wide">
+          <h2>Loan Applications</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Savings / Max</th>
+                  <th>Reason</th>
+                  <th>Witness</th>
+                  <th>Status</th>
+                  <th>Transfer</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="loanApplicationsList">
+                <tr><td colspan="10">Loading loan applications...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Loan Repayment Verification</h2>
+          <p class="table-subtitle">মেম্বারদের লোন পরিশোধের আবেদন যাচাই ও অনুমোদন করুন। Approve করলে বকেয়া লোন স্বয়ংক্রিয়ভাবে কমবে এবং রিসিপ্ট তৈরি হবে।</p>
+          <div class="loan-admin-filters">
+            <label>
+              Status
+              <select id="loanRepaymentFilterStatus">
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </label>
+            <button type="button" class="secondary-btn" id="refreshLoanRepaymentsBtn">Refresh</button>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Loan</th>
+                  <th>Amount</th>
+                  <th>Type</th>
+                  <th>Payment</th>
+                  <th>Outstanding</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="loanRepaymentsList">
+                <tr><td colspan="9">Loading loan repayments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        </div>
+      </section>
+
+      <section class="page-section" data-page-section="withdrawals">
+        <section class="panel-card table-card-wide">
+          <h2>Withdrawal Requests</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="withdrawalRequestsList"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="investments">
+        <div class="page-actions">
+          <button id="openInvestmentModalBtn" class="primary-btn" type="button">+ New Investment</button>
+          <button id="openIouModalBtn" class="secondary-btn" type="button">+ Add Investment IOU</button>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card metric-card-3">
+            <div class="metric-icon">💰</div>
+            <div class="metric-content">
+              <span class="metric-label">Total Savings</span>
+              <strong class="metric-value" id="investmentTotalSavings">$0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-1">
+            <div class="metric-icon">🟢</div>
+            <div class="metric-content">
+              <span class="metric-label">Running Investments</span>
+              <strong class="metric-value" id="investmentActiveCount">0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-2">
+            <div class="metric-icon">📈</div>
+            <div class="metric-content">
+              <span class="metric-label">Running Amount</span>
+              <strong class="metric-value" id="investmentActiveInvested">$0</strong>
+            </div>
+          </div>
+          <div class="metric-card metric-card-4">
+            <div class="metric-icon">✅</div>
+            <div class="metric-content">
+              <span class="metric-label">Sold Investments</span>
+              <strong class="metric-value" id="investmentSoldCount">0</strong>
+              <span class="kpi-footnote" id="investmentSoldAmount">$0 sold amount</span>
+            </div>
+          </div>
+          <div class="metric-card metric-card-5">
+            <div class="metric-icon">💵</div>
+            <div class="metric-content">
+              <span class="metric-label">Total Investment</span>
+              <strong class="metric-value" id="investmentPageTotalInvested">$0</strong>
+              <span class="kpi-footnote" id="investmentPageTotalNote">Invested + sold combined</span>
+            </div>
+          </div>
+        </div>
+
+        <section class="panel-card table-card-wide" id="pending-investment-approvals-panel">
+          <h2>Approval Workflow Queue</h2>
+          <p class="table-subtitle">Track member approvals and cashier payment status for each proposed investment.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Investment ID</th>
+                  <th>Investor</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Approved</th>
+                  <th>Pending</th>
+                  <th>Tracking</th>
+                </tr>
+              </thead>
+              <tbody id="pendingInvestmentApprovalsList">
+                <tr><td colspan="8">Loading pending investments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="investmentApprovalDetailPanel" class="panel-card u-mt-1"></div>
+        </section>
+
+        <section class="panel-card table-card-wide investment-panel-running">
+          <h2>Running Investments</h2>
+          <p class="table-subtitle">Active society investments with type, investor account, and assigned project manager.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Investment ID</th>
+                  <th>Investor</th>
+                  <th>Type</th>
+                  <th>Project Manager</th>
+                  <th>Location</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="societyActiveInvestmentList">
+                <tr><td colspan="9">Loading running investments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide" id="investor-portfolio-panel">
+          <div class="page-actions u-mb-075">
+            <div>
+              <h2 class="u-mb-0">Investor Portfolio</h2>
+              <p class="table-subtitle u-mt-035 u-mb-0">View every investment for a selected investor, grouped by investment type.</p>
+            </div>
+          </div>
+          <div class="form-row-2 u-mb-1">
+            <div class="form-group">
+              <label>
+                Select Investor
+                <select id="portfolioInvestorSelect">
+                  <option value="">Choose an investor…</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-group u-flex-end">
+              <button type="button" class="secondary-btn" id="refreshPortfolioBtn">Refresh Portfolio</button>
+            </div>
+          </div>
+          <div id="investorPortfolioSummary" class="metrics-grid u-mb-1"></div>
+          <div id="investorPortfolioByType"></div>
+          <p id="investorPortfolioMessage" class="message"></p>
+        </section>
+
+        <section class="panel-card table-card-wide investment-panel-sold">
+          <h2>Sold Investments</h2>
+          <p class="table-subtitle">Investments that have already been sold — profit or loss appears here.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Investment ID</th>
+                  <th>Investor</th>
+                  <th>Type</th>
+                  <th>Invested</th>
+                  <th>Sale Amount</th>
+                  <th>Profit / Loss</th>
+                  <th>Outcome</th>
+                  <th>Sold Date</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="societySoldInvestmentList">
+                <tr><td colspan="9">Loading sold investments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Investment IOUs</h2>
+          <p class="table-subtitle">Record investment commitments before funds are allocated from the society pool.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>IOU ID</th>
+                  <th>Name</th>
+                  <th>Date of Birth</th>
+                  <th>Location</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Receipt</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="investmentIouList">
+                <tr><td colspan="9">Loading IOUs...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="profit">
+        <section class="panel-card card-form-wide" id="profit-investment-tracking">
+          <h2>Record Investment Profit</h2>
+          <p class="table-subtitle">Investment ID copy করে দিন — নাম, জন্মতারিখ, লোকেশন, amount অটো লোড হবে। Submit করলে সবাই সমান profit পাবে।</p>
+        <form id="investmentProfitForm" class="add-member-form investment-profit-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Investment ID
+                <input type="text" name="investmentCode" id="profitInvestmentCode" class="profit-code-input" placeholder="INV-2026-0001" required />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                Investor Name (auto-filled)
+                <input type="text" name="investorName" id="profitInvestorName" class="profit-name-input" readonly placeholder="Auto-filled" />
+              </label>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Date of Birth (auto-filled)
+                <input type="text" name="dateOfBirth" id="profitDateOfBirth" class="profit-dob-input" readonly placeholder="Auto-filled" />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                Location (auto-filled)
+                <input type="text" name="location" id="profitLocation" class="profit-location-input" readonly placeholder="Auto-filled" />
+              </label>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Investment Amount (auto-filled)
+                <input type="text" name="investmentAmount" id="profitInvestmentAmount" class="profit-amount-input" readonly placeholder="Auto-filled" />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                Sale / Return Amount ($)
+                <input type="number" name="saleAmount" id="profitSaleAmount" class="profit-sale-input" min="0" step="0.01" placeholder="1500.00" />
+              </label>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Profit Amount ($)
+                <input type="number" name="profitAmount" id="profitAmount" class="profit-profit-input" min="0.01" step="0.01" placeholder="Auto or manual" />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                Notes
+                <input type="text" name="notes" placeholder="Sold after 12 months" />
+              </label>
+            </div>
+          </div>
+          <p class="table-subtitle">সব member সমান profit পাবে — সবাই মাসে একই পরিমাণ টাকা জমা দেয় এবং সোসাইটি পুল থেকে বিনিয়োগ হয়।</p>
+          <input type="hidden" name="distributionType" value="equal" />
+          <p class="table-subtitle profit-lookup-status" id="profitLookupStatus">Enter an Investment ID to load details.</p>
+          <button type="submit" class="primary-btn">Record &amp; Distribute Profit</button>
+          <p id="investmentProfitMessage" class="message profit-form-message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card card-form-wide" id="profit-investment-loss">
+          <h2>Record Investment Loss</h2>
+          <p class="table-subtitle">যদি product বিক্রি করে invested amount-এর চেয়ে কম টাকা পান, loss এখানে record করুন। সব member সমানভাবে loss share করবে।</p>
+          <form id="investmentLossForm" class="add-member-form investment-loss-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Investment ID
+                  <input type="text" name="investmentCode" id="lossInvestmentCode" class="loss-code-input" placeholder="INV-2026-0001" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Investor Name (auto-filled)
+                  <input type="text" name="investorName" id="lossInvestorName" class="loss-name-input" readonly placeholder="Auto-filled" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Investment Amount (auto-filled)
+                  <input type="text" name="investmentAmount" id="lossInvestmentAmount" class="loss-amount-invested-input" readonly placeholder="Auto-filled" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Sale / Return Amount ($)
+                  <input type="number" name="saleAmount" id="lossSaleAmount" class="loss-sale-input" min="0" step="0.01" placeholder="800.00" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Loss Amount ($)
+                  <input type="number" name="lossAmount" id="lossAmount" class="loss-amount-input" min="0.01" step="0.01" placeholder="Auto-calculated" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Notes
+                  <input type="text" name="notes" placeholder="Sold below cost" />
+                </label>
+              </div>
+            </div>
+            <p class="table-subtitle loss-lookup-status" id="lossLookupStatus">Enter an Investment ID and a sale amount lower than the investment.</p>
+            <button type="submit" class="primary-btn secondary-btn">Record &amp; Share Loss</button>
+            <p id="investmentLossMessage" class="message loss-form-message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Investment Profit &amp; Loss History</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Investment ID</th>
+                  <th>Sector</th>
+                  <th>Partner</th>
+                  <th>Invested</th>
+                  <th>Sale</th>
+                  <th>Profit / Loss</th>
+                  <th>Outcome</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="investmentProfitHistoryList">
+                <tr><td colspan="9">Loading profit records...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card card-form-wide" id="profit-distribute">
+          <h2>General Profit Distribution</h2>
+          <p class="table-subtitle">সাধারণ প্রফিট সব member-এর account-এ সমানভাবে বিতরণ হবে।</p>
+          <form id="profitDistributionForm" class="add-member-form">
+            <div class="form-group">
+              <label>
+                Total Profit Amount ($)
+                <input type="number" name="totalAmount" min="0.01" step="0.01" placeholder="500.00" required />
+              </label>
+            </div>
+            <input type="hidden" name="distributionType" value="equal" />
+            <div class="form-group">
+              <label>
+                Notes
+                <input type="text" name="notes" placeholder="July 2026 profit distribution" />
+              </label>
+            </div>
+            <button type="submit" class="primary-btn">Distribute Profit</button>
+            <p id="profitDistributionMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card card-form-wide">
+          <h2>Automatic Dividend (Savings + Profit)</h2>
+          <p class="table-subtitle">সদস্যদের savings ও profit-এর ওপর ভিত্তি করে লভ্যাংশ স্বয়ংক্রিয়ভাবে হিসাব করুন।</p>
+          <form id="dividendPreviewForm" class="add-member-form">
+            <div class="form-group">
+              <label>
+                Dividend Pool Amount ($)
+                <input type="number" name="totalAmount" id="dividendPoolAmount" min="0.01" step="0.01" placeholder="1000.00" required />
+              </label>
+            </div>
+            <button type="button" class="secondary-btn" id="previewDividendBtn">Preview Calculation</button>
+            <button type="submit" class="primary-btn">Distribute Dividend</button>
+            <p id="dividendMessage" class="message"></p>
+          </form>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Savings</th>
+                  <th>Profit</th>
+                  <th>Weight</th>
+                  <th>Dividend Share</th>
+                </tr>
+              </thead>
+              <tbody id="dividendPreviewBody">
+                <tr><td colspan="5">Enter a pool amount and click Preview Calculation.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide" id="profit-member-status">
+          <h2>Member Profit Status</h2>
+          <p class="table-subtitle" id="lastProfitDistribution">Last distribution: Not yet distributed</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Email</th>
+                  <th>Savings</th>
+                  <th>Current Profit</th>
+                </tr>
+              </thead>
+              <tbody id="profitMemberStatusList">
+                <tr><td colspan="4">Loading members...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>General Profit History</h2>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Total Amount</th>
+                  <th>Type</th>
+                  <th>Members</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="profitHistoryList"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="sales">
+        <section class="panel-card card-form-wide">
+          <h2>Sell Product / Project</h2>
+          <p class="table-subtitle">Enter the Investment ID for the project or property. Total historical investments are fetched automatically. Enter Sale Amount, Additional Costs, and Tax — net profit or loss is calculated for you.</p>
+          <form id="sellProductForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Investment ID
+                  <input type="text" name="investmentCode" id="sellInvestmentCode" placeholder="INV-2026-0001" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Product / Project Name
+                  <input type="text" name="productName" id="sellProductName" placeholder="Optional display name" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Investor (auto)
+                  <input type="text" id="sellInvestorName" readonly placeholder="Auto-filled" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Project / Property (auto)
+                  <input type="text" id="sellProjectLabel" readonly placeholder="Auto-filled" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Total Historical Investments (auto)
+                  <input type="text" id="sellTotalInvestment" readonly placeholder="Load investment ID first" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Sale Amount ($)
+                  <input type="number" name="saleAmount" id="sellSaleAmount" min="0" step="0.01" placeholder="0.00" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Additional Costs ($)
+                  <input type="number" name="additionalCosts" id="sellAdditionalCosts" min="0" step="0.01" value="0" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Tax ($)
+                  <input type="number" name="tax" id="sellTax" min="0" step="0.01" value="0" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Net Profit / Loss (auto)
+                  <input type="text" id="sellNetProfitLoss" readonly placeholder="Calculated automatically" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Notes
+                  <input type="text" name="notes" id="sellNotes" placeholder="Optional notes" />
+                </label>
+              </div>
+            </div>
+            <p class="table-subtitle" id="sellLookupStatus">Enter an Investment ID to auto-load project investments.</p>
+            <div id="sellInvestmentLines" class="table-subtitle"></div>
+            <button type="submit" class="primary-btn">Record Sale</button>
+            <p id="sellProductMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2>Sell List</h2>
+          <p class="table-subtitle">Saved sales with View opening a professional PDF breakdown.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Sale ID</th>
+                  <th>Product / Project</th>
+                  <th>Sale Amount</th>
+                  <th>Total Invested</th>
+                  <th>Costs</th>
+                  <th>Tax</th>
+                  <th>Net P/L</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="sellListBody">
+                <tr><td colspan="9">Loading sales…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="sellListMessage" class="message"></p>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="payments">
+      <section class="panel-card">
+        <h2>Payments</h2>
+        <p class="table-subtitle">Investment profit এবং general profit distribution এখন <strong>Profit</strong> মেনুতে আছে।</p>
+        <button type="button" class="primary-btn" id="goToProfitPageBtn">Go to Profit Section</button>
+      </section>
+      </section>
+
+      <section class="page-section" data-page-section="reports">
+      <section class="panel-card">
+        <h2>Financial Reports</h2>
+        <p class="table-subtitle">Members, Deposits, বা Investments-এ ক্লিক করলে নিচে সম্পূর্ণ তালিকা দেখাবে।</p>
+        <div class="metrics-grid report-metrics-grid">
+          <button type="button" class="metric-card metric-card-1 report-metric-card" data-report-type="members" aria-pressed="false">
+            <div class="metric-icon">💼</div>
+            <div class="metric-content">
+              <span class="metric-label">Members</span>
+              <strong class="metric-value" id="reportMembers">0</strong>
+            </div>
+          </button>
+          <button type="button" class="metric-card metric-card-2 report-metric-card" data-report-type="deposits" aria-pressed="false">
+            <div class="metric-icon">💳</div>
+            <div class="metric-content">
+              <span class="metric-label">Deposits</span>
+              <strong class="metric-value" id="reportDeposits">0</strong>
+            </div>
+          </button>
+          <button type="button" class="metric-card metric-card-3 report-metric-card" data-report-type="investments" aria-pressed="false">
+            <div class="metric-icon">📈</div>
+            <div class="metric-content">
+              <span class="metric-label">Investments</span>
+              <strong class="metric-value" id="reportInvestments">0</strong>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel-card table-card-wide" id="reportDetailPanel">
+        <h2 id="reportDetailTitle">Select a report</h2>
+        <p class="table-subtitle" id="reportDetailSubtitle">Click Members, Deposits, or Investments above to view the full list.</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead id="reportDetailHead">
+              <tr><th>Report data will appear here</th></tr>
+            </thead>
+            <tbody id="reportDetailBody">
+              <tr><td>Choose Members, Deposits, or Investments to load the report list.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      </section>
+
+      <section class="page-section" data-page-section="messages">
+        <section class="panel-card">
+          <h2>Member Messages</h2>
+          <p class="table-subtitle">Chat directly with members. Select a conversation on the left, then reply on the right.</p>
+        </section>
+        <div class="chat-page-layout">
+          <aside class="panel-card chat-inbox-panel">
+            <div class="member-profile-section-header">
+              <div>
+                <h3>Inbox</h3>
+                <p class="table-subtitle">Recent conversations</p>
+              </div>
+              <button type="button" class="secondary-btn" id="refreshAdminChatInboxBtn">Refresh</button>
+            </div>
+            <div class="chat-inbox-list" id="adminChatInboxList">
+              <p class="table-subtitle">Loading conversations...</p>
+            </div>
+          </aside>
+          <section class="panel-card chat-thread-panel">
+            <div id="adminChatThreadHeader" class="chat-thread-header">
+              <h3>Select a member</h3>
+              <p class="table-subtitle">Choose a conversation from the inbox to start chatting.</p>
+            </div>
+            <div class="chat-thread" id="adminChatThread" aria-live="polite">
+              <p class="table-subtitle chat-empty-state">No conversation selected.</p>
+            </div>
+            <div id="adminChatReplyBar" class="chat-reply-bar hidden">
+              <div>
+                <strong id="adminChatReplyName">Reply</strong>
+                <span id="adminChatReplyPreview"></span>
+              </div>
+              <button type="button" class="modal-close" id="adminChatReplyClear" aria-label="Cancel reply">&times;</button>
+            </div>
+            <form class="chat-compose-form hidden" id="adminChatComposeForm">
+              <textarea name="body" rows="3" maxlength="2000" placeholder="Type your message to the member..."></textarea>
+              <div class="chat-compose-actions">
+                <label class="secondary-btn chat-attach-btn">
+                  Attach
+                  <input type="file" name="files" id="adminChatFiles" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden />
+                </label>
+                <span id="adminChatFileLabel" class="text-secondary"></span>
+                <button type="submit" class="primary-btn">Send Message</button>
+              </div>
+              <p class="message chat-compose-message"></p>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section class="page-section" data-page-section="investors">
+        <section class="panel-card table-card-wide" id="investorsListPanel">
+          <h2>Investors</h2>
+          <p class="table-subtitle">Click an investor to open their full portfolio — investments by type, amounts, and statuses.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="investorsModuleList">
+                <tr><td colspan="5">Loading investors...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="investorsModuleMessage" class="message"></p>
+        </section>
+
+        <section class="panel-card table-card-wide hidden" id="investorDetailPanel">
+          <div class="page-actions u-mb-075">
+            <button type="button" class="secondary-btn" id="backToInvestorsBtn">← Back to Investors</button>
+          </div>
+          <div id="investorDetailContent"></div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="project-managers">
+        <section class="panel-card table-card-wide" id="projectManagersListPanel">
+          <h2>Project Managers</h2>
+          <p class="table-subtitle">Click a project manager to open assigned projects, profit returns, and expense/capital controls.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="projectManagersModuleList">
+                <tr><td colspan="5">Loading project managers...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="projectManagersModuleMessage" class="message"></p>
+        </section>
+
+        <section class="panel-card table-card-wide hidden" id="projectManagerDetailPanel">
+          <div class="page-actions u-mb-075">
+            <button type="button" class="secondary-btn" id="backToProjectManagersBtn">← Back to Project Managers</button>
+          </div>
+          <div id="projectManagerDetailContent"></div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="ceo">
+        <section class="panel-card table-card-wide">
+          <h2>Users &amp; Roles Directory</h2>
+          <p class="table-subtitle">View-only staff directory. Inspect Members, Investors, and Project Managers pages for portfolios. Account create, delete, deactivate, and password changes live only in User Management.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Permissions</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="ceoStaffList">
+                <tr><td colspan="5">Loading staff directory...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="ceoStaffMessage" class="message"></p>
+          <p id="ceoCreateMessage" class="hidden"></p>
+        </section>
+
+        <section class="panel-card">
+          <h2>Opening Balance / Historical Migration</h2>
+          <p class="table-subtitle">Set pre-digital savings and profit for existing members so dashboards start with accurate balances. Historical opening deposits are ledgered separately and combined with new digital transactions.</p>
+          <div id="migrationOverviewStats" class="metrics-grid u-mb-1"></div>
+          <form id="openingBalanceForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Member
+                  <select name="memberId" id="openingBalanceMemberSelect" required>
+                    <option value="">Select member…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Notes
+                  <input type="text" name="notes" placeholder="e.g. Manual ledger FY 2024-25" />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Opening Savings (Historical Deposit)
+                  <input type="number" name="openingSavings" id="openingSavingsInput" min="0" step="0.01" value="0" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Opening Profit (Historical)
+                  <input type="number" name="openingProfit" id="openingProfitInput" min="0" step="0.01" value="0" required />
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Save Opening Balances</button>
+            <p id="openingBalanceMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section class="panel-card">
+          <h2>Member Replacement</h2>
+          <p class="table-subtitle">Create the replacement member first in User Management, then select them here. The replacement must pay the <strong>exact</strong> exit settlement value (departing savings + profit + advance). That payment funds the exiting member even if society bank cash alone is insufficient. Histories stay intact.</p>
+          <form id="memberReplaceForm" class="add-member-form">
+            <div class="form-group">
+              <label>
+                Departing member
+                <select name="departingMemberId" id="replaceDepartingSelect" required>
+                  <option value="">Select departing member…</option>
+                </select>
+              </label>
+            </div>
+            <div id="replaceValuationBox" class="panel-card u-mb-1">
+              <p class="table-subtitle">Select a departing member to load the calculated exit settlement / entry valuation.</p>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Replacement member (from User Management)
+                  <select name="newMemberId" id="replaceNewMemberSelect" required>
+                    <option value="">Select existing member account…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Exact settlement amount paid ($)
+                  <input type="number" name="entryAmountPaid" id="replaceEntryAmountInput" min="0" step="0.01" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>
+                Notes
+                <input type="text" name="notes" placeholder="Optional replacement note" />
+              </label>
+            </div>
+            <button type="submit" class="primary-btn">Replace Member &amp; Record Entry</button>
+            <p id="memberReplaceMessage" class="message"></p>
+          </form>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="settings">
+      <section class="panel-card">
+        <h2>Account security</h2>
+        <p class="table-subtitle">Change your own password using your current password. User Management retains oversight of password updates across the platform.</p>
+        <form id="selfPasswordForm" class="add-member-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Current password
+                <input type="password" name="currentPassword" required autocomplete="current-password" />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                New password
+                <input type="password" name="newPassword" minlength="6" required autocomplete="new-password" />
+              </label>
+            </div>
+          </div>
+          <button type="submit" class="primary-btn">Update password</button>
+          <p id="selfPasswordMessage" class="message"></p>
+        </form>
+      </section>
+
+      <section class="panel-card">
+        <h2>System Settings</h2>
+        <p class="table-subtitle">Configure the admin dashboard preferences and access controls.</p>
+        <form id="noticeForm" class="add-member-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Notice Title
+                <input type="text" name="title" placeholder="Monthly Reminder" required />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                Author
+                <input type="text" name="author" placeholder="Admin" />
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>
+              Notice Message
+              <textarea name="message" rows="4" placeholder="Share an update with all members" required></textarea>
+            </label>
+          </div>
+          <button type="submit" class="primary-btn">Publish Notice</button>
+          <p id="noticeMessage" class="message"></p>
+        </form>
+      </section>
+
+      <section class="panel-card">
+        <h2>Digital Notice Board</h2>
+        <div id="noticeBoardList" class="member-roster-list"></div>
+      </section>
+
+      <section class="panel-card table-card-wide">
+        <h2>KYC Document Review</h2>
+        <p class="table-subtitle">Verify member onboarding documents submitted through digital KYC.</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Document</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="pendingKycList">
+              <tr><td colspan="6">Loading pending KYC documents...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="editInvestmentModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="editInvestmentModalTitle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="editInvestmentModalTitle">Edit Investment</h2>
+        <button id="closeEditInvestmentModal" class="modal-close" type="button">×</button>
+      </div>
+      <form id="editInvestmentForm" class="add-member-form">
+        <input type="hidden" name="investmentId" />
+        <div class="form-group">
+          <label>
+            Investor Name
+            <input type="text" name="investorName" required />
+          </label>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Date of Birth
+              <input type="date" name="dateOfBirth" />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Location
+              <input type="text" name="location" required />
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>
+            Profit Earned ($)
+            <input type="number" name="profit" min="0" step="0.01" placeholder="0.00" />
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            Notes
+            <input type="text" name="notes" />
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Save Changes</button>
+        <p id="editInvestmentMessage" class="message"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="iouModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="iouModalTitle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="iouModalTitle">Add Investment IOU</h2>
+        <button id="closeIouModal" class="modal-close" type="button">×</button>
+      </div>
+      <div class="investment-code-banner">
+        <span class="investment-code-label">IOU ID (Auto Generated)</span>
+        <strong id="nextIouCode" class="investment-code-value">Loading...</strong>
+        <p class="table-subtitle">IOU records a commitment. It does not deduct society savings until converted to a full investment.</p>
+      </div>
+      <form id="iouForm" class="add-member-form">
+        <div class="form-group">
+          <label>
+            Investor Name
+            <input type="text" name="investorName" placeholder="Full name" required />
+          </label>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Date of Birth
+              <input type="date" name="dateOfBirth" required />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Location
+              <input type="text" name="location" placeholder="City / Area / Kerala" required />
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>
+            Committed Amount ($)
+            <input type="number" name="amount" min="0.01" step="0.01" placeholder="1000.00" required />
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            Notes (optional)
+            <input type="text" name="notes" placeholder="Optional details" />
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Submit IOU</button>
+        <p id="iouMessage" class="message"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="investmentModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="investmentModalTitle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="investmentModalTitle">New Investment</h2>
+        <button id="closeInvestmentModal" class="modal-close" type="button">×</button>
+      </div>
+      <div class="investment-code-banner">
+        <span class="investment-code-label">Investment ID (Auto Generated)</span>
+        <strong id="nextInvestmentCode" class="investment-code-value">Loading...</strong>
+        <p class="table-subtitle">Link an existing investor account, choose a type, and optionally assign a project manager. One investor can hold many investments.</p>
+      </div>
+      <form id="investmentForm" class="add-member-form">
+        <div class="form-group">
+          <label>
+            Select Investor
+            <select name="investorId" id="investmentInvestorSelect" required>
+              <option value="">Choose investor…</option>
+            </select>
+          </label>
+          <p class="table-subtitle">Create investors first from User Management if the list is empty.</p>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Investment Type
+              <select name="investmentType" id="investmentTypeSelect" required>
+                <option value="">Choose type…</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Project Manager
+              <select name="projectManagerId" id="investmentProjectManagerSelect">
+                <option value="">Unassigned</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Add Custom Type (optional)
+              <input type="text" id="newInvestmentTypeName" placeholder="e.g. Infrastructure Bond" />
+            </label>
+          </div>
+          <div class="form-group u-flex-end">
+            <button type="button" class="secondary-btn" id="addInvestmentTypeBtn">Add Type</button>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Date of Birth
+              <input type="date" name="dateOfBirth" id="investmentDobInput" />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Location
+              <input type="text" name="location" id="investmentLocationInput" placeholder="City / Area" required />
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>
+            Investment Amount ($)
+            <input type="number" name="amount" min="0.01" step="0.01" placeholder="1000.00" required />
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            Notes (optional)
+            <input type="text" name="notes" placeholder="Optional details" />
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            Proposal Documents
+            <input type="file" id="investmentDocumentsInput" name="documents" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,image/*" multiple />
+          </label>
+          <p class="table-subtitle">Upload supporting files for members and cashier to review.</p>
+        </div>
+        <p class="table-subtitle">Submit creates a <strong>Pending Member Approval</strong> proposal. Society funds are deducted only after cashier payment.</p>
+        <button type="submit" class="primary-btn">Submit for Member Approval</button>
+        <p id="investmentMessage" class="message"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="memberModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="memberModalTitle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="memberModalTitle">Add New Member</h2>
+        <button id="closeMemberModal" class="modal-close" type="button">×</button>
+      </div>
+      <form id="newMemberForm" class="add-member-form">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Full Name
+              <input type="text" name="name" placeholder="John Doe" required />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Email
+              <input type="email" name="email" placeholder="john@example.com" required />
+            </label>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Password
+              <input type="password" name="password" placeholder="••••••••" required />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Profile Picture
+              <input type="file" name="profilePicture" accept="image/*" />
+            </label>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Date of Birth
+              <input type="date" name="dateOfBirth" />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              Gender
+              <input type="text" name="gender" placeholder="Female" />
+            </label>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>
+              Phone
+              <input type="text" name="phone" placeholder="+8801XXXXXXXXX" />
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              NID Number
+              <input type="text" name="nidNumber" placeholder="National ID" />
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>
+            Address
+            <input type="text" name="address" placeholder="Full address" />
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            KYC Documents (optional)
+            <input type="file" name="kycDocuments" accept=".jpg,.jpeg,.png,.pdf,.webp" multiple />
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Create Member</button>
+        <p id="adminMessage" class="message"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="loanReviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loanReviewModalTitle">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="loanReviewModalTitle">Review Loan Application</h2>
+        <button id="closeLoanReviewModal" class="modal-close" type="button">×</button>
+      </div>
+      <div id="loanReviewContent" class="member-profile-content"></div>
+    </div>
+  </div>
+
+  <div id="memberProfileModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="memberProfileModalTitle">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="memberProfileModalTitle">Member Hub</h2>
+        <button id="closeMemberProfileModal" class="modal-close" type="button">×</button>
+      </div>
+      <div id="memberProfileContent" class="member-profile-content"></div>
+    </div>
+  </div>
+
+  <div id="pdfPreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pdfPreviewTitle">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="pdfPreviewTitle">Investment Receipt</h2>
+        <button id="closePdfPreviewModal" class="modal-close" type="button">×</button>
+      </div>
+      <p id="pdfPreviewSubtitle" class="table-subtitle">Your receipt is ready right now. View the PDF below immediately.</p>
+      <div id="pdfPreviewLoading" class="table-subtitle hidden">Loading PDF...</div>
+      <embed id="pdfPreviewEmbed" type="application/pdf" class="pdf-preview-frame" title="Investment receipt PDF" />
+      <div id="pdfPreviewFallback" class="panel-card hidden">
+        <p class="table-subtitle">Microsoft Edge blocked inline PDF preview. Use the button below to open the receipt immediately.</p>
+        <button type="button" class="primary-btn" id="pdfPreviewOpenNow">Open PDF Now</button>
+      </div>
+      <div class="page-actions">
+        <button type="button" class="primary-btn" id="pdfPreviewOpenTab">Open in New Tab</button>
+        <button type="button" class="primary-btn" id="closePdfPreviewBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script defer src="/static/js/theme.js"></script>
+  <script defer src="/static/js/table-cards.js"></script>
+  <script defer src="/static/js/password-confirm.js"></script>
+  <script defer src="/static/js/chat-shared.js"></script>
+  <script defer src="/static/js/admin.js"></script>
+</body>
+</html>

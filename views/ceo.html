@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CEO Panel - SocietyHub</title>
+  <script src="/static/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
+</head>
+<body class="dashboard-layout ceo-dashboard">
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">SH</div>
+      <div class="brand-copy">
+        <h2>SocietyHub</h2>
+        <p class="brand-tagline">CEO Control Panel</p>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <p class="nav-section-label">CEO</p>
+      <a href="#create-user" class="nav-item active" data-section="create">
+        <span class="nav-label">Create User</span>
+      </a>
+      <a href="#staff-list" class="nav-item" data-section="staff">
+        <span class="nav-label">Staff Directory</span>
+      </a>
+      <a href="/admin" class="nav-item">
+        <span class="nav-label">Operations Console</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="ghost-btn" id="logoutBtn">Sign out</button>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Open navigation menu">☰</button>
+        <div class="topbar-heading">
+          <h1>CEO Panel</h1>
+          <p class="text-secondary" id="ceoWelcome">Manage roles, permissions, and staff access</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle color theme">
+          <span class="theme-icon-sun" aria-hidden="true">☀️</span>
+          <span class="theme-icon-moon" aria-hidden="true">🌙</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="content-section" id="createSection">
+      <div class="panel-card">
+        <div class="panel-card-header">
+          <h2>Create User &amp; Assign Permissions</h2>
+          <p class="text-secondary">Add staff or members with a temporary password and fine-grained access rights.</p>
+        </div>
+
+        <form id="createUserForm" class="ceo-form">
+          <div class="form-grid-2">
+            <label>
+              Full Name
+              <input type="text" name="name" required placeholder="e.g. Ayesha Rahman" />
+            </label>
+            <label>
+              Email
+              <input type="email" name="email" required placeholder="user@example.com" />
+            </label>
+            <label>
+              Temporary Password
+              <input type="password" name="password" required minlength="6" placeholder="Min. 6 characters" />
+            </label>
+            <label>
+              Role
+              <select name="role" id="roleSelect" required></select>
+            </label>
+          </div>
+
+          <div class="permissions-block">
+            <div class="permissions-header">
+              <h3>Permissions</h3>
+              <p class="text-secondary">Toggle access rights for this user. Changing role loads recommended defaults.</p>
+              <div class="inline-actions">
+                <button type="button" class="ghost-btn" id="selectAllPerms">Select all</button>
+                <button type="button" class="ghost-btn" id="clearPerms">Clear</button>
+              </div>
+            </div>
+            <div class="permissions-grid" id="permissionsGrid"></div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="primary-btn" id="createUserBtn">Create User</button>
+            <p class="message" id="createMessage"></p>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="content-section hidden" id="staffSection">
+      <div class="panel-card">
+        <div class="panel-card-header">
+          <h2>Staff Directory</h2>
+          <p class="text-secondary">All CEO, managers, cashiers, employees, and investors.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table table-cards" id="staffTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Permissions</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="message" id="staffMessage"></p>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/sidebar-nav.js"></script>
+  <script src="/static/js/table-cards.js"></script>
+  <script src="/static/js/ceo.js"></script>
+</body>
+</html>
