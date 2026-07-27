@@ -106,23 +106,84 @@ function brandingEmailFromFallback() {
 }
 
 const BENGALI_FONT_PATH = path.join(__dirname, '..', 'assets', 'fonts', 'NotoSansBengali-Regular.ttf');
-let bengaliFontRegistered = false;
+const PDF_UNICODE_FONT = 'NotoSansBengali';
 
+/**
+ * Register the Unicode (Bengali + Latin + ৳) font on this PDFDocument.
+ * Must run per document — PDFKit fonts are not shared across docs.
+ */
 function registerPdfBengaliFont(doc) {
-  if (bengaliFontRegistered) return Boolean(doc._bbbfBengaliFont);
+  if (!doc) return false;
+  if (doc._bbbfBengaliFont === true) return true;
+  if (doc._bbbfBengaliFont === false) return false;
   if (!fs.existsSync(BENGALI_FONT_PATH)) {
     doc._bbbfBengaliFont = false;
     return false;
   }
   try {
-    doc.registerFont('NotoSansBengali', BENGALI_FONT_PATH);
-    bengaliFontRegistered = true;
+    doc.registerFont(PDF_UNICODE_FONT, BENGALI_FONT_PATH);
     doc._bbbfBengaliFont = true;
     return true;
   } catch (error) {
     doc._bbbfBengaliFont = false;
     return false;
   }
+}
+
+/** Unicode font for Bengali + ৳ + digits (NotoSansBengali lacks Latin letters). */
+function usePdfBodyFont(doc, { bold = false, size } = {}) {
+  const hasUnicode = registerPdfBengaliFont(doc);
+  if (hasUnicode) {
+    doc.font(PDF_UNICODE_FONT);
+  } else {
+    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
+  }
+  if (size != null) doc.fontSize(size);
+  return doc;
+}
+
+/** Standard Latin PDF font (Helvetica). Use for English labels. */
+function usePdfLatinFont(doc, { bold = false, size } = {}) {
+  doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
+  if (size != null) doc.fontSize(size);
+  return doc;
+}
+
+/** Prepare a new PDFDocument: register Unicode font, default to Latin body. */
+function preparePdfDocument(doc) {
+  registerPdfBengaliFont(doc);
+  return usePdfLatinFont(doc, { size: 12 });
+}
+
+/**
+ * Write a BDT amount with Unicode font (৳ + digits).
+ * Restores Latin font afterward so following English text stays intact.
+ */
+function writePdfMoney(doc, value, options = {}) {
+  const { formatMoney } = require('./moneyFormat');
+  const { digits = 2, continued = false, align, width, x, y } = options;
+  const amount = formatMoney(value, digits);
+  usePdfBodyFont(doc);
+  const textOpts = {};
+  if (continued) textOpts.continued = true;
+  if (align) textOpts.align = align;
+  if (width != null) textOpts.width = width;
+  if (x != null && y != null) {
+    doc.text(amount, x, y, textOpts);
+  } else {
+    doc.text(amount, textOpts);
+  }
+  usePdfLatinFont(doc);
+  return doc;
+}
+
+/** Write "Label: ৳1,234.56" with mixed Helvetica + Unicode fonts. */
+function writePdfLabeledMoney(doc, label, value, options = {}) {
+  const { digits = 2, boldLabel = false } = options;
+  usePdfLatinFont(doc, { bold: boldLabel });
+  doc.text(`${String(label || '')}`, { continued: true });
+  writePdfMoney(doc, value, { digits });
+  return doc;
 }
 
 function drawPdfOrganizationHeader(doc, options = {}) {
@@ -134,38 +195,33 @@ function drawPdfOrganizationHeader(doc, options = {}) {
     issuerSize = 20,
   } = options;
   const settings = getOrganizationSettings();
-  const hasBengaliFont = registerPdfBengaliFont(doc);
+  registerPdfBengaliFont(doc);
 
-  if (hasBengaliFont) {
-    doc.font('NotoSansBengali').fontSize(issuerSize).fillColor('#0f766e')
-      .text(settings.nameBn, { align });
-    doc.font('Helvetica').fontSize(10).fillColor('#64748b')
-      .text(settings.nameEn, { align });
-  } else {
-    doc.font('Helvetica-Bold').fontSize(issuerSize).fillColor('#0f766e')
-      .text(settings.nameBn, { align });
-    doc.font('Helvetica').fontSize(10).fillColor('#64748b')
-      .text(settings.nameEn, { align });
-  }
+  usePdfBodyFont(doc, { size: issuerSize });
+  doc.fillColor('#0f766e').text(settings.nameBn, { align });
+  usePdfLatinFont(doc, { bold: true, size: 10 });
+  doc.fillColor('#64748b').text(settings.nameEn, { align });
 
   if (title) {
     doc.moveDown(0.35);
-    doc.font('Helvetica-Bold').fontSize(titleSize).fillColor('#0f172a').text(title, { align });
+    usePdfLatinFont(doc, { bold: true, size: titleSize });
+    doc.fillColor('#0f172a').text(title, { align });
   }
   if (subtitle) {
     doc.moveDown(0.15);
-    doc.font('Helvetica').fontSize(11).fillColor('#64748b').text(subtitle, { align });
+    usePdfLatinFont(doc, { size: 11 });
+    doc.fillColor('#64748b').text(subtitle, { align });
   }
   doc.moveDown(0.5);
 }
 
 function drawPdfOrganizationFooter(doc, text) {
   const settings = getOrganizationSettings();
-  const hasBengaliFont = registerPdfBengaliFont(doc);
-  doc.font(hasBengaliFont ? 'NotoSansBengali' : 'Helvetica')
-    .fontSize(8)
-    .fillColor('#64748b')
+  // Footer may include Bengali org name — use Unicode font for the whole line.
+  usePdfBodyFont(doc, { size: 8 });
+  doc.fillColor('#64748b')
     .text(text || `Official document · ${settings.nameBn}`, { align: 'center' });
+  usePdfLatinFont(doc);
 }
 
 module.exports = {
@@ -182,7 +238,13 @@ module.exports = {
   getBrandingPayload,
   brandingSubjectSuffix,
   brandingEmailFromFallback,
+  PDF_UNICODE_FONT,
   registerPdfBengaliFont,
+  usePdfBodyFont,
+  usePdfLatinFont,
+  writePdfMoney,
+  writePdfLabeledMoney,
+  preparePdfDocument,
   drawPdfOrganizationHeader,
   drawPdfOrganizationFooter,
 };
