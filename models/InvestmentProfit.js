@@ -80,6 +80,27 @@ const InvestmentProfitSchema = new mongoose.Schema({
     default: 0,
   },
   shares: [MemberShareSchema],
+  societyProfitShare: {
+    type: Number,
+    default: 0,
+  },
+  investorProfitShare: {
+    type: Number,
+    default: 0,
+  },
+  societyOwnershipPct: {
+    type: Number,
+    default: 100,
+  },
+  investorOwnershipPct: {
+    type: Number,
+    default: 0,
+  },
+  distributionKind: {
+    type: String,
+    enum: ['sale', 'monthly_return', 'loss'],
+    default: 'sale',
+  },
   notes: {
     type: String,
     trim: true,
