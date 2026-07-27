@@ -26,6 +26,7 @@ const bankLedgerRoutes = require('./routes/bankLedger');
 const profitPoolRoutes = require('./routes/profitPool');
 const advanceBorrowingRoutes = require('./routes/advanceBorrowing');
 const monthlyTargetsRoutes = require('./routes/monthlyTargets');
+const transactionAuditRoutes = require('./routes/transactionAudit');
 const { seedDefaultUsers } = require('./services/seedService');
 const { ensureDefaultInvestmentTypes } = require('./services/investmentTypeService');
 const { isFullAccessRole, isDeveloperRole, canAccessDeveloperModule, dashboardPathForRole } = require('./services/rbac');
@@ -149,6 +150,7 @@ function buildApp(sessionStore) {
   app.use('/api/admin/profit-pool', profitPoolRoutes);
   app.use('/api/admin/funding', advanceBorrowingRoutes);
   app.use('/api/admin/monthly-targets', monthlyTargetsRoutes);
+  app.use('/api/admin/transaction-audit', transactionAuditRoutes);
   app.use('/api/admin/notifications', adminNotificationRoutes);
   app.use('/api/member/notifications', memberNotificationRoutes);
   app.use('/api/admin/chat', adminChatRoutes);
