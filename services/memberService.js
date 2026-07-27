@@ -66,6 +66,9 @@ async function getDuesAlert(memberData = {}, now = new Date()) {
  * - shortfall → MonthlyContributionDue.unpaidAmount
  */
 async function saveDeposit(memberId, amount, options = {}) {
+  const { normalizePaymentChannel } = require('./paymentChannelService');
+  const { generateReceiptNumber } = require('./receiptService');
+
   const member = await User.findOne({ _id: memberId, role: 'member' });
   if (!member) {
     const error = new Error('Member not found.');
@@ -83,6 +86,14 @@ async function saveDeposit(memberId, amount, options = {}) {
   const depositType = options.type || 'regular';
   const yearMonth = options.yearMonth || yearMonthFromDate(options.depositDate || new Date());
   const recordedBy = options.recordedBy || '';
+  const paymentMethod = normalizePaymentChannel(options.paymentMethod);
+  const paymentReference = options.paymentReference?.trim() || '';
+  const receiptNumber = await generateReceiptNumber();
+  const depositExtras = {
+    paymentMethod,
+    paymentReference,
+    receiptNumber,
+  };
 
   let towardTarget = total;
   let surplus = 0;
@@ -131,6 +142,7 @@ async function saveDeposit(memberId, amount, options = {}) {
         surplusToAdvance: 0,
         notes: regularNotes,
         recordedBy,
+        ...depositExtras,
       });
       savingsInc = money(savingsInc + towardTarget);
     }
@@ -146,6 +158,8 @@ async function saveDeposit(memberId, amount, options = {}) {
         notes: notesBase
           || `Surplus above ${monthlySplit?.yearMonth || yearMonth} fixed target of $${money(monthlySplit?.targetAmount).toFixed(2)}`,
         recordedBy,
+        paymentMethod,
+        paymentReference,
       });
       advanceInc = money(advanceInc + surplus);
     }
@@ -159,6 +173,7 @@ async function saveDeposit(memberId, amount, options = {}) {
         yearMonth,
         notes: notesBase,
         recordedBy,
+        ...depositExtras,
       });
       savingsInc = money(total);
     }
@@ -170,6 +185,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       yearMonth,
       notes: notesBase || 'Advance / surplus deposit',
       recordedBy,
+      ...depositExtras,
     });
     advanceInc = money(total);
   } else {
@@ -180,6 +196,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       yearMonth,
       notes: notesBase,
       recordedBy,
+      ...depositExtras,
     });
     savingsInc = money(total);
   }
@@ -217,14 +234,47 @@ async function saveDeposit(memberId, amount, options = {}) {
           ? `Member advance surplus: ${updatedMember.name} (${yearMonth})`
           : `Member deposit: ${updatedMember.name} (${yearMonth})`,
       createdBy: recordedBy || 'Admin',
+      paymentChannel: paymentMethod,
+      paymentReference,
     });
   } catch (error) {
     console.error('[saveDeposit] bank ledger credit failed:', error.message);
     ledgerWarning = error.message;
   }
 
+  const primaryDeposit = deposit || advanceDeposit;
+  void (async () => {
+    try {
+      const { notifyDepositRecorded } = require('./financialNotificationService');
+      const { recordAdminActivity } = require('./activityLogService');
+      await notifyDepositRecorded({
+        member: updatedMember,
+        deposit: primaryDeposit,
+        recordedBy,
+        receiptNumber: primaryDeposit?.receiptNumber || receiptNumber,
+        paymentMethod,
+      });
+      await recordAdminActivity({
+        action: 'deposit_recorded',
+        actor: options.actor || null,
+        targetUserId: updatedMember._id,
+        targetEmail: updatedMember.email,
+        details: {
+          amount: total,
+          paymentMethod,
+          paymentReference,
+          receiptNumber: primaryDeposit?.receiptNumber || receiptNumber,
+          yearMonth,
+        },
+        ip: options.ip || '',
+      });
+    } catch (notifyError) {
+      console.warn('[saveDeposit] notification/audit failed:', notifyError.message);
+    }
+  })();
+
   return {
-    deposit: deposit || advanceDeposit,
+    deposit: primaryDeposit,
     advanceDeposit: deposit && advanceDeposit ? advanceDeposit : null,
     member: updatedMember,
     bankLedger,

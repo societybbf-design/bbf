@@ -97,6 +97,8 @@ async function distributeEqually({
   note = '',
   distributedBy = 'Cashier',
   debitBankLedger = true,
+  actor = null,
+  ip = '',
 } = {}) {
   const pool = await ensurePool();
   const available = money(pool.balance);
@@ -152,10 +154,49 @@ async function distributeEqually({
         createdBy: distributedBy,
       });
     } catch (error) {
-      // Member profits already credited; surface ledger issue without rolling back distribution
       console.warn('[profitPool] bank ledger debit failed:', error.message);
     }
   }
+
+  void (async () => {
+    try {
+      const User = require('../models/User');
+      const { notifyProfitDistribution } = require('./financialNotificationService');
+      const { recordAdminActivity } = require('./activityLogService');
+      const members = await User.find({
+        _id: { $in: distributionResult.shares.map((share) => share.member) },
+      }).select('name email phone');
+      const memberMap = new Map(members.map((member) => [String(member._id), member]));
+      const enrichedShares = distributionResult.shares.map((share) => {
+        const member = memberMap.get(String(share.member));
+        return {
+          memberId: share.member,
+          memberName: share.memberName,
+          share: share.amount,
+          email: member?.email,
+          phone: member?.phone,
+        };
+      });
+      await notifyProfitDistribution({
+        members: enrichedShares,
+        totalAmount: toDistribute,
+        distributedBy,
+        distributionId: profitDistribution._id,
+      });
+      await recordAdminActivity({
+        action: 'profit_pool_distributed',
+        actor: options.actor || null,
+        details: {
+          totalAmount: toDistribute,
+          memberCount: distributionResult.memberCount,
+          distributionId: profitDistribution._id,
+        },
+        ip: options.ip || '',
+      });
+    } catch (notifyError) {
+      console.warn('[profitPool] notification/audit failed:', notifyError.message);
+    }
+  })();
 
   return {
     distribution: profitDistribution,

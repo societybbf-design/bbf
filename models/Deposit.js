@@ -62,6 +62,24 @@ const DepositSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'bank', 'mfs'],
+    default: 'cash',
+    index: true,
+  },
+  paymentReference: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  receiptNumber: {
+    type: String,
+    trim: true,
+    unique: true,
+    sparse: true,
+    index: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

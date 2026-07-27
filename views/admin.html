@@ -364,6 +364,9 @@
             <div class="dashboard-chart-wrap">
               <canvas id="depositChart" height="220"></canvas>
             </div>
+            <div class="dashboard-chart-wrap u-mt-1">
+              <canvas id="ceoFinancialTrendChart" height="220"></canvas>
+            </div>
           </div>
         </section>
 
@@ -1368,6 +1371,34 @@
             </thead>
             <tbody id="reportDetailBody">
               <tr><td>Choose Members, Deposits, or Investments to load the report list.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel-card">
+        <h2>Financial Trends</h2>
+        <p class="table-subtitle">Monthly revenue inflow, payouts, and profit distributions.</p>
+        <div class="dashboard-chart-wrap">
+          <canvas id="financialTrendChart" height="240"></canvas>
+        </div>
+      </section>
+
+      <section class="panel-card table-card-wide">
+        <div class="member-profile-section-header">
+          <div>
+            <h2>Administrator Activity Log</h2>
+            <p class="table-subtitle">Secure audit trail of cashier and CEO administrative actions.</p>
+          </div>
+          <button type="button" class="secondary-btn" id="refreshActivityLogBtn">Refresh</button>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr><th>When</th><th>Action</th><th>Actor</th><th>Target</th><th>Details</th></tr>
+            </thead>
+            <tbody id="activityLogBody">
+              <tr><td colspan="5">Loading activity log…</td></tr>
             </tbody>
           </table>
         </div>

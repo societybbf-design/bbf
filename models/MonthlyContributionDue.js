@@ -54,6 +54,10 @@ const MonthlyContributionDueSchema = new mongoose.Schema({
     ref: 'InternalBorrowing',
     default: null,
   },
+  lastRemindedAt: {
+    type: Date,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

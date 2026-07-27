@@ -87,6 +87,71 @@ function auditDirectionClass(direction) {
   return direction === 'in' ? 'audit-direction-in' : 'audit-direction-out';
 }
 
+let cashierFinancialTrendChart = null;
+
+function renderFinancialTrendChart(canvasId, trends) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx || typeof Chart === 'undefined' || !trends) return;
+  if (cashierFinancialTrendChart) cashierFinancialTrendChart.destroy();
+  cashierFinancialTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: trends.labels || [],
+      datasets: [
+        {
+          label: 'Cash in',
+          data: trends.series?.revenueIn || [],
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22, 163, 74, 0.08)',
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          label: 'Payouts out',
+          data: trends.series?.payoutsOut || [],
+          borderColor: '#dc2626',
+          backgroundColor: 'rgba(220, 38, 38, 0.06)',
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          label: 'Profit distributions',
+          data: trends.series?.profitDistributions || [],
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15, 118, 110, 0.06)',
+          tension: 0.35,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom' } },
+      scales: {
+        y: { beginAtZero: true },
+      },
+    },
+  });
+}
+
+async function loadCashierFinancialTrends() {
+  try {
+    const response = await fetch('/api/admin/analytics/financial-trends');
+    const trends = await response.json();
+    if (!response.ok) throw new Error(trends.error);
+    renderFinancialTrendChart('cashierFinancialTrendChart', trends);
+  } catch (error) {
+    // Chart is optional on home dashboard
+  }
+}
+
+function paymentChannelLabel(channel) {
+  const labels = { cash: 'Cash', bank: 'Bank', mfs: 'MFS' };
+  return labels[channel] || channel || 'Cash';
+}
+
 function navItemHtml({ title, icon, active = false, panel = 'home' }) {
   return `
     <a href="#${escapeHtml(panel)}" class="nav-item${active ? ' active' : ''}" data-staff-nav="${escapeHtml(panel)}">
@@ -211,6 +276,7 @@ async function loadCashierHomeKpis() {
       const err = await reportRes.json().catch(() => ({}));
       renderCashierContributionSummary(null, err.error || 'Unable to load monthly contribution status.');
     }
+    await loadCashierFinancialTrends();
   } catch (error) {
     if (recentEl) recentEl.innerHTML = `<li class="text-secondary">${escapeHtml(error.message)}</li>`;
     renderCashierContributionSummary(null, error.message);
@@ -769,14 +835,16 @@ async function loadDepositsModule(options = {}) {
             <td>${escapeHtml(new Date(d.createdAt).toLocaleString())}</td>
             <td>${escapeHtml(d.member?.name || '—')}</td>
             <td>${money(d.amount)}${d.type && d.type !== 'regular' ? ` <span class="text-secondary">(${escapeHtml(d.type)})</span>` : ''}</td>
+            <td>${escapeHtml(paymentChannelLabel(d.paymentMethod))}</td>
+            <td><code>${escapeHtml(d.receiptNumber || '—')}</code></td>
             <td><a href="/api/admin/deposits/${d._id}/receipt" target="_blank" rel="noopener">PDF</a></td>
           </tr>
         `).join('')
-        : '<tr><td colspan="4">No deposits yet.</td></tr>';
+        : '<tr><td colspan="6">No deposits yet.</td></tr>';
     }
   } catch (error) {
     if (msg) msg.textContent = error.message;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
     if (duesBody) duesBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
   }
 }
@@ -2102,6 +2170,38 @@ function bindProfitPoolForms() {
 }
 
 function bindModuleForms() {
+  document.getElementById('cashierSendDuesRemindersBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('cashierDuesReminderMessage');
+    const button = document.getElementById('cashierSendDuesRemindersBtn');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Sending reminders…';
+    }
+    try {
+      const response = await fetch('/api/admin/dues-reminders/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: 'all' }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to send reminders.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = `Sent ${data.sentCount || 0} reminder(s) for ${data.yearMonth || 'this month'}.`;
+      }
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.textContent = error.message;
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Send dues reminders to all unpaid';
+      }
+    }
+  });
+
   document.getElementById('cashierDepositForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const msg = document.getElementById('cashierDepositMessage');
@@ -2115,6 +2215,8 @@ function bindModuleForms() {
         body: JSON.stringify({
           memberId,
           amount: formData.get('amount'),
+          paymentMethod: formData.get('paymentMethod') || 'cash',
+          paymentReference: formData.get('paymentReference') || '',
         }),
       });
       const data = await response.json();
@@ -2124,7 +2226,8 @@ function bindModuleForms() {
         msg.textContent = data.message || 'Deposit recorded.';
       }
       if (receipt && data.receiptUrl) {
-        receipt.innerHTML = `<a href="${escapeHtml(data.receiptUrl)}" target="_blank" rel="noopener">Download deposit receipt PDF</a>`;
+        const receiptLabel = data.receiptNumber ? `Receipt ${escapeHtml(data.receiptNumber)}` : 'Download deposit receipt PDF';
+        receipt.innerHTML = `<a href="${escapeHtml(data.receiptUrl)}" target="_blank" rel="noopener">${receiptLabel}</a>`;
       }
       event.target.reset();
       await syncAfterCashIn({

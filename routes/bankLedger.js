@@ -7,6 +7,8 @@ const {
   getDailySummary,
   getEntryById,
 } = require('../services/bankLedgerService');
+const { recordAdminActivity } = require('../services/activityLogService');
+const { clientIp } = require('../services/securityService');
 const {
   generateZReportPdf,
   generatePayoutVoucherPdf,
@@ -71,6 +73,12 @@ router.post('/opening', manageDeposits, requirePasswordConfirmation, async (req,
       userName: req.session?.user?.name || 'Cashier',
       force,
     });
+    await recordAdminActivity({
+      action: 'ledger_opening_set',
+      actor: req.session?.user || null,
+      details: { amount: req.body?.amount },
+      ip: clientIp(req),
+    });
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to set opening balance.' });
@@ -81,6 +89,16 @@ router.post('/reconcile', manageDeposits, requirePasswordConfirmation, async (re
   try {
     const result = await reconcile(req.body?.actualBalance, {
       userName: req.session?.user?.name || 'Cashier',
+    });
+    await recordAdminActivity({
+      action: 'ledger_reconciled',
+      actor: req.session?.user || null,
+      details: {
+        actualBalance: req.body?.actualBalance,
+        difference: result.difference,
+        mismatched: result.mismatched,
+      },
+      ip: clientIp(req),
     });
     return res.json(result);
   } catch (error) {

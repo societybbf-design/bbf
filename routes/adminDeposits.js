@@ -4,7 +4,9 @@ const { getAllDeposits } = require('../services/depositService');
 const { saveDeposit } = require('../services/memberService');
 const { getActiveMonthTarget, yearMonthFromDate } = require('../services/monthlyTargetService');
 const { sendDepositReceipt, generateReceiptPdf } = require('../services/notificationService');
+const { paymentChannelLabel } = require('../services/paymentChannelService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
+const { clientIp } = require('../services/securityService');
 
 router.use(requireAuth, requirePermission('can_manage_deposits'));
 
@@ -25,9 +27,14 @@ router.get('/:id/receipt', async (req, res) => {
       return res.status(404).json({ error: 'Receipt not found.' });
     }
 
-    const pdfBuffer = await generateReceiptPdf(deposit.member, deposit, req.session.user.name || 'Admin');
+    const pdfBuffer = await generateReceiptPdf(
+      deposit.member,
+      deposit,
+      req.session.user.name || 'Admin'
+    );
+    const receiptName = deposit.receiptNumber || deposit._id;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="deposit-${deposit._id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="receipt-${receiptName}.pdf"`);
     return res.send(pdfBuffer);
   } catch (error) {
     return res.status(500).json({ error: 'Unable to generate receipt.' });
@@ -36,7 +43,7 @@ router.get('/:id/receipt', async (req, res) => {
 
 router.post('/', requirePasswordConfirmation, async (req, res) => {
   try {
-    const { memberId, amount, yearMonth, notes } = req.body;
+    const { memberId, amount, yearMonth, notes, paymentMethod, paymentReference } = req.body;
     if (!memberId || typeof amount === 'undefined' || amount === null) {
       return res.status(400).json({ error: 'Member and amount are required.' });
     }
@@ -53,11 +60,23 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
       yearMonth: applyMonth,
       notes: notes || '',
       recordedBy: req.session?.user?.name || 'Admin',
+      paymentMethod,
+      paymentReference,
+      actor: req.session?.user || null,
+      ip: clientIp(req),
     });
 
-    void sendDepositReceipt(result.member, result.deposit, req.session.user.name || 'Admin').catch((error) => {
+    let emailSent = false;
+    try {
+      const emailResult = await sendDepositReceipt(
+        result.member,
+        result.deposit,
+        req.session.user.name || 'Admin'
+      );
+      emailSent = Boolean(emailResult?.sent);
+    } catch (error) {
       console.error('Deposit receipt email failed:', error.message);
-    });
+    }
 
     let message = 'Deposit recorded.';
     if (result.monthlySplit?.splitApplied) {
@@ -73,6 +92,9 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
     if (result.ledgerWarning) {
       message += ` · Ledger warning: ${result.ledgerWarning}`;
     }
+    if (result.deposit?.receiptNumber) {
+      message += ` · Receipt ${result.deposit.receiptNumber}`;
+    }
 
     return res.status(201).json({
       deposit: result.deposit,
@@ -84,7 +106,10 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
       ledgerWarning: result.ledgerWarning || null,
       activeMonthTarget: target,
       message,
-      emailSent: false,
+      emailSent,
+      receiptNumber: result.deposit?.receiptNumber || null,
+      paymentMethod: result.deposit?.paymentMethod || paymentMethod || 'cash',
+      paymentMethodLabel: paymentChannelLabel(result.deposit?.paymentMethod || paymentMethod),
       receiptUrl: result.deposit?._id ? `/api/admin/deposits/${result.deposit._id}/receipt` : null,
     });
   } catch (error) {

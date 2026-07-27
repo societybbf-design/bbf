@@ -1218,6 +1218,8 @@ function updatePageContent(page, loanTab = null) {
       pageTitle.textContent = 'Reports';
       pageNote.textContent = 'Click Members, Deposits, or Investments to view detailed lists.';
       void refreshReportData();
+      void loadFinancialTrendCharts();
+      void loadActivityLog();
       break;
     case 'settings':
       pageTitle.textContent = 'Settings';
@@ -2031,6 +2033,93 @@ function initializeDepositChart(summary = {}) {
       },
     },
   });
+}
+
+let financialTrendChart = null;
+let ceoFinancialTrendChart = null;
+
+function initializeFinancialTrendCharts(trends = {}) {
+  const chartConfig = {
+    type: 'line',
+    data: {
+      labels: trends.labels || [],
+      datasets: [
+        {
+          label: 'Cash in',
+          data: trends.series?.revenueIn || [],
+          borderColor: '#16a34a',
+          tension: 0.35,
+        },
+        {
+          label: 'Payouts out',
+          data: trends.series?.payoutsOut || [],
+          borderColor: '#dc2626',
+          tension: 0.35,
+        },
+        {
+          label: 'Profit distributions',
+          data: trends.series?.profitDistributions || [],
+          borderColor: '#0f766e',
+          tension: 0.35,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true } },
+    },
+  };
+
+  const financialCtx = document.getElementById('financialTrendChart');
+  if (financialCtx && typeof Chart !== 'undefined') {
+    if (financialTrendChart) financialTrendChart.destroy();
+    financialTrendChart = new Chart(financialCtx, chartConfig);
+  }
+
+  const ceoCtx = document.getElementById('ceoFinancialTrendChart');
+  if (ceoCtx && typeof Chart !== 'undefined') {
+    if (ceoFinancialTrendChart) ceoFinancialTrendChart.destroy();
+    ceoFinancialTrendChart = new Chart(ceoCtx, chartConfig);
+  }
+}
+
+async function loadFinancialTrendCharts() {
+  try {
+    const response = await fetch('/api/admin/analytics/financial-trends');
+    const trends = await response.json();
+    if (!response.ok) throw new Error(trends.error);
+    initializeFinancialTrendCharts(trends);
+  } catch (error) {
+    console.warn('Unable to load financial trends:', error.message);
+  }
+}
+
+async function loadActivityLog() {
+  const tbody = document.getElementById('activityLogBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5">Loading activity log…</td></tr>';
+  try {
+    const response = await fetch('/api/admin/activity-log?limit=50');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load activity log.');
+    const items = data.items || [];
+    tbody.innerHTML = items.length
+      ? items.map((item) => `
+        <tr>
+          <td>${escapeHtml(new Date(item.createdAt).toLocaleString())}</td>
+          <td>${escapeHtml(item.action || '—')}</td>
+          <td>${escapeHtml(item.actorEmail || item.actorRole || '—')}</td>
+          <td>${escapeHtml(item.targetEmail || '—')}</td>
+          <td><code>${escapeHtml(JSON.stringify(item.details || {}))}</code></td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="5">No administrative activity recorded yet.</td></tr>';
+  } catch (error) {
+    tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+  }
 }
 
 async function fetchSummary() {
@@ -6724,6 +6813,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Critical dashboard data only — everything else waits for idle time
   void fetchSummary();
   void fetchMembers();
+  void loadFinancialTrendCharts();
+  document.getElementById('refreshActivityLogBtn')?.addEventListener('click', () => {
+    void loadActivityLog();
+  });
 
   document.getElementById('selfPasswordForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();

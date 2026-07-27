@@ -307,6 +307,14 @@
         <h2>Payment Reminder</h2>
         <div id="duesAlert"></div>
       </section>
+
+      <section class="panel-card">
+        <h2>Deposit Trend</h2>
+        <p class="table-subtitle">Your monthly deposit activity over the last 12 months.</p>
+        <div class="dashboard-chart-wrap">
+          <canvas id="memberDepositTrendChart" height="220"></canvas>
+        </div>
+      </section>
       </section>
 
       <section class="page-section" data-page-section="investment-requests">
@@ -715,6 +723,7 @@
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/table-cards.js"></script>
   <script src="/static/js/chat-shared.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="/static/js/member.js"></script>
 </body>
 </html>
