@@ -29,7 +29,12 @@ const LoanApplication = require('../models/LoanApplication');
 const { requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const { requireActiveMember } = require('../middleware/memberAccess');
 
-const adminOnly = requirePermission('can_manage_loans');
+/** CEO (and loan reviewers): approve / reject applications. */
+const loanReview = requirePermission('can_manage_loans');
+/** Cashier only: disburse approved loans and record repayments. */
+const loanCashier = requirePermission('can_disburse_loans');
+/** Shared read access for CEO review + Cashier payout/repayment work. */
+const loanOpsRead = requirePermission('can_manage_loans', 'can_disburse_loans');
 
 router.get('/member/eligibility', requireActiveMember, async (req, res) => {
   try {
@@ -98,7 +103,7 @@ router.get('/member/repayments', requireActiveMember, async (req, res) => {
 
 router.post('/member/repayments', requireActiveMember, async (req, res) => {
   return res.status(403).json({
-    error: 'Loan payments are processed manually by admin. Please visit the society office to pay your loan.',
+    error: 'Loan payments are processed manually by the Cashier. Please visit the society office to pay your loan.',
   });
 });
 
@@ -157,7 +162,7 @@ router.post('/member/:id/signed-contract', requireActiveMember, async (req, res)
   }
 });
 
-router.get('/admin/repayments', adminOnly, async (req, res) => {
+router.get('/admin/repayments', loanOpsRead, async (req, res) => {
   try {
     const repayments = await getRepaymentsForAdmin({ status: req.query.status });
     return res.json({ repayments });
@@ -166,14 +171,14 @@ router.get('/admin/repayments', adminOnly, async (req, res) => {
   }
 });
 
-router.patch('/admin/repayments/:id', adminOnly, requirePasswordConfirmation, async (req, res) => {
+router.patch('/admin/repayments/:id', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
     const { status, adminNote } = req.body;
     const repayment = await updateLoanRepaymentStatus(
       req.params.id,
       status,
       adminNote,
-      req.session?.user?.name || 'Admin'
+      req.session?.user?.name || 'Cashier'
     );
     return res.json({ repayment });
   } catch (error) {
@@ -181,7 +186,7 @@ router.patch('/admin/repayments/:id', adminOnly, requirePasswordConfirmation, as
   }
 });
 
-router.get('/admin/repayments/:id/receipt', adminOnly, async (req, res) => {
+router.get('/admin/repayments/:id/receipt', loanOpsRead, async (req, res) => {
   try {
     const { fullPath } = await getRepaymentReceiptFile(req.params.id);
     res.setHeader('Content-Type', 'application/pdf');
@@ -192,7 +197,7 @@ router.get('/admin/repayments/:id/receipt', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin/summary', adminOnly, async (req, res) => {
+router.get('/admin/summary', loanOpsRead, async (req, res) => {
   try {
     const summary = await getLoanPortfolioSummary();
     return res.json(summary);
@@ -201,7 +206,7 @@ router.get('/admin/summary', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin/takers', adminOnly, async (req, res) => {
+router.get('/admin/takers', loanOpsRead, async (req, res) => {
   try {
     const takers = await getAllLoanTakers();
     return res.json({ takers });
@@ -210,7 +215,7 @@ router.get('/admin/takers', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin/active-borrowers', adminOnly, async (req, res) => {
+router.get('/admin/active-borrowers', loanOpsRead, async (req, res) => {
   try {
     const borrowers = await getActiveBorrowers({
       monthlyStatus: req.query.monthlyStatus,
@@ -221,7 +226,7 @@ router.get('/admin/active-borrowers', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin', adminOnly, async (req, res) => {
+router.get('/admin', loanOpsRead, async (req, res) => {
   try {
     const loans = await getLoanApplicationsForAdmin({
       status: req.query.status,
@@ -233,7 +238,7 @@ router.get('/admin', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin/member/:memberId', adminOnly, async (req, res) => {
+router.get('/admin/member/:memberId', loanOpsRead, async (req, res) => {
   try {
     const loans = await getLoansByMemberId(req.params.memberId);
     return res.json({ loans });
@@ -242,7 +247,7 @@ router.get('/admin/member/:memberId', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin/member/:memberId/outstanding', adminOnly, async (req, res) => {
+router.get('/admin/member/:memberId/outstanding', loanOpsRead, async (req, res) => {
   try {
     const summary = await getMemberOutstandingSummary(req.params.memberId);
     return res.json(summary);
@@ -251,7 +256,7 @@ router.get('/admin/member/:memberId/outstanding', adminOnly, async (req, res) =>
   }
 });
 
-router.get('/admin/member/:memberId/repayments', adminOnly, async (req, res) => {
+router.get('/admin/member/:memberId/repayments', loanOpsRead, async (req, res) => {
   try {
     const repayments = await getRepaymentsForMember(req.params.memberId);
     return res.json({ repayments });
@@ -260,7 +265,7 @@ router.get('/admin/member/:memberId/repayments', adminOnly, async (req, res) => 
   }
 });
 
-router.post('/admin/member/:memberId/repayments', adminOnly, requirePasswordConfirmation, async (req, res) => {
+router.post('/admin/member/:memberId/repayments', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await recordAdminLoanRepayment({
       memberId: req.params.memberId,
@@ -268,7 +273,7 @@ router.post('/admin/member/:memberId/repayments', adminOnly, requirePasswordConf
       repaymentType: req.body.repaymentType,
       paymentMethod: req.body.paymentMethod,
       adminNote: req.body.adminNote,
-      reviewedBy: req.session?.user?.name || 'Admin',
+      reviewedBy: req.session?.user?.name || 'Cashier',
     });
     return res.status(201).json(result);
   } catch (error) {
@@ -276,7 +281,7 @@ router.post('/admin/member/:memberId/repayments', adminOnly, requirePasswordConf
   }
 });
 
-router.get('/admin/:id/contract', adminOnly, async (req, res) => {
+router.get('/admin/:id/contract', loanOpsRead, async (req, res) => {
   try {
     const { fullPath } = await getLoanContractFile(req.params.id);
     res.setHeader('Content-Type', 'application/pdf');
@@ -287,7 +292,7 @@ router.get('/admin/:id/contract', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/admin/:id', adminOnly, async (req, res) => {
+router.get('/admin/:id', loanOpsRead, async (req, res) => {
   try {
     const loan = await getLoanApplicationById(req.params.id);
     if (!loan) {
@@ -299,14 +304,19 @@ router.get('/admin/:id', adminOnly, async (req, res) => {
   }
 });
 
-router.patch('/admin/:id', adminOnly, requirePasswordConfirmation, async (req, res) => {
+router.patch('/admin/:id', loanReview, requirePasswordConfirmation, async (req, res) => {
   try {
     const { status, adminNote, paymentMethod } = req.body;
+    if (status === 'disbursed') {
+      return res.status(400).json({
+        error: 'Loan disbursement is handled by the Cashier. Approve the loan first, then the Cashier completes payment.',
+      });
+    }
     const loan = await updateLoanApplicationStatus(
       req.params.id,
       status,
       adminNote,
-      req.session?.user?.name || 'Admin',
+      req.session?.user?.name || 'CEO',
       paymentMethod
     );
     return res.json({ loan });
@@ -315,13 +325,13 @@ router.patch('/admin/:id', adminOnly, requirePasswordConfirmation, async (req, r
   }
 });
 
-router.post('/admin/:id/disburse', adminOnly, requirePasswordConfirmation, async (req, res) => {
+router.post('/admin/:id/disburse', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
     const loan = await disburseLoanApplication(req.params.id, {
       paymentMethod: req.body.paymentMethod,
       transferReference: req.body.transferReference,
       disbursementNote: req.body.disbursementNote,
-      disbursedBy: req.session?.user?.name || 'Admin',
+      disbursedBy: req.session?.user?.name || 'Cashier',
     });
     return res.json({ loan });
   } catch (error) {
