@@ -28,6 +28,25 @@ const WithdrawalRequestSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'bank', 'mfs', ''],
+    default: '',
+  },
+  disbursementReference: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  processedAt: {
+    type: Date,
+    default: null,
+  },
+  processedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

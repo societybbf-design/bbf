@@ -6,6 +6,12 @@ const SecurityAuditSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  category: {
+    type: String,
+    enum: ['auth', 'account', 'admin', 'financial', 'config'],
+    default: 'auth',
+    index: true,
+  },
   actorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

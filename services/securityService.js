@@ -43,6 +43,7 @@ function generateOtp() {
 
 async function recordAudit({
   action,
+  category = 'auth',
   actorId = null,
   actorEmail = '',
   actorRole = '',
@@ -55,6 +56,7 @@ async function recordAudit({
   try {
     await SecurityAudit.create({
       action,
+      category,
       actorId,
       actorEmail,
       actorRole,

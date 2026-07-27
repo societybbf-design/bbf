@@ -157,6 +157,16 @@
                 </div>
               </section>
 
+              <section class="cashier-analytics-card" aria-label="Financial trend analytics">
+                <div class="cashier-section-head">
+                  <h3>Revenue &amp; profit trends</h3>
+                  <p class="text-secondary">12-month cash-in, payouts, and profit pool movement</p>
+                </div>
+                <div class="dashboard-chart-wrap">
+                  <canvas id="cashierFinancialTrendChart" height="220"></canvas>
+                </div>
+              </section>
+
               <section class="cashier-members-launch" aria-label="Members module">
                 <button type="button" class="cashier-members-card" data-staff-nav="members" id="cashierOpenMembers">
                   <span class="cashier-members-card-icon" aria-hidden="true">👥</span>
@@ -487,12 +497,32 @@
                 </label>
               </div>
             </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Payment channel
+                  <select name="paymentMethod" id="cashierDepositPaymentMethod">
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank Transfer</option>
+                    <option value="mfs">Mobile Financial Services</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Payment reference / txn ID
+                  <input type="text" name="paymentReference" placeholder="Optional bank or MFS reference" />
+                </label>
+              </div>
+            </div>
             <p class="text-secondary" id="cashierDepositHint">Enter any amount. Surplus above the month target is credited to Advance.</p>
             <button type="submit" class="primary-btn">Record deposit</button>
             <p id="cashierDepositMessage" class="message"></p>
             <p id="cashierDepositReceipt" class="u-mt-1"></p>
           </form>
           <h3 class="u-mt-1">Unpaid monthly dues</h3>
+          <div class="form-row-2 u-mb-1">
+            <button type="button" class="secondary-btn" id="cashierSendDuesRemindersBtn">Send dues reminders to all unpaid</button>
+            <p id="cashierDuesReminderMessage" class="message"></p>
+          </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
               <thead><tr><th>Member</th><th>Month</th><th>Expected</th><th>Paid</th><th>Still due</th><th>Status</th></tr></thead>
@@ -502,8 +532,8 @@
           <h3 class="u-mt-1">Recent deposits</h3>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Date</th><th>Member</th><th>Amount</th><th>Receipt</th></tr></thead>
-              <tbody id="cashierDepositsBody"><tr><td colspan="4">Loading…</td></tr></tbody>
+              <thead><tr><th>Date</th><th>Member</th><th>Amount</th><th>Channel</th><th>Receipt ID</th><th>Receipt</th></tr></thead>
+              <tbody id="cashierDepositsBody"><tr><td colspan="6">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -775,6 +805,7 @@
     </div>
   </div>
 
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/sidebar-nav.js"></script>
   <script src="/static/js/table-cards.js"></script>

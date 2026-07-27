@@ -118,6 +118,8 @@ async function postEntry({
   referenceId = null,
   note = '',
   createdBy = '',
+  paymentChannel = '',
+  paymentReference = '',
   allowWithoutOpening = false,
 }) {
   const normalized = money(amount);
@@ -155,6 +157,8 @@ async function postEntry({
     referenceId,
     note,
     createdBy,
+    paymentChannel: paymentChannel || '',
+    paymentReference: paymentReference || '',
   });
 
   return { ledger: reconciliationState(ledger), entry };

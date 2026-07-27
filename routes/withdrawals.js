@@ -41,8 +41,14 @@ router.get('/admin', adminOnly, async (req, res) => {
 
 router.patch('/admin/:id', adminOnly, requirePasswordConfirmation, async (req, res) => {
   try {
-    const { status, adminNote } = req.body;
-    const request = await updateWithdrawalRequestStatus(req.params.id, status, adminNote);
+    const { status, adminNote, paymentMethod, disbursementReference } = req.body;
+    const request = await updateWithdrawalRequestStatus(req.params.id, status, adminNote, {
+      paymentMethod,
+      disbursementReference,
+      actor: req.session?.user || null,
+      actorName: req.session?.user?.name || 'Cashier',
+      ip: require('../services/securityService').clientIp(req),
+    });
     return res.json({ request });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to update withdrawal request.' });

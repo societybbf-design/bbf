@@ -51,6 +51,17 @@ const BankLedgerEntrySchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  paymentChannel: {
+    type: String,
+    enum: ['cash', 'bank', 'mfs', ''],
+    default: '',
+    index: true,
+  },
+  paymentReference: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

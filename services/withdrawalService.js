@@ -1,7 +1,8 @@
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 const User = require('../models/User');
-const { notifyMemberByEmailAndSms } = require('./notificationService');
-const { createAdminNotification } = require('./adminNotificationService');
+const { notifyWithdrawalEvent } = require('./financialNotificationService');
+const { recordAdminActivity } = require('./activityLogService');
+const { normalizePaymentChannel } = require('./paymentChannelService');
 
 function calculateWithdrawalAvailability({ savings = 0, pendingAmount = 0, requestedAmount = 0 }) {
   const normalizedSavings = Number(savings) || 0;
@@ -56,12 +57,10 @@ async function createWithdrawalRequest({ memberId, amount, reason }) {
     reason: reason?.trim() || '',
   });
 
-  await createAdminNotification({
-    type: 'withdrawal',
-    title: `Withdrawal Request from ${member.name}`,
-    message: `${member.name} requested a withdrawal of $${Number(request.amount).toFixed(2)}.`,
-    relatedId: request._id,
-    relatedModel: 'WithdrawalRequest',
+  await notifyWithdrawalEvent({
+    member,
+    request,
+    status: 'pending',
   });
 
   return { request, availability };
@@ -71,7 +70,7 @@ async function getWithdrawalRequestsForAdmin() {
   return WithdrawalRequest.find({}).populate({ path: 'member', select: 'name email savings profit' }).sort({ createdAt: -1 }).lean();
 }
 
-async function updateWithdrawalRequestStatus(requestId, status, adminNote = '') {
+async function updateWithdrawalRequestStatus(requestId, status, adminNote = '', options = {}) {
   const request = await WithdrawalRequest.findById(requestId);
   if (!request) {
     const error = new Error('Withdrawal request not found.');
@@ -79,22 +78,65 @@ async function updateWithdrawalRequestStatus(requestId, status, adminNote = '') 
     throw error;
   }
 
+  const previousStatus = request.status;
   request.status = status;
   request.adminNote = adminNote?.trim() || '';
-  if (status === 'processed') {
+
+  if (options.paymentMethod) {
+    request.paymentMethod = normalizePaymentChannel(options.paymentMethod, request.paymentMethod || 'cash');
+  }
+  if (options.disbursementReference) {
+    request.disbursementReference = String(options.disbursementReference).trim();
+  }
+
+  if (status === 'processed' && previousStatus !== 'processed') {
     const member = await User.findById(request.member);
     if (member) {
       member.savings = Math.max(Number(member.savings) - Number(request.amount), 0);
       await member.save();
     }
+    request.processedAt = new Date();
+    request.processedBy = options.actorName || 'Cashier';
   }
+
   await request.save();
 
   const member = await User.findById(request.member).select('name email phone');
   if (member) {
-    await notifyMemberByEmailAndSms(member, {
-      subject: `Withdrawal Request ${status}`,
-      message: `Dear ${member.name}, your withdrawal request for $${Number(request.amount).toFixed(2)} is now ${status}.`,
+    await notifyWithdrawalEvent({
+      member,
+      request,
+      status,
+      actorName: options.actorName || 'Cashier',
+    });
+  }
+
+  if (status === 'processed') {
+    await recordAdminActivity({
+      action: 'withdrawal_processed',
+      actor: options.actor || null,
+      targetUserId: member?._id || request.member,
+      targetEmail: member?.email || '',
+      details: {
+        amount: request.amount,
+        paymentMethod: request.paymentMethod,
+        disbursementReference: request.disbursementReference,
+        previousStatus,
+      },
+      ip: options.ip || '',
+    });
+  } else if (previousStatus !== status) {
+    await recordAdminActivity({
+      action: 'withdrawal_status_updated',
+      actor: options.actor || null,
+      targetUserId: member?._id || request.member,
+      targetEmail: member?.email || '',
+      details: {
+        amount: request.amount,
+        status,
+        previousStatus,
+      },
+      ip: options.ip || '',
     });
   }
 

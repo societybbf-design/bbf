@@ -43,11 +43,14 @@ router.post('/monthly', requirePasswordConfirmation, async (req, res) => {
 
 router.post('/distribute', requirePasswordConfirmation, async (req, res) => {
   try {
+    const { clientIp } = require('../services/securityService');
     const result = await distributeEqually({
       amount: req.body?.amount,
       note: req.body?.note || '',
       distributedBy: req.session?.user?.name || 'Cashier',
       debitBankLedger: req.body?.debitBankLedger !== false,
+      actor: req.session?.user || null,
+      ip: clientIp(req),
     });
     return res.json(result);
   } catch (error) {

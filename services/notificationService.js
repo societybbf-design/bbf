@@ -60,22 +60,39 @@ function createReceiptPdf(member, deposit, adminName) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const buffers = [];
+    const { paymentChannelLabel } = require('./paymentChannelService');
 
     doc.on('data', (chunk) => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    doc.fontSize(20).fillColor('#0f172a').text('Society Management Receipt', { align: 'center' });
+    const receiptNumber = deposit.receiptNumber || `DEP-${String(deposit._id || '').slice(-8).toUpperCase()}`;
+    const channelLabel = paymentChannelLabel(deposit.paymentMethod || 'cash');
+
+    doc.fontSize(20).fillColor('#0f766e').text('SocietyHub Official Receipt', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(11).fillColor('#64748b').text('Digital money receipt / invoice', { align: 'center' });
     doc.moveDown(1);
     doc.fontSize(12).fillColor('#1f2937');
+    doc.text(`Transaction ID: ${receiptNumber}`);
     doc.text(`Member: ${member.name}`);
     doc.text(`Email: ${member.email}`);
-    doc.text(`Admin: ${adminName}`);
+    doc.text(`Recorded by: ${adminName}`);
     doc.text(`Date: ${deposit.createdAt.toISOString().slice(0, 10)}`);
+    doc.text(`Payment channel: ${channelLabel}`);
+    if (deposit.paymentReference) {
+      doc.text(`Payment reference: ${deposit.paymentReference}`);
+    }
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text(`Deposit Amount: $${deposit.amount.toFixed(2)}`);
+    doc.fontSize(14).fillColor('#111827').text(`Amount: $${deposit.amount.toFixed(2)}`);
+    if (deposit.type && deposit.type !== 'regular') {
+      doc.fontSize(11).fillColor('#374151').text(`Type: ${deposit.type}`);
+    }
+    if (deposit.yearMonth) {
+      doc.text(`Contribution month: ${deposit.yearMonth}`);
+    }
     doc.moveDown(1);
-    doc.fontSize(12).fillColor('#374151').text('Thank you for your deposit. This receipt confirms that the payment has been recorded successfully.');
+    doc.fontSize(12).fillColor('#374151').text('This official digital receipt confirms that the payment has been recorded in the society ledger.');
     doc.end();
   });
 }

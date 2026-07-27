@@ -1795,6 +1795,41 @@ function bindMemberChatUi() {
 }
 
 // Initialize on page load
+let memberDepositTrendChart = null;
+
+async function loadMemberDepositTrend() {
+  const ctx = document.getElementById('memberDepositTrendChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  try {
+    const response = await fetch('/api/admin/analytics/member-trends');
+    const trends = await response.json();
+    if (!response.ok) throw new Error(trends.error);
+    if (memberDepositTrendChart) memberDepositTrendChart.destroy();
+    memberDepositTrendChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: trends.labels || [],
+        datasets: [{
+          label: 'Deposits',
+          data: trends.series?.deposits || [],
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15, 118, 110, 0.1)',
+          tension: 0.35,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true } },
+      },
+    });
+  } catch (error) {
+    console.warn('Unable to load member deposit trend:', error.message);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   bindSidebarControls();
   bindMemberReportCards();
@@ -1812,6 +1847,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSocietyInvestments();
   void loadMemberInvestmentRequests();
   void loadLoanEligibility();
+  void loadMemberDepositTrend();
 
   document.getElementById('memberSelfPasswordForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
