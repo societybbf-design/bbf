@@ -402,6 +402,7 @@ async function replaceMember({
   departingDoc.exitSettledAt = new Date();
   departingDoc.exitSettlementAmount = requiredEntry;
   departingDoc.exitSettledBy = String(recordedBy || '').trim();
+  departingDoc.exitSettlementSource = 'replacement';
   departingDoc.savings = 0;
   departingDoc.profit = 0;
   departingDoc.advanceBalance = 0;
@@ -524,12 +525,191 @@ async function getMigrationOverview() {
   };
 }
 
+/**
+ * Exit a member with no replacement buyer: pay settlement from the society bank ledger
+ * (society fund cash), zero live balances (share returns to the remaining pool), soft-delete.
+ * Settlement = savings + profit + advance. Blocked if outstanding loans or insufficient bank cash.
+ */
+async function exitMemberViaSocietyFund({
+  memberId,
+  notes = '',
+  recordedBy = 'CEO',
+  confirmSettlementAmount = null,
+}) {
+  if (!memberId) {
+    const error = new Error('Member is required for society-fund exit.');
+    error.status = 400;
+    throw error;
+  }
+
+  const valuation = await getEntryValuation({ replaceMemberId: memberId });
+  const settlement = money(valuation.entryAmount);
+  const departingBefore = valuation.departing;
+
+  if (confirmSettlementAmount != null && confirmSettlementAmount !== ''
+    && !amountsMatch(confirmSettlementAmount, settlement)) {
+    const error = new Error(
+      `Confirm the exact settlement of ${formatMoney(settlement, 2)}. Received ${formatMoney(confirmSettlementAmount, 2)}.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const member = await User.findOne({
+    _id: memberId,
+    role: 'member',
+    status: { $in: ['active', 'inactive'] },
+  });
+  if (!member) {
+    const error = new Error('Member not found or already removed.');
+    error.status = 404;
+    throw error;
+  }
+
+  if (member.pendingEntryBuyIn) {
+    const error = new Error('This member still has a pending buy-in and cannot exit via society fund.');
+    error.status = 400;
+    throw error;
+  }
+
+  const LoanApplication = require('../models/LoanApplication');
+  const blockingLoans = await LoanApplication.find({
+    member: memberId,
+    status: { $in: ['pending', 'approved', 'disbursed'] },
+  }).select('status amount outstandingBalance repaymentStatus loanType');
+
+  const unresolved = blockingLoans.filter((loan) => {
+    if (loan.status === 'pending' || loan.status === 'approved') return true;
+    if (loan.status === 'disbursed') {
+      if (loan.repaymentStatus === 'paid_off') return false;
+      const outstanding = loan.outstandingBalance != null
+        ? Number(loan.outstandingBalance)
+        : Number(loan.amount || 0);
+      return outstanding > 0.009;
+    }
+    return false;
+  });
+
+  if (unresolved.length) {
+    const error = new Error(
+      'Cannot exit via society fund while the member has pending, approved, or outstanding loans. Clear loans first, or use replacement exit if applicable.'
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const { debit, getLedger } = require('./bankLedgerService');
+  let bookBalance = 0;
+  try {
+    const ledgerSummary = await getLedger({ entryLimit: 1 });
+    bookBalance = money(ledgerSummary?.bookBalance);
+  } catch (error) {
+    // opening may not be set — debit() will throw a clearer error
+  }
+  if (settlement > 0 && bookBalance + 0.001 < settlement) {
+    const error = new Error(
+      `Society bank cash is insufficient for this exit. Settlement ${formatMoney(settlement, 2)}; book balance ${formatMoney(bookBalance, 2)}. Record a replacement buy-in (brings cash in first) or top up the bank ledger.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  let exitDeposit = null;
+  let bankDebit = null;
+  const exitNotes = notes?.trim()
+    || `Exit settlement funded from society fund (no replacement buyer)`;
+  const removalReason = notes?.trim()
+    || `Exited without replacement; settlement ${formatMoney(settlement, 2)} paid from society fund`;
+
+  if (settlement > 0) {
+    exitDeposit = await Deposit.create({
+      member: member._id,
+      amount: settlement,
+      type: 'exit_settlement',
+      notes: exitNotes,
+      recordedBy: String(recordedBy || 'CEO').trim(),
+    });
+
+    try {
+      // Hard debit — must succeed so cash and membership stay consistent
+      bankDebit = await debit({
+        type: 'project_payout',
+        amount: settlement,
+        referenceType: 'Deposit',
+        referenceId: exitDeposit._id,
+        note: `Society-fund exit payout to ${member.name}`,
+        createdBy: recordedBy,
+      });
+    } catch (err) {
+      await Deposit.deleteOne({ _id: exitDeposit._id }).catch(() => {});
+      throw err;
+    }
+  }
+
+  try {
+    member.exitSettledAt = new Date();
+    member.exitSettlementAmount = settlement;
+    member.exitSettledBy = String(recordedBy || '').trim();
+    member.exitSettlementSource = 'society_fund';
+    member.savings = 0;
+    member.profit = 0;
+    member.advanceBalance = 0;
+    await member.save();
+
+    const removed = await removeMember(memberId, {
+      reason: removalReason,
+      deletedBy: recordedBy,
+    });
+
+    return {
+      valuation,
+      departingMember: {
+        id: removed.id || removed._id,
+        name: removed.name,
+        email: removed.email,
+        status: removed.status,
+        settledAmount: settlement,
+        settlementSource: 'society_fund',
+        balancesBeforeExit: departingBefore,
+      },
+      exitDeposit,
+      bankLedger: {
+        debit: bankDebit,
+        bookBalanceAfter: bankDebit?.ledger?.bookBalance
+          ?? money(bookBalance - settlement),
+      },
+      message: settlement > 0
+        ? `Member exited. ${formatMoney(settlement, 2)} paid from society fund; share returned to the remaining pool.`
+        : 'Member exited with zero settlement. Seat removed from the active pool.',
+    };
+  } catch (err) {
+    // Best-effort reverse of the bank debit if membership updates fail after payout.
+    if (settlement > 0 && bankDebit) {
+      try {
+        const { credit } = require('./bankLedgerService');
+        await credit({
+          type: 'deposit',
+          amount: settlement,
+          referenceType: 'Deposit',
+          referenceId: exitDeposit?._id || null,
+          note: `Rollback society-fund exit for ${member.name}`,
+          createdBy: recordedBy,
+        });
+      } catch (_) {
+        // Preserve the original membership error for the API response.
+      }
+    }
+    throw err;
+  }
+}
+
 module.exports = {
   money,
   amountsMatch,
   getEntryValuation,
   setMemberOpeningBalances,
   replaceMember,
+  exitMemberViaSocietyFund,
   getMigrationOverview,
   completeMemberBuyIn,
   prepareMemberForBuyIn,

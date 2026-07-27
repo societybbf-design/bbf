@@ -1625,6 +1625,42 @@
             <p id="memberReplaceMessage" class="message"></p>
           </form>
         </section>
+
+        <section class="panel-card">
+          <h2 data-i18n="admin.sections.societyFundExit">Society Fund Exit (no buyer)</h2>
+          <p class="table-subtitle" data-i18n="admin.subtitles.societyFundExit">
+            Use this when no replacement member is available. The society bank ledger pays the member’s exact exit settlement (savings + profit + advance), balances are cleared so the share returns to the remaining pool, and the account is soft-deleted. Requires sufficient book balance and no outstanding loans.
+          </p>
+          <form id="memberSocietyFundExitForm" class="add-member-form">
+            <div class="form-group">
+              <label data-i18n="admin.forms.departingMember">
+                Departing member
+                <select name="memberId" id="societyExitMemberSelect" required>
+                  <option value="">Select departing member…</option>
+                </select>
+              </label>
+            </div>
+            <div id="societyExitValuationBox" class="panel-card u-mb-1">
+              <p class="table-subtitle">Select a member to load the society-fund exit settlement.</p>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.exactSettlementAmount">
+                  Exact settlement amount (৳)
+                  <input type="number" name="confirmSettlementAmount" id="societyExitAmountInput" min="0" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label data-i18n="admin.forms.notes">
+                  Notes
+                  <input type="text" name="notes" placeholder="Optional exit note" />
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn" data-i18n="admin.buttons.societyFundExit">Pay Exit from Society Fund</button>
+            <p id="memberSocietyFundExitMessage" class="message"></p>
+          </form>
+        </section>
       </section>
 
       <section class="page-section" data-page-section="settings">

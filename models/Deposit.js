@@ -19,7 +19,7 @@ const DepositSchema = new mongoose.Schema({
    * advance — surplus funds credited to member advanceBalance (not savings)
    * borrow_repayment — repayment of an internal borrowing (settles to lender advance)
    * member_buyin — new member share valuation deposit (activates account)
-   * exit_settlement — payout/settlement to a departing member funded by replacement payment
+   * exit_settlement — payout/settlement to a departing member (replacement payment or society fund)
    */
   type: {
     type: String,

@@ -64,7 +64,7 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
-  /** Exit settlement metadata (when replaced / paid out via incoming buy-in) */
+  /** Exit settlement metadata (when replaced or paid out from society fund) */
   exitSettledAt: {
     type: Date,
     default: null,
@@ -77,6 +77,12 @@ const UserSchema = new mongoose.Schema({
   exitSettledBy: {
     type: String,
     trim: true,
+    default: '',
+  },
+  /** How the exit was funded: replacement buy-in or society bank / fund payout */
+  exitSettlementSource: {
+    type: String,
+    enum: ['', 'replacement', 'society_fund'],
     default: '',
   },
   /** Historical savings migrated from pre-digital operations */

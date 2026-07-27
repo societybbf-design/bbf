@@ -1841,7 +1841,8 @@ async function populateMigrationMemberSelects() {
   const openingSelect = document.getElementById('openingBalanceMemberSelect');
   const replaceSelect = document.getElementById('replaceDepartingSelect');
   const replaceNewSelect = document.getElementById('replaceNewMemberSelect');
-  if (!openingSelect && !replaceSelect && !replaceNewSelect) return;
+  const societyExitSelect = document.getElementById('societyExitMemberSelect');
+  if (!openingSelect && !replaceSelect && !replaceNewSelect && !societyExitSelect) return;
 
   try {
     const response = await fetch('/api/admin/members');
@@ -1860,6 +1861,9 @@ async function populateMigrationMemberSelects() {
     }
     if (replaceNewSelect) {
       replaceNewSelect.innerHTML = `<option value="">Select existing member account…</option>${options}`;
+    }
+    if (societyExitSelect) {
+      societyExitSelect.innerHTML = `<option value="">Select departing member…</option>${options}`;
     }
   } catch (error) {
     console.error('Unable to populate migration member selects:', error);
@@ -1918,6 +1922,38 @@ async function loadReplacementValuation(memberId) {
   }
 }
 
+async function loadSocietyFundExitValuation(memberId) {
+  const box = document.getElementById('societyExitValuationBox');
+  const amountInput = document.getElementById('societyExitAmountInput');
+  if (!box) return;
+  if (!memberId) {
+    box.innerHTML = '<p class="table-subtitle">Select a member to load the society-fund exit settlement.</p>';
+    if (amountInput) amountInput.value = '';
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/admin/members/entry-valuation?replaceMemberId=${encodeURIComponent(memberId)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to calculate valuation.');
+    const v = data.valuation || {};
+    const d = v.departing || {};
+    box.innerHTML = `
+      <p><strong>Society-fund exit settlement: ${formatMoney(Number(v.entryAmount || 0), 2)}</strong></p>
+      <p class="table-subtitle">${escapeCeoHtml(v.formula || '')}</p>
+      <p class="table-subtitle">Departing: ${escapeCeoHtml(d.name || '')} — Savings ${formatMoney(Number(d.savings || 0), 2)} + Profit ${formatMoney(Number(d.profit || 0), 2)} + Advance ${formatMoney(Number(d.advanceBalance || 0), 2)}</p>
+      <p class="table-subtitle">Paid from society bank ledger. Member balances are cleared and the seat returns to the remaining pool. Requires enough book cash and no outstanding loans.</p>
+      <p class="table-subtitle">Society fund (all active): Savings ${formatMoney(Number(v.totalSavings || 0), 2)} · Profit ${formatMoney(Number(v.totalProfit || 0), 2)} · Advance ${formatMoney(Number(v.totalAdvance || 0), 2)} · Members ${v.activeCount || 0}</p>
+    `;
+    if (amountInput) {
+      amountInput.value = Number(v.entryAmount || 0).toFixed(2);
+      amountInput.readOnly = true;
+    }
+  } catch (error) {
+    box.innerHTML = `<p class="message">${escapeCeoHtml(error.message)}</p>`;
+  }
+}
+
 async function initMemberMigrationUi() {
   await populateMigrationMemberSelects();
   await loadMigrationOverview();
@@ -1936,6 +1972,10 @@ async function initMemberMigrationUi() {
 
   document.getElementById('replaceDepartingSelect')?.addEventListener('change', (event) => {
     void loadReplacementValuation(event.target.value);
+  });
+
+  document.getElementById('societyExitMemberSelect')?.addEventListener('change', (event) => {
+    void loadSocietyFundExitValuation(event.target.value);
   });
 
   document.getElementById('openingBalanceForm')?.addEventListener('submit', async (event) => {
@@ -1991,6 +2031,46 @@ async function initMemberMigrationUi() {
       }
       event.target.reset();
       document.getElementById('replaceValuationBox').innerHTML = '<p class="table-subtitle">Select a departing member to load the calculated entry valuation.</p>';
+      await populateMigrationMemberSelects();
+      await loadMigrationOverview();
+      await loadCeoStaffDirectory();
+      await fetchSummary();
+      await fetchMembers();
+    } catch (error) {
+      if (msg) msg.textContent = error.message;
+    }
+  });
+
+  document.getElementById('memberSocietyFundExitForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('memberSocietyFundExitMessage');
+    if (msg) msg.textContent = '';
+    const formData = new FormData(event.target);
+    const memberName = document.getElementById('societyExitMemberSelect')?.selectedOptions?.[0]?.textContent || 'this member';
+    const amount = formData.get('confirmSettlementAmount');
+    const confirmed = window.confirm(
+      `Pay exit settlement of ${formatMoney(Number(amount || 0))} from the society fund for ${memberName}? This soft-deletes the member and cannot be undone from this screen.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch('/api/admin/members/exit-society-fund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId: formData.get('memberId'),
+          notes: formData.get('notes'),
+          confirmSettlementAmount: formData.get('confirmSettlementAmount'),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to process society-fund exit.');
+      if (msg) {
+        msg.textContent = data.message
+          || `Society-fund exit completed for ${data.departingMember?.name || 'member'}.`;
+      }
+      event.target.reset();
+      document.getElementById('societyExitValuationBox').innerHTML = '<p class="table-subtitle">Select a member to load the society-fund exit settlement.</p>';
       await populateMigrationMemberSelects();
       await loadMigrationOverview();
       await loadCeoStaffDirectory();

@@ -436,6 +436,7 @@
       "usersRolesDirectory": "Users & Roles Directory",
       "openingBalanceMigration": "Opening Balance / Historical Migration",
       "memberReplacement": "Member Replacement",
+      "societyFundExit": "Society Fund Exit (no buyer)",
       "accountSecurity": "Account security",
       "systemSettings": "System Settings",
       "digitalNoticeBoard": "Digital Notice Board",
@@ -547,6 +548,7 @@
       "createMember": "Create Member",
       "saveOpeningBalances": "Save Opening Balances",
       "replaceMemberRecordEntry": "Replace Member & Record Entry",
+      "societyFundExit": "Pay Exit from Society Fund",
       "updatePassword": "Update password",
       "publishNotice": "Publish Notice",
       "backToInvestors": "← Back to Investors",
@@ -592,6 +594,9 @@
       "breakdownTotal": "Total",
       "breakdownInvested": "Invested",
       "breakdownSold": "Sold"
+    },
+    "subtitles": {
+      "societyFundExit": "Use this when no replacement member is available. The society bank ledger pays the member’s exact exit settlement (savings + profit + advance), balances are cleared so the share returns to the remaining pool, and the account is soft-deleted. Requires sufficient book balance and no outstanding loans."
     }
   },
   "tracking": {
