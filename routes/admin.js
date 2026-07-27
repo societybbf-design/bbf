@@ -26,6 +26,7 @@ const {
   getEntryValuation,
   setMemberOpeningBalances,
   replaceMember,
+  exitMemberViaSocietyFund,
   getMigrationOverview,
 } = require('../services/memberMigrationService');
 const { userHasPermission, isFullAccessRole } = require('../services/rbac');
@@ -96,6 +97,20 @@ router.post('/members/replace', manageMigration, requirePasswordConfirmation, as
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to replace member.' });
+  }
+});
+
+router.post('/members/exit-society-fund', manageMigration, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await exitMemberViaSocietyFund({
+      memberId: req.body?.memberId || req.body?.departingMemberId,
+      notes: req.body?.notes,
+      confirmSettlementAmount: req.body?.confirmSettlementAmount ?? req.body?.settlementAmount,
+      recordedBy: req.session?.user?.name || 'CEO',
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to process society-fund exit.' });
   }
 });
 
