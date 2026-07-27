@@ -1049,7 +1049,8 @@ function renderMembersDirectory(members = adminMembers, loading = false) {
     button.addEventListener('click', () => {
       const memberId = button.dataset.memberId;
       if (memberId) {
-        history.pushState({}, '', `/members/${memberId}`);
+        navigateToPage('members', null, { syncUrl: false });
+        history.pushState({ memberId }, '', `/members/${memberId}`);
         void renderMemberDirectoryDetail(memberId);
       }
     });
@@ -1089,7 +1090,8 @@ async function renderMemberDirectoryDetail(memberId) {
     const backButton = document.getElementById('backToMembersDirectory');
     if (backButton) {
       backButton.addEventListener('click', () => {
-        history.pushState({}, '', '/admin');
+        history.pushState({}, '', '/admin#members');
+        navigateToPage('members');
         renderMembersDirectory(adminMembers, false);
       });
     }
@@ -1104,7 +1106,7 @@ async function renderMemberDirectoryDetail(memberId) {
 }
 
 window.addEventListener('popstate', () => {
-  renderMembersDirectory(adminMembers, false);
+  void restoreAdminLocation({ fromPopState: true });
 });
 
 // Profile Dropdown
@@ -1162,7 +1164,7 @@ if (memberProfileModal) {
   });
 }
 
-function navigateToPage(page, sectionId = null) {
+function navigateToPage(page, sectionId = null, { syncUrl = true } = {}) {
   if (typeof canOpenOpsPage === 'function' && !canOpenOpsPage(page)) {
     page = firstAllowedOpsPage();
   }
@@ -1201,13 +1203,17 @@ function navigateToPage(page, sectionId = null) {
     });
   }
 
-  const hashPage = (window.location.hash || '').replace(/^#/, '');
-  if (hashPage !== page) {
-    window.history.replaceState(null, '', `#${page}`);
+  if (syncUrl) {
+    const nextUrl = `/admin#${page}`;
+    const currentUrl = `${window.location.pathname}${window.location.hash}`;
+    if (currentUrl !== nextUrl) {
+      window.history.replaceState(null, '', nextUrl);
+    }
   }
 }
 
 const ADMIN_PAGE_I18N_KEYS = {
+  dashboard: 'dashboard',
   members: 'members',
   deposits: 'deposits',
   investments: 'investments',
@@ -1243,15 +1249,35 @@ function updatePageContent(page, loanTab = null) {
   pageNote.textContent = adminPageText(page, 'note', pageNote.textContent);
 
   switch (page) {
+    case 'dashboard':
+      void fetchSummary();
+      void loadMonthlyContributionDashboard();
+      void refreshLoanPortfolioData();
+      void loadDashboardSnapshot();
+      break;
+    case 'deposits':
+      void fetchDepositHistory();
+      void loadMonthlyTargetsUi();
+      break;
+    case 'members':
+      void fetchMembers();
+      break;
+    case 'withdrawals':
+      void loadWithdrawalRequests();
+      break;
+    case 'payments':
+      break;
     case 'investments':
       void loadInvestments();
       void loadInvestmentFormOptions().then(() => loadInvestorPortfolio()).catch(() => {});
+      void loadInvestmentIous();
       break;
     case 'projects':
       void loadProjectsModule();
       break;
     case 'profit':
       void loadInvestmentProfitHistory();
+      void loadProfitHistory();
       break;
     case 'sales':
       void loadSellList();
@@ -1273,6 +1299,7 @@ function updatePageContent(page, loanTab = null) {
       break;
     case 'settings':
       void loadPendingKycDocuments();
+      void loadNotices();
       break;
     case 'messages':
       stopChatPolling('admin-page');
@@ -1291,9 +1318,10 @@ function updatePageContent(page, loanTab = null) {
       if (!ADMIN_PAGE_I18N_KEYS[page]) {
         pageTitle.textContent = adminPageText('dashboard', 'title', 'Dashboard');
         pageNote.textContent = adminPageText('dashboard', 'note', pageNote.textContent);
+        void fetchSummary();
+        void loadMonthlyContributionDashboard();
+        void refreshLoanPortfolioData();
       }
-      void refreshLoanPortfolioData();
-      void loadMonthlyContributionDashboard();
       break;
   }
 }
@@ -1615,7 +1643,7 @@ async function loadInvestorsModule() {
 }
 
 async function openInvestorDetail(investorId, { pushUrl = false } = {}) {
-  navigateToPage('investors');
+  navigateToPage('investors', null, { syncUrl: false });
   const listPanel = document.getElementById('investorsListPanel');
   const detailPanel = document.getElementById('investorDetailPanel');
   const content = document.getElementById('investorDetailContent');
@@ -1739,7 +1767,7 @@ async function loadProjectManagersModule() {
 }
 
 async function openProjectManagerDetail(managerId, { pushUrl = false } = {}) {
-  navigateToPage('project-managers');
+  navigateToPage('project-managers', null, { syncUrl: false });
   const listPanel = document.getElementById('projectManagersListPanel');
   const detailPanel = document.getElementById('projectManagerDetailPanel');
   const content = document.getElementById('projectManagerDetailContent');
@@ -2282,16 +2310,25 @@ function bindProjectsModule() {
 
 function bindInvestorPmNavigation() {
   document.getElementById('backToInvestorsBtn')?.addEventListener('click', () => {
-    window.history.pushState({}, '', '/admin');
+    window.history.pushState({}, '', '/admin#investors');
+    navigateToPage('investors');
     loadInvestorsModule();
   });
   document.getElementById('backToProjectManagersBtn')?.addEventListener('click', () => {
-    window.history.pushState({}, '', '/admin');
+    window.history.pushState({}, '', '/admin#project-managers');
+    navigateToPage('project-managers');
     loadProjectManagersModule();
   });
 
-  window.addEventListener('popstate', () => {
-    handleAdminDeepLink();
+  window.addEventListener('hashchange', () => {
+    if (/^\/admin\/(investors|project-managers)\//i.test(window.location.pathname)
+      || /^\/members\//i.test(window.location.pathname)) {
+      return;
+    }
+    const hashPage = (window.location.hash || '').replace(/^#/, '');
+    if (hashPage && canOpenOpsPage(hashPage) && hashPage !== currentPage) {
+      navigateToPage(hashPage, null, { syncUrl: false });
+    }
   });
 }
 
@@ -2299,6 +2336,7 @@ function handleAdminDeepLink() {
   const path = window.location.pathname;
   const investorMatch = path.match(/^\/admin\/investors\/([a-f\d]{24})$/i);
   const pmMatch = path.match(/^\/admin\/project-managers\/([a-f\d]{24})$/i);
+  const memberMatch = path.match(/^\/members\/([^/]+)$/i);
 
   if (investorMatch) {
     openInvestorDetail(investorMatch[1], { pushUrl: false });
@@ -2308,7 +2346,44 @@ function handleAdminDeepLink() {
     openProjectManagerDetail(pmMatch[1], { pushUrl: false });
     return true;
   }
+  if (memberMatch) {
+    navigateToPage('members', null, { syncUrl: false });
+    void renderMemberDirectoryDetail(memberMatch[1]);
+    return true;
+  }
   return false;
+}
+
+function resolveAdminBootPage() {
+  const hashPage = (window.location.hash || '').replace(/^#/, '');
+  if (hashPage === 'developer') {
+    return { redirect: '/user-management' };
+  }
+  if (handleAdminDeepLink()) {
+    return { handled: true };
+  }
+  if (hashPage && canOpenOpsPage(hashPage)) {
+    return { page: hashPage };
+  }
+  if (hashPage && !canOpenOpsPage(hashPage)) {
+    return { page: firstAllowedOpsPage() };
+  }
+  const isStaff = !['ceo', 'admin'].includes(window.adminSessionUser?.role);
+  return { page: isStaff ? firstAllowedOpsPage() : (currentPage || 'dashboard') };
+}
+
+function restoreAdminLocation({ fromPopState = false } = {}) {
+  const resolved = resolveAdminBootPage();
+  if (resolved.redirect) {
+    window.location.href = resolved.redirect;
+    return;
+  }
+  if (resolved.handled) {
+    return;
+  }
+  if (resolved.page) {
+    navigateToPage(resolved.page, null, { syncUrl: !fromPopState || !window.location.hash });
+  }
 }
 
 async function initCeoPanel() {
@@ -7502,7 +7577,8 @@ document.addEventListener('click', async (event) => {
   if (searchLink) {
     const { memberId } = searchLink.dataset;
     if (memberId) {
-      history.pushState({}, '', `/members/${memberId}`);
+      navigateToPage('members', null, { syncUrl: false });
+      history.pushState({ memberId }, '', `/members/${memberId}`);
       void renderMemberDirectoryDetail(memberId);
     }
     if (searchMemberDetails) {
@@ -7538,38 +7614,10 @@ document.addEventListener('DOMContentLoaded', () => {
       window.location.href = '/user-management';
       return;
     }
-    const hashPage = (window.location.hash || '').replace(/^#/, '');
-
-    if (hashPage === 'developer') {
-      window.location.href = '/user-management';
-      return;
-    }
-
-    if (hashPage === 'ceo') {
-      if (canOpenOpsPage('ceo')) {
-        navigateToPage(hashPage);
-      } else {
-        navigateToPage(firstAllowedOpsPage());
-      }
-      return;
-    }
-
-    if (hashPage && canOpenOpsPage(hashPage)) {
-      navigateToPage(hashPage);
-      return;
-    }
-
-    if (!handleAdminDeepLink()) {
-      const isStaff = !['ceo', 'admin'].includes(window.adminSessionUser.role);
-      navigateToPage(isStaff ? firstAllowedOpsPage() : currentPage);
-    }
+    restoreAdminLocation();
   };
   void bootAdmin();
 
-  // Critical dashboard data only — everything else waits for idle time
-  void fetchSummary();
-  void fetchMembers();
-  void loadFinancialTrendCharts();
   document.getElementById('refreshActivityLogBtn')?.addEventListener('click', () => {
     void loadActivityLog();
   });
@@ -7597,28 +7645,6 @@ document.addEventListener('DOMContentLoaded', () => {
       msg.textContent = error.message;
     }
   });
-
-  const deferSecondaryLoads = () => {
-    void fetchDepositHistory();
-    void loadMonthlyContributionDashboard();
-    void loadMonthlyTargetsUi();
-    void refreshLoanPortfolioData();
-    void loadDashboardSnapshot();
-    void loadNotices();
-    void loadInvestments();
-    void loadInvestmentIous();
-    void loadProfitHistory();
-    void loadInvestmentProfitHistory();
-    void loadWithdrawalRequests();
-    void loadLoanApplications();
-    void loadLoanRepayments();
-  };
-
-  if (window.requestIdleCallback) {
-    window.requestIdleCallback(deferSecondaryLoads, { timeout: 2000 });
-  } else {
-    window.setTimeout(deferSecondaryLoads, 400);
-  }
 
   window.addEventListener('themechange', () => {
     initializeDepositChart(lastSummaryData);

@@ -75,7 +75,7 @@ const FEATURE_CATALOG = [
 let staffSessionUser = null;
 let staffMembersCache = [];
 let staffInvestorsCache = [];
-let staffCurrentView = 'home';
+let staffCurrentView = null;
 let staffCanManageLedger = false;
 let auditState = { offset: 0, hasMore: false, filters: {} };
 let activeMemberProfileId = null;
@@ -453,14 +453,16 @@ function enhanceTableCards(root = document) {
   });
 }
 
-function showStaffView(viewId) {
+function showStaffView(viewId, { forceReload = false } = {}) {
   const next = viewId || 'home';
   const prev = staffCurrentView;
-  staffCurrentView = next;
+  const sameView = prev === next;
 
   if (prev === 'chat' && next !== 'chat') {
     stopCashierChatPolling();
   }
+
+  staffCurrentView = next;
 
   document.querySelectorAll('[data-staff-view]').forEach((el) => {
     el.classList.toggle('hidden', el.dataset.staffView !== next);
@@ -472,6 +474,12 @@ function showStaffView(viewId) {
 
   if (window.location.hash.replace(/^#/, '') !== next) {
     window.history.replaceState(null, '', `#${next}`);
+  }
+
+  // Skip duplicate fetches when hashchange echoes a click that already loaded this view.
+  if (sameView && !forceReload) {
+    window.SocietyHubSidebar?.close?.();
+    return;
   }
 
   Promise.resolve(loadViewData(next)).finally(() => {

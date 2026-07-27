@@ -118,13 +118,19 @@ document.addEventListener('bbbf:languagechange', () => {
   window.SocietyHubMobileMenu?.refreshSections?.();
 });
 
-function navigateMemberPage(page) {
+function navigateMemberPage(page, { syncUrl = true } = {}) {
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.classList.toggle('active', item.getAttribute('data-page') === page);
   });
   document.querySelectorAll('.page-section').forEach((section) => {
     section.classList.toggle('active', section.getAttribute('data-page-section') === page);
   });
+  if (syncUrl) {
+    const nextHash = `#${page}`;
+    if ((window.location.hash || '') !== nextHash) {
+      window.history.replaceState(null, '', `/member${nextHash}`);
+    }
+  }
   updateMemberPageContent(page);
   if (page === 'loans' || page === 'dashboard') {
     void loadLoanEligibility();
@@ -153,6 +159,18 @@ function navigateMemberPage(page) {
   }
   if (page === 'dashboard') {
     void loadMemberCashierTrackingTeaser();
+  }
+  if (page === 'portfolio' || page === 'investments') {
+    void loadSocietyInvestments();
+  }
+  if (page === 'withdrawals') {
+    void loadWithdrawalRequests();
+  }
+  if (page === 'refunds') {
+    void loadRefunds();
+  }
+  if (page === 'documents') {
+    void loadKycDocuments();
   }
 }
 
@@ -2016,30 +2034,31 @@ document.addEventListener('DOMContentLoaded', () => {
   bindLoanAndKycForms();
   bindMemberNotificationUi();
   bindMemberChatUi();
-  loadProfile();
-  loadWithdrawalRequests();
-  loadRefunds();
-  loadLoanApplications();
-  loadLoanRepayments();
-  loadLoanDashboardSummary();
-  loadOutstandingLoanSummary();
-  loadKycDocuments();
-  loadSocietyInvestments();
-  void loadMemberInvestmentRequests();
-  void loadMemberExitRequests();
-  void loadLoanEligibility();
-  void loadMemberDepositTrend();
-  void loadMemberCashierTrackingTeaser();
 
   const hashPage = (window.location.hash || '').replace(/^#/, '');
-  if (hashPage && document.querySelector(`[data-page="${hashPage}"]`)) {
-    navigateMemberPage(hashPage);
+  const initialPage = (hashPage && document.querySelector(`[data-page="${hashPage}"]`))
+    ? hashPage
+    : 'dashboard';
+
+  // Critical profile first; page modules load via navigateMemberPage.
+  void loadProfile().then(() => {
+    navigateMemberPage(initialPage, { syncUrl: true });
+  });
+
+  if (initialPage === 'dashboard') {
+    void loadMemberDepositTrend();
   }
 
   document.getElementById('openCashierTrackingBtn')?.addEventListener('click', () => {
     navigateMemberPage('cashier-tracking');
-    window.location.hash = 'cashier-tracking';
     closeSidebar();
+  });
+
+  window.addEventListener('hashchange', () => {
+    const page = (window.location.hash || '').replace(/^#/, '') || 'dashboard';
+    if (document.querySelector(`[data-page="${page}"]`)) {
+      navigateMemberPage(page, { syncUrl: false });
+    }
   });
 
   document.getElementById('memberSelfPasswordForm')?.addEventListener('submit', async (event) => {
@@ -2064,13 +2083,6 @@ document.addEventListener('DOMContentLoaded', () => {
       msg.textContent = error.message;
     }
   });
-
-  setInterval(async () => {
-    if (!currentUser) {
-      return;
-    }
-    await loadProfile();
-  }, 10000);
 
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && currentUser) {

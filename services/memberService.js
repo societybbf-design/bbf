@@ -296,28 +296,45 @@ async function saveDeposit(memberId, amount, options = {}) {
 }
 
 async function getSummary() {
-  const members = await User.find({ role: 'member', status: { $ne: 'deleted' } });
-  const activeMembers = members.filter((member) => (member.status || 'active') === 'active');
-  const deletedMembers = await User.countDocuments({ role: 'member', status: 'deleted' });
-  const totalMembers = members.length;
-  const totalSavings = members.reduce((sum, member) => sum + Number(member.savings), 0);
-  const totalProfit = members.reduce((sum, member) => sum + Number(member.profit), 0);
-  const totalOpeningSavings = members.reduce((sum, member) => sum + Number(member.openingSavingsBalance || 0), 0);
-  const totalOpeningProfit = members.reduce((sum, member) => sum + Number(member.openingProfitBalance || 0), 0);
-  const totalDeposits = await Deposit.countDocuments();
-  const notices = await Notice.find({}).sort({ createdAt: -1 }).limit(5);
-  const activeMonthTarget = await getTargetForMonth();
+  const [memberAgg, deletedMembers, totalDeposits, notices, activeMonthTarget] = await Promise.all([
+    User.aggregate([
+      { $match: { role: 'member', status: { $ne: 'deleted' } } },
+      {
+        $group: {
+          _id: null,
+          totalMembers: { $sum: 1 },
+          activeMembers: {
+            $sum: {
+              $cond: [{ $eq: [{ $ifNull: ['$status', 'active'] }, 'active'] }, 1, 0],
+            },
+          },
+          totalSavings: { $sum: { $ifNull: ['$savings', 0] } },
+          totalProfit: { $sum: { $ifNull: ['$profit', 0] } },
+          totalOpeningSavings: { $sum: { $ifNull: ['$openingSavingsBalance', 0] } },
+          totalOpeningProfit: { $sum: { $ifNull: ['$openingProfitBalance', 0] } },
+        },
+      },
+    ]),
+    User.countDocuments({ role: 'member', status: 'deleted' }),
+    Deposit.countDocuments(),
+    Notice.find({}).sort({ createdAt: -1 }).limit(5).lean(),
+    getTargetForMonth(),
+  ]);
+
+  const totals = memberAgg[0] || {};
+  const totalMembers = totals.totalMembers || 0;
+  const activeMembers = totals.activeMembers || 0;
 
   return {
     totalMembers,
-    activeMembers: activeMembers.length,
-    inactiveMembers: totalMembers - activeMembers.length,
+    activeMembers,
+    inactiveMembers: Math.max(totalMembers - activeMembers, 0),
     deletedMembers,
     totalDeposits,
-    totalSavings,
-    totalProfit,
-    totalOpeningSavings,
-    totalOpeningProfit,
+    totalSavings: Number(totals.totalSavings || 0),
+    totalProfit: Number(totals.totalProfit || 0),
+    totalOpeningSavings: Number(totals.totalOpeningSavings || 0),
+    totalOpeningProfit: Number(totals.totalOpeningProfit || 0),
     notices,
     monthlyContributionAmount: activeMonthTarget.amount,
     activeMonthTarget,
