@@ -101,17 +101,9 @@ router.post('/members/replace', manageMigration, requirePasswordConfirmation, as
 });
 
 router.post('/members/exit-society-fund', manageMigration, requirePasswordConfirmation, async (req, res) => {
-  try {
-    const result = await exitMemberViaSocietyFund({
-      memberId: req.body?.memberId || req.body?.departingMemberId,
-      notes: req.body?.notes,
-      confirmSettlementAmount: req.body?.confirmSettlementAmount ?? req.body?.settlementAmount,
-      recordedBy: req.session?.user?.name || 'CEO',
-    });
-    return res.status(201).json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to process society-fund exit.' });
-  }
+  return res.status(400).json({
+    error: 'Direct society-fund exit is disabled. Initiate a Member Exit request so the departing member and remaining members can approve, then the Cashier completes payout.',
+  });
 });
 
 router.patch('/members/:id/opening-balance', manageMigration, requirePasswordConfirmation, async (req, res) => {

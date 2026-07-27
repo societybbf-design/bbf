@@ -144,6 +144,7 @@ function buildApp(sessionStore) {
   app.use('/api/admin', adminRoutes);
   app.use('/api/admin/deposits', adminDepositsRoutes);
   app.use('/api/admin/investments', investmentRoutes);
+  app.use('/api/admin/member-exits', require('./routes/memberExits'));
   app.use('/api/admin/ious', iouRoutes);
   app.use('/api/member', memberRoutes);
   app.use('/api/member/deposits', depositRoutes);

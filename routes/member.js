@@ -4,6 +4,12 @@ const Deposit = require('../models/Deposit');
 const Investment = require('../models/Investment');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 const { getGroupedSocietyInvestments, getInvestmentSummary, listPendingMemberInvestmentRequests, approveInvestmentByMember } = require('../services/investmentService');
+const {
+  listPendingExitRequestsForMember,
+  approveExitByDepartingMember,
+  rejectExitByDepartingMember,
+  approveExitByMember,
+} = require('../services/memberExitService');
 const { getDuesAlert, getNotices } = require('../services/memberService');
 const { getLatestDistribution, getMemberProfitHistory } = require('../services/profitService');
 const { getRefundsByMember } = require('../services/refundService');
@@ -67,6 +73,49 @@ router.post('/investment-requests/:id/approve', async (req, res) => {
     });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to approve investment.' });
+  }
+});
+
+router.get('/exit-requests', async (req, res) => {
+  try {
+    const requests = await listPendingExitRequestsForMember(req.session.user.id);
+    return res.json({ requests });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load exit requests.' });
+  }
+});
+
+router.post('/exit-requests/:id/approve', async (req, res) => {
+  try {
+    const memberId = req.session.user.id;
+    const pending = await listPendingExitRequestsForMember(memberId);
+    const target = pending.find((row) => String(row._id) === String(req.params.id));
+    if (!target) {
+      return res.status(404).json({ error: 'Exit request not found or not awaiting your approval.' });
+    }
+
+    let result;
+    if (target.status === 'pending_departing_approval') {
+      result = await approveExitByDepartingMember(req.params.id, memberId);
+    } else {
+      result = await approveExitByMember(req.params.id, memberId);
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to approve exit request.' });
+  }
+});
+
+router.post('/exit-requests/:id/reject', async (req, res) => {
+  try {
+    const result = await rejectExitByDepartingMember(
+      req.params.id,
+      req.session.user.id,
+      req.body?.reason
+    );
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to reject exit request.' });
   }
 });
 

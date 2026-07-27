@@ -1627,9 +1627,9 @@
         </section>
 
         <section class="panel-card">
-          <h2 data-i18n="admin.sections.societyFundExit">Society Fund Exit (no buyer)</h2>
+          <h2 data-i18n="admin.sections.societyFundExit">Member Exit &amp; Share Redistribution</h2>
           <p class="table-subtitle" data-i18n="admin.subtitles.societyFundExit">
-            Use this when no replacement member is available. The society bank ledger pays the member’s exact exit settlement (savings + profit + advance), balances are cleared so the share returns to the remaining pool, and the account is soft-deleted. Requires sufficient book balance and no outstanding loans.
+            CEO initiates exit only. The departing member must approve first, then all remaining members approve the proportional share redistribution. After unanimous approval, the Cashier pays the settlement — CEO cannot disburse.
           </p>
           <form id="memberSocietyFundExitForm" class="add-member-form">
             <div class="form-group">
@@ -1641,7 +1641,7 @@
               </label>
             </div>
             <div id="societyExitValuationBox" class="panel-card u-mb-1">
-              <p class="table-subtitle">Select a member to load the society-fund exit settlement.</p>
+              <p class="table-subtitle">Select a member to preview settlement and redistribution.</p>
             </div>
             <div class="form-row-2">
               <div class="form-group">
@@ -1657,9 +1657,14 @@
                 </label>
               </div>
             </div>
-            <button type="submit" class="primary-btn" data-i18n="admin.buttons.societyFundExit">Pay Exit from Society Fund</button>
+            <button type="submit" class="primary-btn" data-i18n="admin.buttons.societyFundExit">Initiate Exit (send for approvals)</button>
             <p id="memberSocietyFundExitMessage" class="message"></p>
           </form>
+
+          <h3 class="u-mt-1">Open exit requests</h3>
+          <div id="openMemberExitRequests" class="u-mb-1">
+            <p class="table-subtitle">No open exit requests.</p>
+          </div>
         </section>
       </section>
 

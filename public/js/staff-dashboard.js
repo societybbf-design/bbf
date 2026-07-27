@@ -691,8 +691,7 @@ async function loadCashierQueue() {
     const queue = data.queue || [];
     if (!queue.length) {
       list.innerHTML = '<p class="text-secondary">No investments awaiting cashier payment.</p>';
-      return;
-    }
+    } else {
     list.innerHTML = queue.map((item) => {
       const docs = (item.documents || []).map((doc) => `
         <li><a href="${doc.filePath}" target="_blank" rel="noopener">${escapeHtml(doc.originalName || 'Document')}</a></li>
@@ -747,8 +746,115 @@ async function loadCashierQueue() {
         }
       });
     });
+    }
   } catch (error) {
     if (messageEl) messageEl.textContent = error.message;
+  }
+
+  await loadCashierExitQueue();
+}
+
+async function loadCashierExitQueue() {
+  const list = document.getElementById('cashierExitQueueList');
+  const messageEl = document.getElementById('cashierExitQueueMessage');
+  if (!list) return;
+  if (staffSessionUser && staffSessionUser.role !== 'cashier') {
+    list.innerHTML = '<p class="text-secondary">Member-exit payouts are Cashier-only.</p>';
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/admin/member-exits/cashier-queue');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load exit payout queue.');
+    const queue = data.queue || [];
+    if (!queue.length) {
+      list.innerHTML = '<p class="text-secondary">No approved member exits awaiting payout.</p>';
+      return;
+    }
+
+    list.innerHTML = queue.map((item) => {
+      const member = item.departingMember || {};
+      const tracking = item.approvalTracking || {};
+      const breakdown = item.settlementBreakdown || {};
+      return `
+        <article class="feature-card payout-queue-card" style="margin-bottom: 0.85rem;">
+          <h3>Exit · ${escapeHtml(item.departingMemberName || member.name || 'Member')}</h3>
+          <p>Settlement <strong>${money(item.settlementAmount)}</strong></p>
+          <p class="table-subtitle">Savings ${money(breakdown.savings)} · Profit ${money(breakdown.profit)} · Advance ${money(breakdown.advance)}</p>
+          <p>Member approvals ${tracking.approvedCount || 0}/${tracking.totalMembers || 0} · Departing approved</p>
+          <p>Email: ${escapeHtml(member.email || item.departingMemberEmail || '—')}</p>
+          <form class="cashier-exit-complete-form add-member-form" data-exit-id="${item._id}">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Payment method
+                  <select name="paymentMethod" required>
+                    <option value="cash">Cash</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="mobile_banking">Mobile Banking</option>
+                    <option value="check">Check</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Transfer reference
+                  <input type="text" name="transferReference" placeholder="Txn / receipt #" />
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Note
+                <input type="text" name="cashierNote" placeholder="Optional note" />
+              </label>
+            </div>
+            <button type="submit" class="primary-btn">Pay Exit &amp; Redistribute Shares</button>
+            <p class="message cashier-exit-complete-msg"></p>
+          </form>
+        </article>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.cashier-exit-complete-form').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!window.confirm('Complete exit payout? This pays the member from the bank ledger, boosts remaining members’ balances per the plan, and soft-deletes the departing account.')) {
+          return;
+        }
+        const msg = form.querySelector('.cashier-exit-complete-msg');
+        const formData = new FormData(form);
+        if (msg) msg.textContent = '';
+        try {
+          const res = await fetch(`/api/admin/member-exits/${form.dataset.exitId}/cashier-complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentMethod: formData.get('paymentMethod'),
+              transferReference: formData.get('transferReference'),
+              cashierNote: formData.get('cashierNote'),
+            }),
+          });
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.error || 'Unable to complete exit payout.');
+          if (msg) {
+            msg.classList.add('success');
+            msg.textContent = payload.message || 'Exit payout completed.';
+          }
+          if (messageEl) {
+            messageEl.classList.add('success');
+            messageEl.textContent = payload.message || 'Exit payout completed.';
+          }
+          await loadCashierExitQueue();
+        } catch (error) {
+          if (msg) {
+            msg.classList.remove('success');
+            msg.textContent = error.message;
+          }
+        }
+      });
+    });
+  } catch (error) {
+    list.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
   }
 }
 

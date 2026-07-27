@@ -706,6 +706,7 @@ async function exitMemberViaSocietyFund({
 module.exports = {
   money,
   amountsMatch,
+  listActiveSocietyMembers,
   getEntryValuation,
   setMemberOpeningBalances,
   replaceMember,
