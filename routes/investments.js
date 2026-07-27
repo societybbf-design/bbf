@@ -136,9 +136,6 @@ router.get('/monthly-projects', requirePermission('can_manage_deposits', 'can_ma
 
 router.post('/:id/external-capital', requirePermission('can_manage_deposits'), requirePasswordConfirmation, async (req, res) => {
   try {
-    if (req.session?.user?.role !== 'cashier' && !['ceo', 'admin', 'developer'].includes(req.session?.user?.role)) {
-      // deposits permission already gated; allow cashier primarily
-    }
     const result = await recordExternalInvestment({
       investmentId: req.params.id,
       amount: req.body?.amount,
