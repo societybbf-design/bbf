@@ -310,8 +310,8 @@ async function approveExitByDepartingMember(exitRequestId, memberId) {
   }
 
   const member = await User.findById(memberId).select('name status role');
-  if (!member || member.role !== 'member' || member.status !== 'active') {
-    throw httpError('Active member account required.', 403);
+  if (!member || member.role !== 'member' || !['active', 'inactive'].includes(member.status)) {
+    throw httpError('Member account required.', 403);
   }
 
   exitRequest.departingApproval = {
