@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const User = require('../models/User');
-const { PERMISSION_KEYS, getDefaultPermissions } = require('./rbac');
+const { PERMISSION_KEYS, getDefaultPermissions, CASHIER_EXCLUSIVE_PERMISSIONS } = require('./rbac');
 
 function randomTempPassword() {
   return `Tmp-${crypto.randomBytes(9).toString('base64url')}`;
@@ -39,7 +39,7 @@ async function seedDefaultUsers() {
         const existingByEmail = await User.findOne({ email: developerEmail });
         if (existingByEmail) {
           existingByEmail.role = 'developer';
-          existingByEmail.permissions = [...PERMISSION_KEYS];
+          existingByEmail.permissions = getDefaultPermissions('developer');
           existingByEmail.status = 'active';
           await existingByEmail.save();
         } else {
@@ -48,7 +48,7 @@ async function seedDefaultUsers() {
             email: developerEmail,
             password: developerPassword,
             role: 'developer',
-            permissions: [...PERMISSION_KEYS],
+            permissions: getDefaultPermissions('developer'),
             savings: 0,
             profit: 0,
             status: 'active',
@@ -62,7 +62,7 @@ async function seedDefaultUsers() {
         {
           $set: {
             role: 'developer',
-            permissions: [...PERMISSION_KEYS],
+            permissions: getDefaultPermissions('developer'),
             status: 'active',
           },
         }
@@ -128,22 +128,46 @@ async function seedDefaultUsers() {
       await user.save();
     }
 
-    // Ensure cashiers can access Messenger chat
+    // Ensure cashiers can access Messenger chat + loan disbursement/repayments
     const cashiers = await User.find({ role: 'cashier', status: { $ne: 'deleted' } });
     for (const cashier of cashiers) {
-      const perms = Array.isArray(cashier.permissions) ? [...cashier.permissions] : [];
+      let perms = Array.isArray(cashier.permissions) ? [...cashier.permissions] : [];
       let changed = false;
-      ['can_manage_chat', 'can_manage_members'].forEach((key) => {
+      ['can_manage_chat', 'can_manage_members', 'can_disburse_loans'].forEach((key) => {
         if (!perms.includes(key)) {
           perms.push(key);
           changed = true;
         }
       });
+      // Loan approval stays with CEO — strip review permission if present on cashier accounts
+      if (perms.includes('can_manage_loans')) {
+        perms = perms.filter((key) => key !== 'can_manage_loans');
+        changed = true;
+      }
       if (changed) {
         cashier.permissions = perms;
         await cashier.save();
       }
     }
+
+    // Strip cashier-exclusive disbursement from non-cashier staff (CEO/PM/etc.)
+    const nonCashiers = await User.find({
+      role: { $nin: ['cashier', 'member'] },
+      status: { $ne: 'deleted' },
+      permissions: { $in: [...CASHIER_EXCLUSIVE_PERMISSIONS] },
+    });
+    for (const user of nonCashiers) {
+      user.permissions = (user.permissions || []).filter(
+        (key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
+      );
+      await user.save();
+    }
+
+    // Project managers no longer approve loans by default
+    await User.updateMany(
+      { role: 'project_manager', permissions: 'can_manage_loans' },
+      { $pull: { permissions: 'can_manage_loans' } }
+    );
   } catch (error) {
     console.error('Failed to seed default users:', error);
   }

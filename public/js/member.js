@@ -371,8 +371,8 @@ function buildLoanDisbursementReceivedHtml(loan = {}) {
         <div class="loan-disbursement-banner loan-disbursement-pending">
           <strong>Loan Approved — Awaiting Cashier Transfer</strong>
           <p class="table-subtitle">
-            Your ${formatLoanTypeLabel(loan.loanType)} loan of ${formatMoney(Number(loan.amount || 0), 2)} is approved.
-            The society admin will transfer the money to you soon${loan.paymentMethod ? ` via ${formatPaymentMethodLabel(loan.paymentMethod)}` : ''}.
+            Your ${formatLoanTypeLabel(loan.loanType)} loan of ${formatMoney(Number(loan.amount || 0), 2)} is approved by the CEO.
+            The Cashier will transfer the money to you soon${loan.paymentMethod ? ` via ${formatPaymentMethodLabel(loan.paymentMethod)}` : ''}.
           </p>
         </div>
       `;
