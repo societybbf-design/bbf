@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="/static/css/utilities.css" />
   <link rel="stylesheet" href="/static/css/admin-dashboard.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
+  <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
   <!-- Chart.js loaded deferred at end of body — React was unused and slowed first paint -->
 </head>
 <body class="dashboard-layout admin-dashboard">
@@ -100,7 +101,7 @@
         <span class="nav-label">Messages</span>
       </a>
 
-      <p class="nav-section-label">System</p>
+      <p class="nav-section-label">Settings</p>
       <a href="#" class="nav-item" data-page="settings" data-requires-permission="can_manage_kyc,can_manage_notices,can_view_reports,can_manage_deposits,can_manage_withdrawals,can_manage_refunds,can_manage_chat,can_manage_members,can_manage_profit,can_manage_investments,can_manage_loans">
         <span class="nav-icon-wrap"><span class="nav-icon">⚙️</span></span>
         <span class="nav-label">Settings</span>
@@ -2015,6 +2016,7 @@
   </div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script defer src="/static/js/mobile-menu.js"></script>
   <script defer src="/static/js/theme.js"></script>
   <script defer src="/static/js/table-cards.js"></script>
   <script defer src="/static/js/password-confirm.js"></script>
