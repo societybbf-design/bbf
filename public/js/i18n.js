@@ -58,8 +58,38 @@
     return `${name} ${portalLabel(portalKey)}`.trim();
   }
 
+  function getLabelLeadingText(label) {
+    let text = '';
+    for (const node of label.childNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE) break;
+      if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
+    }
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  function setLabelLeadingText(label, text) {
+    const nodes = [...label.childNodes];
+    const firstElementIndex = nodes.findIndex((node) => node.nodeType === Node.ELEMENT_NODE);
+    nodes.forEach((node, index) => {
+      if (node.nodeType === Node.TEXT_NODE && (firstElementIndex < 0 || index < firstElementIndex)) {
+        label.removeChild(node);
+      }
+    });
+    const firstElement = label.firstElementChild;
+    const textNode = document.createTextNode(text);
+    if (firstElement) label.insertBefore(textNode, firstElement);
+    else label.appendChild(textNode);
+  }
+
   function applyAttributes(root = document) {
-    root.querySelectorAll('[data-i18n]').forEach((el) => {
+    root.querySelectorAll('label[data-i18n]').forEach((el) => {
+      const key = el.dataset.i18n;
+      if (!key) return;
+      const fallback = getLabelLeadingText(el) || el.textContent.replace(/\s+/g, ' ').trim();
+      setLabelLeadingText(el, t(key, fallback));
+    });
+
+    root.querySelectorAll('[data-i18n]:not(label)').forEach((el) => {
       const key = el.dataset.i18n;
       if (!key) return;
       const value = t(key, el.textContent);
