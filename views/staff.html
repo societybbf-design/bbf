@@ -288,7 +288,7 @@
             <div class="stat-card"><h3 id="ledgerDifference">—</h3><p>Difference</p></div>
           </div>
           <div id="ledgerMismatchAlert" class="ledger-mismatch-alert hidden" role="alert"></div>
-          <div id="ledgerOpeningFormWrap" class="hidden">
+          <div id="ledgerOpeningFormWrap" class="hidden ledger-admin-only">
             <form id="ledgerOpeningForm" class="add-member-form">
               <div class="form-row-2">
                 <div class="form-group">
@@ -303,7 +303,7 @@
               </div>
             </form>
           </div>
-          <form id="ledgerReconcileForm" class="add-member-form">
+          <form id="ledgerReconcileForm" class="add-member-form ledger-admin-only">
             <div class="form-row-2">
               <div class="form-group">
                 <label>
@@ -650,6 +650,75 @@
           </div>
         </div>
 
+        <!-- CASHIER TRACKING (read-only transparency) -->
+        <div class="panel-card hidden" data-staff-view="tracking" id="staffCashierTrackingPanel">
+          <div class="panel-card-header">
+            <h2 data-i18n="tracking.title">Cashier Tracking</h2>
+            <p class="text-secondary" data-i18n="tracking.staffNote">Read-only society fund transparency — central bank balance, payouts, and transaction activity.</p>
+          </div>
+          <div class="cashier-tracking-panel" id="staffCashierTrackingRoot">
+            <div class="ledger-mismatch-alert hidden" data-tracking-alert role="status"></div>
+            <div class="stats-grid" data-tracking-summary></div>
+            <section class="tracking-subsection">
+              <h3 data-i18n="tracking.recentPayouts">Recent payouts</h3>
+              <ul class="cashier-history-list" data-tracking-payouts></ul>
+            </section>
+            <section class="tracking-subsection">
+              <h3 data-i18n="tracking.recentLedger">Recent ledger activity</h3>
+              <div class="table-wrapper">
+                <table class="data-table table-cards">
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.date">Date</th>
+                      <th data-i18n="table.type">Type</th>
+                      <th data-i18n="tracking.direction">Direction</th>
+                      <th data-i18n="table.amount">Amount</th>
+                      <th data-i18n="tracking.balanceAfter">Balance after</th>
+                      <th data-i18n="table.notes">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody data-tracking-ledger-body><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="tracking-subsection">
+              <h3 data-i18n="tracking.transactionLog">Society transaction log</h3>
+              <form class="add-member-form audit-filter-form" data-tracking-filter-form>
+                <div class="form-row-3">
+                  <label><span data-i18n="tracking.fromDate">From date</span><input type="date" name="from" /></label>
+                  <label><span data-i18n="tracking.toDate">To date</span><input type="date" name="to" /></label>
+                  <label><span data-i18n="tracking.category">Category</span>
+                    <select name="category" data-tracking-category><option value="all">All transactions</option></select>
+                  </label>
+                </div>
+                <div class="form-row-2">
+                  <button type="submit" class="primary-btn" data-i18n="common.applyFilters">Apply filters</button>
+                  <button type="button" class="ghost-btn" data-tracking-clear data-i18n="common.clearFilters">Clear filters</button>
+                </div>
+              </form>
+              <div class="table-wrapper u-mt-1">
+                <table class="data-table table-cards">
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.date">Date</th>
+                      <th data-i18n="table.type">Type</th>
+                      <th data-i18n="tracking.direction">Direction</th>
+                      <th data-i18n="table.amount">Amount</th>
+                      <th data-i18n="tracking.description">Description</th>
+                      <th data-i18n="tracking.balanceAfter">Balance after</th>
+                    </tr>
+                  </thead>
+                  <tbody data-tracking-audit-body><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
+                </table>
+              </div>
+              <div class="form-row-2 u-mt-1">
+                <button type="button" class="ghost-btn" data-tracking-load-more hidden data-i18n="tracking.loadMore">Load more</button>
+                <p class="message" data-tracking-message></p>
+              </div>
+            </section>
+          </div>
+        </div>
+
         <!-- CHAT / MESSENGER -->
         <div class="panel-card hidden" data-staff-view="chat" id="moduleChat">
           <div class="panel-card-header">
@@ -822,6 +891,7 @@
   <script src="/static/js/table-cards.js"></script>
   <script src="/static/js/password-confirm.js"></script>
   <script src="/static/js/chat-shared.js"></script>
+  <script src="/static/js/cashier-tracking.js"></script>
   <script src="/static/js/staff-dashboard.js"></script>
 </body>
 </html>

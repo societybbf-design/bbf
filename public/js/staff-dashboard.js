@@ -42,6 +42,7 @@ let staffSessionUser = null;
 let staffMembersCache = [];
 let staffInvestorsCache = [];
 let staffCurrentView = 'home';
+let staffCanManageLedger = false;
 let auditState = { offset: 0, hasMore: false, filters: {} };
 let activeMemberProfileId = null;
 let activeInvestorProfileId = null;
@@ -170,6 +171,7 @@ const PANEL_I18N_KEYS = {
   members: 'nav.members',
   ledger: 'nav.bankLedger',
   audit: 'nav.transactionAudit',
+  tracking: 'nav.cashierTracking',
   queue: 'nav.paymentQueue',
   funding: 'nav.advancesBorrow',
   profit: 'nav.profitPool',
@@ -466,6 +468,8 @@ async function loadViewData(viewId) {
       return loadReportsModule();
     case 'audit':
       return loadAuditModule();
+    case 'tracking':
+      return loadStaffCashierTracking();
     case 'chat':
       return loadChatModule();
     case 'members':
@@ -1267,6 +1271,22 @@ async function fetchAuditTrail({ append = false } = {}) {
   renderAuditRows(data.transactions || [], { append });
   if (loadMoreBtn) loadMoreBtn.hidden = !auditState.hasMore;
   if (msg) msg.textContent = `${data.totalMatched ?? 0} transaction(s) matched.`;
+}
+
+async function loadStaffCashierTracking() {
+  const root = document.getElementById('staffCashierTrackingRoot');
+  if (!root || !window.SocietyCashierTracking) return;
+  await window.SocietyCashierTracking.mount(root);
+}
+
+function applyLedgerAdminVisibility(canManage) {
+  const adminOnly = document.querySelectorAll('.ledger-admin-only');
+  adminOnly.forEach((el) => {
+    el.classList.toggle('hidden', !canManage);
+  });
+  document.getElementById('auditExportPdfBtn')?.classList.toggle('hidden', !canManage);
+  document.getElementById('zReportBtn')?.classList.toggle('hidden', !canManage);
+  document.getElementById('cashierZReportBtn')?.classList.toggle('hidden', !canManage);
 }
 
 async function loadAuditModule() {
@@ -2440,14 +2460,18 @@ async function init() {
       return true;
     });
     const showQueue = user.role === 'cashier' || permissions.has('can_manage_deposits');
-    const showLedger = showQueue || permissions.has('can_view_reports');
+    const canManageLedger = showQueue;
+    staffCanManageLedger = canManageLedger;
+    const showLedger = canManageLedger || permissions.has('can_view_reports');
+    const showTracking = showLedger && !canManageLedger;
     const showProfit = permissions.has('can_manage_profit') || permissions.has('can_manage_deposits');
     const showMembers = permissions.has('can_manage_members')
       || permissions.has('can_manage_deposits')
       || permissions.has('can_view_reports');
 
     const moduleCount = features.length
-      + (showLedger ? 2 : 0)
+      + (canManageLedger ? 2 : 0)
+      + (showTracking ? 1 : 0)
       + (showQueue ? 1 : 0)
       + (showProfit && !features.some((f) => f.panel === 'profit') ? 1 : 0)
       + (showMembers && !features.some((f) => f.panel === 'members') ? 1 : 0);
@@ -2472,8 +2496,9 @@ async function init() {
     pushNav({ icon: '🏠', active: true, panel: 'home' });
 
     navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
-    if (showLedger) pushNav({ icon: '🏛️', panel: 'ledger' });
-    if (showLedger) pushNav({ icon: '📋', panel: 'audit' });
+    if (canManageLedger) pushNav({ icon: '🏛️', panel: 'ledger' });
+    if (canManageLedger) pushNav({ icon: '📋', panel: 'audit' });
+    if (showTracking) pushNav({ icon: '🔍', panel: 'tracking' });
     if (showQueue) pushNav({ icon: '⏳', panel: 'queue' });
     if (showQueue) pushNav({ icon: '🔄', panel: 'funding' });
     if (showProfit) pushNav({ icon: '💹', panel: 'profit' });
@@ -2530,6 +2555,7 @@ async function init() {
       window.I18n?.applyI18n?.();
     });
     bindLedgerForms();
+    applyLedgerAdminVisibility(canManageLedger);
     bindProfitPoolForms();
     bindModuleForms();
     bindAuditForms();
