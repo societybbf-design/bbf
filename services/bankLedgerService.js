@@ -303,6 +303,85 @@ async function getEntryById(id) {
   return entry;
 }
 
+const MANUAL_EXPENSE_TYPES = Object.freeze({
+  operational_expense: 'Operational Expense',
+  office_cost: 'Office Cost',
+  utility: 'Utility',
+  cash_out: 'Direct Cash Out',
+  miscellaneous: 'Miscellaneous',
+});
+
+function listManualExpenseTypes() {
+  return Object.entries(MANUAL_EXPENSE_TYPES).map(([key, label]) => ({ key, label }));
+}
+
+/**
+ * Record a cashier manual operational expense / cash-out debit.
+ * Immediately reduces central book balance and writes an audit ledger entry.
+ */
+async function recordManualExpense({
+  expenseType,
+  amount,
+  recipient = '',
+  note = '',
+  createdBy = 'Cashier',
+  paymentChannel = 'cash',
+  paymentReference = '',
+} = {}) {
+  const typeKey = String(expenseType || '').trim();
+  if (!MANUAL_EXPENSE_TYPES[typeKey]) {
+    throw httpError(
+      `Invalid expense type. Choose one of: ${Object.keys(MANUAL_EXPENSE_TYPES).join(', ')}.`
+    );
+  }
+
+  const normalized = money(amount);
+  if (!(normalized > 0)) {
+    throw httpError('Expense amount must be greater than zero.');
+  }
+
+  const recipientLabel = String(recipient || '').trim();
+  const detail = String(note || '').trim();
+  if (!recipientLabel && !detail) {
+    throw httpError('Enter a recipient and/or a description for this expense.');
+  }
+
+  const typeLabel = MANUAL_EXPENSE_TYPES[typeKey];
+  const composedNote = [
+    typeLabel,
+    recipientLabel ? `Paid to: ${recipientLabel}` : null,
+    detail || null,
+  ].filter(Boolean).join(' · ');
+
+  const channel = ['cash', 'bank', 'mfs'].includes(String(paymentChannel || ''))
+    ? String(paymentChannel)
+    : 'cash';
+
+  const result = await debit({
+    type: typeKey,
+    amount: normalized,
+    referenceType: 'ManualExpense',
+    note: composedNote,
+    createdBy: String(createdBy || 'Cashier').trim(),
+    paymentChannel: channel,
+    paymentReference: String(paymentReference || '').trim(),
+  });
+
+  const { formatMoney } = require('./moneyFormat');
+
+  return {
+    entry: result.entry,
+    ledger: result.ledger,
+    bookBalance: result.ledger?.bookBalance ?? null,
+    expenseType: typeKey,
+    expenseTypeLabel: typeLabel,
+    recipient: recipientLabel,
+    note: composedNote,
+    amount: normalized,
+    message: `Recorded ${typeLabel} cash-out of ${formatMoney(normalized, 2)}. Book balance is now ${formatMoney(result.ledger?.bookBalance ?? 0, 2)}.`,
+  };
+}
+
 module.exports = {
   money,
   ensureLedger,
@@ -318,4 +397,7 @@ module.exports = {
   getDailySummary,
   getEntryById,
   reconciliationState,
+  listManualExpenseTypes,
+  recordManualExpense,
+  MANUAL_EXPENSE_TYPES,
 };
