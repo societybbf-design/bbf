@@ -229,6 +229,7 @@ const PANEL_I18N_KEYS = {
   tracking: 'nav.cashierTracking',
   queue: 'nav.paymentQueue',
   funding: 'nav.advancesBorrow',
+  reserve: 'nav.emergencyReserve',
   profit: 'nav.profitLoss',
   deposits: 'nav.deposits',
   withdrawals: 'nav.withdrawals',
@@ -549,6 +550,8 @@ async function loadViewData(viewId) {
       return loadDepositsModule();
     case 'funding':
       return loadFundingModule();
+    case 'reserve':
+      return loadEmergencyReserveModule();
     case 'withdrawals':
       return loadWithdrawalsModule();
     case 'refunds':
@@ -1557,6 +1560,9 @@ async function loadFundingModule() {
               ${canDirectRepay ? `
                 <button type="button" class="secondary-btn" data-repay-contribution="${c._id}">Record repayment</button>
               ` : ''}
+              ${canDirectRepay ? `
+                <button type="button" class="primary-btn" data-cover-reserve="${c._id}" data-due="${due}">Cover from reserve</button>
+              ` : ''}
               ${borrowId ? `
                 <button type="button" class="secondary-btn" data-repay-borrowing="${borrowId}">Settle borrow</button>
               ` : (!canDirectRepay ? '—' : '')}
@@ -1654,6 +1660,36 @@ async function loadFundingModule() {
       };
     });
 
+    document.querySelectorAll('[data-cover-reserve]').forEach((btn) => {
+      btn.onclick = async () => {
+        const msg = document.getElementById('cashierUnpaidMessage');
+        const due = Number(btn.dataset.due || 0);
+        if (!window.confirm(`Cover ${money(due)} from the Emergency / Reserve Fund for this unpaid project share?`)) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/admin/emergency-reserve/cover-contribution/${btn.dataset.coverReserve}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: due || undefined }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Unable to cover from reserve.');
+          if (msg) {
+            msg.classList.add('success');
+            msg.textContent = data.message || 'Covered from Emergency / Reserve Fund.';
+          }
+          invalidateStaffViewCache(['funding', 'reserve', 'queue']);
+          await loadFundingModule();
+        } catch (error) {
+          btn.disabled = false;
+          if (msg) {
+            msg.classList.remove('success');
+            msg.textContent = error.message;
+          }
+        }
+      };
+    });
+
     document.querySelectorAll('[data-repay-borrowing], [data-settle-borrowing]').forEach((btn) => {
       btn.onclick = async () => {
         const id = btn.dataset.settleBorrowing || btn.dataset.repayBorrowing;
@@ -1695,6 +1731,92 @@ async function loadFundingModule() {
   } catch (error) {
     if (advanceBody) advanceBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
   }
+}
+
+async function loadEmergencyReserveModule() {
+  const sharesBody = document.getElementById('cashierReserveSharesBody');
+  const entriesBody = document.getElementById('cashierReserveEntriesBody');
+  const balanceEl = document.getElementById('reserveFundBalance');
+  const bookEl = document.getElementById('reserveBookBalance');
+  const countEl = document.getElementById('reserveMemberCount');
+
+  try {
+    const response = await fetch('/api/admin/emergency-reserve');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load emergency reserve fund.');
+
+    if (balanceEl) balanceEl.textContent = money(data.balance);
+    if (bookEl) bookEl.textContent = data.bookBalance == null ? '—' : money(data.bookBalance);
+    if (countEl) countEl.textContent = String(data.memberCount || (data.memberShares || []).length || 0);
+    applyLiveBookBalance(data.bookBalance);
+
+    const shares = data.memberShares || [];
+    if (sharesBody) {
+      sharesBody.innerHTML = shares.length
+        ? shares.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.name || 'Member')}</td>
+            <td>${money(row.weight)}</td>
+            <td><strong>${money(row.shareAmount)}</strong></td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="3">No active members.</td></tr>';
+    }
+
+    const entries = data.entries || [];
+    if (entriesBody) {
+      entriesBody.innerHTML = entries.length
+        ? entries.map((entry) => `
+          <tr>
+            <td>${escapeHtml(new Date(entry.createdAt).toLocaleString())}</td>
+            <td>${escapeHtml(entry.type)}</td>
+            <td>${escapeHtml(entry.direction)}</td>
+            <td>${money(entry.amount)}</td>
+            <td>${money(entry.balanceAfter)}</td>
+            <td>${escapeHtml(entry.note || '—')}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="6">No reserve activity yet.</td></tr>';
+    }
+  } catch (error) {
+    if (sharesBody) sharesBody.innerHTML = `<tr><td colspan="3">${escapeHtml(error.message)}</td></tr>`;
+    if (entriesBody) entriesBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+let reserveAllocateBound = false;
+function bindEmergencyReserveForms() {
+  if (reserveAllocateBound) return;
+  reserveAllocateBound = true;
+  document.getElementById('cashierReserveAllocateForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('cashierReserveAllocateMessage');
+    const formData = new FormData(event.target);
+    try {
+      const response = await fetch('/api/admin/emergency-reserve/allocate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: formData.get('amount'),
+          note: formData.get('note') || '',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to allocate to reserve fund.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Allocated to Emergency / Reserve Fund.';
+      }
+      event.target.reset();
+      invalidateStaffViewCache(['reserve', 'ledger', 'home']);
+      await loadEmergencyReserveModule();
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.textContent = error.message;
+      }
+    }
+  });
 }
 
 async function loadWithdrawalsModule() {
@@ -2694,6 +2816,14 @@ function buildCashierDisburseCard(loan = {}) {
       <form class="cashier-loan-disburse-form add-member-form" data-loan-id="${loan._id}">
         <div class="form-row-2">
           <div class="form-group">
+            <label>Funding source
+              <select name="fundingSource" required>
+                <option value="reserve">Emergency / Reserve Fund</option>
+                <option value="bank">Society book balance</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-group">
             <label>Transfer method
               <select name="paymentMethod" required>
                 <option value="">Select…</option>
@@ -2701,16 +2831,18 @@ function buildCashierDisburseCard(loan = {}) {
               </select>
             </label>
           </div>
+        </div>
+        <div class="form-row-2">
           <div class="form-group">
             <label>Transfer reference
               <input type="text" name="transferReference" placeholder="Txn / receipt #" />
             </label>
           </div>
-        </div>
-        <div class="form-group">
-          <label>Transfer note
-            <input type="text" name="disbursementNote" placeholder="Cash given at office…" />
-          </label>
+          <div class="form-group">
+            <label>Transfer note
+              <input type="text" name="disbursementNote" placeholder="Cash given at office…" />
+            </label>
+          </div>
         </div>
         <button type="submit" class="primary-btn">Confirm Transfer &amp; Disburse</button>
         <p class="message cashier-loan-disburse-msg"></p>
@@ -2933,19 +3065,37 @@ async function loadLoansModule() {
     if (!allRes.ok) throw new Error(allData.error || 'Unable to load loans.');
 
     const allLoans = allData.loans || [];
+    const pendingLoans = allLoans.filter((loan) => loan.status === 'pending' && !loan.autoRejected);
     const approvedLoans = allLoans.filter((loan) => loan.status === 'approved' && !loan.autoRejected);
     const borrowers = borrowersData.borrowers || [];
     const repayments = repaymentsData.repayments || [];
     cashierLoanBorrowersCache = borrowers;
 
+    const pendingCountEl = document.getElementById('cashierLoanPendingCount');
     const awaitingEl = document.getElementById('cashierLoanAwaitingCount');
     const activeEl = document.getElementById('cashierLoanActiveCount');
     const outstandingEl = document.getElementById('cashierLoanOutstandingTotal');
+    if (pendingCountEl) pendingCountEl.textContent = String(pendingLoans.length);
     if (awaitingEl) awaitingEl.textContent = String(approvedLoans.length);
     if (activeEl) activeEl.textContent = String(borrowers.length);
     if (outstandingEl) {
       const totalOut = Number(summaryData.totalOutstanding ?? borrowers.reduce((sum, row) => sum + Number(row.totalOutstanding || 0), 0));
       outstandingEl.textContent = money(totalOut);
+    }
+
+    const pendingBody = document.getElementById('cashierLoanPendingBody');
+    if (pendingBody) {
+      pendingBody.innerHTML = pendingLoans.length
+        ? pendingLoans.map((loan) => `
+          <tr>
+            <td>${escapeHtml(loan.member?.name || 'Unknown')}</td>
+            <td>${money(loan.amount)}</td>
+            <td>${escapeHtml(loan.loanType || '—')}</td>
+            <td>${loan.createdAt ? escapeHtml(new Date(loan.createdAt).toLocaleString()) : '—'}</td>
+            <td>${escapeHtml(translateStatus(loan.status || 'pending'))}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="5">No pending member loan requests.</td></tr>';
     }
 
     if (queueEl) {
@@ -3070,15 +3220,19 @@ function bindCashierLoansUi() {
           paymentMethod: formData.get('paymentMethod'),
           transferReference: formData.get('transferReference'),
           disbursementNote: formData.get('disbursementNote'),
+          fundingSource: formData.get('fundingSource') || 'reserve',
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to disburse loan.');
       if (msg) {
         msg.classList.add('success');
-        msg.textContent = 'Loan disbursed successfully.';
+        const sourceLabel = data.fundingSource === 'reserve' ? 'Emergency / Reserve Fund' : 'book balance';
+        msg.textContent = `Loan disbursed from ${sourceLabel}.`
+          + (data.reserveBalance != null ? ` Reserve now ${money(data.reserveBalance)}.` : '')
+          + (data.bookBalance != null ? ` Book balance now ${money(data.bookBalance)}.` : '');
       }
-      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue']);
+      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue', 'reserve']);
       await loadLoansModule();
       markStaffViewCache?.('loans');
     } catch (error) {
@@ -3866,7 +4020,7 @@ async function init() {
 
     const moduleCount = features.length
       + 1 // Approvals is always available
-      + (canManageLedger ? 2 : 0)
+      + (canManageLedger ? 3 : 0) // ledger + audit + reserve
       + (showTracking ? 1 : 0)
       + (showQueue ? 1 : 0)
       + (showProfit && !features.some((f) => f.panel === 'profit') ? 1 : 0)
@@ -3898,9 +4052,10 @@ async function init() {
     if (showTracking) pushNav({ icon: '🔍', panel: 'tracking' });
     if (showQueue) pushNav({ icon: '⏳', panel: 'queue' });
     if (showQueue) pushNav({ icon: '🔄', panel: 'funding' });
+    if (canManageLedger) pushNav({ icon: '🛡️', panel: 'reserve', titleKey: 'nav.emergencyReserve' });
     if (showProfit) pushNav({ icon: '💹', panel: 'profit' });
 
-    const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding']);
+    const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding', 'reserve']);
     features.forEach((feature) => {
       if (!financePanels.has(feature.panel)) return;
       const copy = HOME_MODULE_COPY[feature.panel] || {};
@@ -3956,6 +4111,7 @@ async function init() {
     bindLedgerForms();
     applyLedgerAdminVisibility(canManageLedger);
     bindProfitPoolForms();
+    bindEmergencyReserveForms();
     bindModuleForms();
     bindAuditForms();
     bindDirectoryTabs();

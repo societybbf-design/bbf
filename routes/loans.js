@@ -327,13 +327,20 @@ router.patch('/admin/:id', loanReview, requirePasswordConfirmation, async (req, 
 
 router.post('/admin/:id/disburse', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
-    const loan = await disburseLoanApplication(req.params.id, {
+    const result = await disburseLoanApplication(req.params.id, {
       paymentMethod: req.body.paymentMethod,
       transferReference: req.body.transferReference,
       disbursementNote: req.body.disbursementNote,
+      fundingSource: req.body.fundingSource || 'bank',
       disbursedBy: req.session?.user?.name || 'Cashier',
     });
-    return res.json({ loan });
+    const loan = result?.loan || result;
+    return res.json({
+      loan,
+      fundingSource: result?.fundingSource || 'bank',
+      reserveBalance: result?.reserveBalance ?? null,
+      bookBalance: result?.bookBalance ?? null,
+    });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to disburse loan.' });
   }

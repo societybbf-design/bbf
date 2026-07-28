@@ -170,6 +170,12 @@ router.get('/financial', async (req, res) => {
     const latestShare = profitHistory[0];
     const monthlyProfit = latestShare?.amount || 0;
     const duesAlert = await getDuesAlert({ deposits, memberId }, new Date());
+    const { getMemberReserveShare } = require('../services/emergencyReserveService');
+    const { listInternalBorrowings } = require('../services/advanceBorrowingService');
+    const [reserveShare, openBorrowings] = await Promise.all([
+      getMemberReserveShare(memberId),
+      listInternalBorrowings({ memberId, openOnly: true }),
+    ]);
 
     res.json({
       totalMembers,
@@ -182,6 +188,9 @@ router.get('/financial', async (req, res) => {
       memberProfit: Number(member.profit || 0),
       memberSavings: Number(member.savings || 0),
       memberAdvanceBalance: Number(member.advanceBalance || 0),
+      emergencyReserveShare: Number(reserveShare.shareAmount || 0),
+      emergencyReserveFundBalance: Number(reserveShare.fundBalance || 0),
+      openBorrowings,
       profitHistory,
       investments: safeGrouped.all,
       activeInvestments: safeGrouped.active,
@@ -195,6 +204,29 @@ router.get('/financial', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Unable to fetch financial data.' });
+  }
+});
+
+router.get('/borrowings', async (req, res) => {
+  try {
+    const { listInternalBorrowings } = require('../services/advanceBorrowingService');
+    const borrowings = await listInternalBorrowings({
+      memberId: req.session.user.id,
+      openOnly: false,
+    });
+    return res.json({ borrowings });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load borrowings.' });
+  }
+});
+
+router.get('/emergency-reserve-share', async (req, res) => {
+  try {
+    const { getMemberReserveShare } = require('../services/emergencyReserveService');
+    const share = await getMemberReserveShare(req.session.user.id);
+    return res.json(share);
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load emergency reserve share.' });
   }
 });
 

@@ -11,6 +11,8 @@ const ENTRY_TYPES = [
   'investor_payout',
   'loan_disbursement',
   'loan_repayment',
+  'reserve_allocation',
+  'reserve_disbursement',
   'adjustment',
 ];
 

@@ -138,6 +138,7 @@ function navigateMemberPage(page, { syncUrl = true } = {}) {
     if (page === 'loans') {
       void loadLoanApplications();
       void loadLoanRepayments();
+      void loadMemberBorrowings();
     }
     if (page === 'dashboard') {
       void loadLoanDashboardSummary();
@@ -261,8 +262,16 @@ function renderMemberSelfProfile(user = {}) {
           <strong id="memberSelfSavings">${formatMoney(Number(user.savings || 0), 2)}</strong>
         </div>
         <div class="member-self-stat">
+          <span>Advance</span>
+          <strong id="memberSelfAdvance">${formatMoney(Number(user.advanceBalance || 0), 2)}</strong>
+        </div>
+        <div class="member-self-stat">
           <span>Profit</span>
           <strong id="memberSelfProfit">${formatMoney(Number(user.profit || 0), 2)}</strong>
+        </div>
+        <div class="member-self-stat">
+          <span>Reserve share</span>
+          <strong id="memberSelfReserveShare">${formatMoney(Number(user.emergencyReserveShare || 0), 2)}</strong>
         </div>
         <div class="member-self-stat">
           <span>Status</span>
@@ -535,6 +544,9 @@ async function loadFinancialData(userId) {
         soldInvestments: data.soldInvestments || [],
         withdrawalRequests: data.withdrawalRequests || [],
         refunds: data.refunds || [],
+        openBorrowings: data.openBorrowings || [],
+        emergencyReserveShare: Number(data.emergencyReserveShare || 0),
+        memberAdvanceBalance: Number(data.memberAdvanceBalance || 0),
       };
 
       const totalMembersCount = data.totalMembers || 1;
@@ -544,6 +556,19 @@ async function loadFinancialData(userId) {
       const monthlyProfit = data.monthlyProfit || 0;
       monthlyAllocation.textContent = `${formatMoney(monthlyProfit, 2)}`;
       memberProfit.textContent = `${formatMoney(Number(data.memberProfit || currentUser?.profit || 0), 2)}`;
+      const reserveShareEl = document.getElementById('memberReserveShare');
+      if (reserveShareEl) {
+        reserveShareEl.textContent = `${formatMoney(Number(data.emergencyReserveShare || 0), 2)}`;
+      }
+      const selfReserve = document.getElementById('memberSelfReserveShare');
+      if (selfReserve) {
+        selfReserve.textContent = formatMoney(Number(data.emergencyReserveShare || 0), 2);
+      }
+      const selfAdvance = document.getElementById('memberSelfAdvance');
+      if (selfAdvance) {
+        selfAdvance.textContent = formatMoney(Number(data.memberAdvanceBalance || 0), 2);
+      }
+      renderMemberBorrowings(data.openBorrowings || []);
 
       if (distributionRate) {
         distributionRate.textContent = t('memberUi.equalShare', 'Equal Share (Everyone Same)');
@@ -884,6 +909,47 @@ async function loadMemberApprovalsInbox() {
 async function refreshMemberApprovalsBadge() {
   if (!window.ApprovalsInbox?.refreshBadge) return;
   await window.ApprovalsInbox.refreshBadge('.nav-item[data-page="investment-requests"]');
+}
+
+function renderMemberBorrowings(borrowings = []) {
+  const body = document.getElementById('memberBorrowingsBody');
+  if (!body) return;
+  const memberId = String(currentUser?._id || currentUser?.id || '');
+  if (!borrowings.length) {
+    body.innerHTML = '<tr><td colspan="6">No internal borrows recorded.</td></tr>';
+    return;
+  }
+  body.innerHTML = borrowings.map((row) => {
+    const isBorrower = String(row.borrower?._id || row.borrower) === memberId;
+    const counterparty = isBorrower
+      ? (row.lenderName || row.lender?.name || 'Lender')
+      : (row.borrowerName || row.borrower?.name || 'Borrower');
+    const outstanding = Math.max(0, Number(row.amount || 0) - Number(row.amountSettled || 0));
+    const status = row.status === 'settled' ? 'Settled' : (row.status === 'partial' ? 'Partial / Unpaid' : 'Unpaid');
+    return `
+      <tr>
+        <td>${isBorrower ? 'Borrower' : 'Lender'}</td>
+        <td>${String(counterparty).replace(/</g, '&lt;')}</td>
+        <td>${formatMoney(Number(row.amount || 0), 2)}</td>
+        <td>${formatMoney(outstanding, 2)}</td>
+        <td>${status}</td>
+        <td>${row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function loadMemberBorrowings() {
+  const body = document.getElementById('memberBorrowingsBody');
+  if (!body) return;
+  try {
+    const response = await fetch('/api/member/borrowings');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load borrowings.');
+    renderMemberBorrowings(data.borrowings || []);
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+  }
 }
 
 async function loadMemberExitRequests() {
