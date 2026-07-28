@@ -147,12 +147,6 @@ function assertCanLogin(user) {
   if (user.status === 'inactive') {
     return { ok: false, status: 403, error: 'Your account is inactive. Please contact User Management.' };
   }
-  if (user.status === 'pending' || user.status === 'submitted') {
-    return { ok: false, status: 403, error: 'Your registration is pending CEO approval. Please wait for approval.' };
-  }
-  if (user.status === 'approved') {
-    return { ok: false, status: 403, error: 'Your registration is approved. Please complete share/entry payment with the Cashier to activate your account.' };
-  }
   if (user.status === 'blocked') {
     return { ok: false, status: 403, error: 'Your account is blocked. Please contact User Management.' };
   }
@@ -509,8 +503,6 @@ async function createManagedUser({
   password,
   role,
   permissions,
-  shareEntryAmount,
-  entryAmountPaid,
 }, actor, ip) {
   if (!name || !email || !password || !role) {
     const err = new Error('Name, email, password, and role are required.');
@@ -553,23 +545,8 @@ async function createManagedUser({
     savings: 0,
     profit: 0,
     advanceBalance: 0,
-    status: role === 'member' ? 'pending' : 'active',
+    status: 'active',
   });
-
-  let buyInResult = null;
-  if (role === 'member') {
-    try {
-      const { prepareMemberForBuyIn } = require('./memberMigrationService');
-      buyInResult = await prepareMemberForBuyIn(user, {
-        shareEntryAmount: shareEntryAmount ?? entryAmountPaid,
-        entryAmountPaid: shareEntryAmount ?? entryAmountPaid,
-        recordedBy: actor?.name || actor?.email || 'User Management',
-      });
-    } catch (buyInError) {
-      await User.findByIdAndDelete(user._id);
-      throw buyInError;
-    }
-  }
 
   await recordAudit({
     action: 'user_created_by_user_management',
@@ -578,24 +555,16 @@ async function createManagedUser({
     actorRole: actor?.role,
     targetUserId: user._id,
     targetEmail: user.email,
-    details: {
-      role,
-      pendingEntryBuyIn: Boolean(buyInResult && !buyInResult.activated),
-      requiredEntryAmount: buyInResult?.valuation?.entryAmount,
-      shareEntryAmount: buyInResult?.valuation?.entryAmount,
-      membershipStatus: buyInResult?.member?.status || user.status,
-    },
+    details: { role, status: user.status },
     ip: ip || '',
   });
 
   const fresh = await User.findById(user._id);
   return {
     user: sanitizeUserForDeveloper(fresh),
-    valuation: buyInResult?.valuation || null,
-    buyIn: buyInResult?.buyIn || null,
-    activated: buyInResult ? buyInResult.activated : true,
-    message: buyInResult?.message
-      || 'Account created in User Management. Financial data starts clean for this account.',
+    message: role === 'member'
+      ? 'Member account created and is active. They can log in with the temporary password.'
+      : 'Account created in User Management.',
   };
 }
 

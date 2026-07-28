@@ -155,234 +155,6 @@ async function setMemberOpeningBalances({
 }
 
 /**
- * Complete share/entry buy-in after CEO approval.
- * Credits bank ledger, activates the account, and syncs current-year contribution dues.
- */
-async function completeMemberBuyIn({
-  memberId,
-  amountPaid,
-  notes = '',
-  recordedBy = 'Cashier',
-} = {}) {
-  const member = await User.findOne({
-    _id: memberId,
-    role: 'member',
-    status: { $ne: 'deleted' },
-  });
-  if (!member) {
-    const error = new Error('Member not found.');
-    error.status = 404;
-    throw error;
-  }
-
-  if (member.status === 'pending' || member.status === 'submitted') {
-    const error = new Error('CEO must approve this registration before payment can be confirmed.');
-    error.status = 400;
-    throw error;
-  }
-
-  const isCeoApproved = member.status === 'approved'
-    || (member.status === 'inactive' && member.pendingEntryBuyIn && member.ceoApprovedAt);
-  const isLegacyPending = member.status === 'inactive' && member.pendingEntryBuyIn;
-
-  if (!isCeoApproved && !isLegacyPending) {
-    if (member.status === 'active' && member.entryBuyInPaidAt) {
-      const error = new Error('Buy-in already completed for this member.');
-      error.status = 400;
-      throw error;
-    }
-    const error = new Error('Member must be CEO-approved before payment confirmation.');
-    error.status = 400;
-    throw error;
-  }
-
-  const required = money(member.requiredEntryAmount || member.shareEntryAmount);
-  const paid = money(amountPaid);
-
-  if (!member.pendingEntryBuyIn && member.entryBuyInPaidAt) {
-    const error = new Error('Buy-in already completed for this member.');
-    error.status = 400;
-    throw error;
-  }
-
-  if (!amountsMatch(paid, required)) {
-    const error = new Error(
-      `Payment must be exactly ${formatMoney(required, 2)} (manual share / entry fee). Received ${formatMoney(paid, 2)}.`
-    );
-    error.status = 400;
-    throw error;
-  }
-
-  const deposit = await Deposit.create({
-    member: member._id,
-    amount: paid,
-    type: 'member_buyin',
-    notes: notes?.trim() || `Share / entry fee buy-in (${formatMoney(required, 2)})`,
-    recordedBy: String(recordedBy || '').trim(),
-  });
-
-  member.savings = money(Number(member.savings || 0) + paid);
-  member.pendingEntryBuyIn = false;
-  member.requiredEntryAmount = required;
-  member.shareEntryAmount = required;
-  member.entryBuyInPaidAt = new Date();
-  member.status = 'active';
-  await member.save();
-
-  let bankLedger = null;
-  if (paid > 0) {
-    try {
-      const { creditInbound } = require('./bankLedgerService');
-      bankLedger = await creditInbound({
-        type: 'deposit',
-        amount: paid,
-        referenceType: 'Deposit',
-        referenceId: deposit._id,
-        note: `Member share/entry payment: ${member.name}`,
-        createdBy: recordedBy,
-        paymentChannel: 'cash',
-      });
-    } catch (error) {
-      console.warn('[completeMemberBuyIn] bank ledger credit failed:', error.message);
-    }
-  }
-
-  let duesSync = null;
-  try {
-    duesSync = await syncNewMemberContributionDues(member);
-  } catch (error) {
-    console.warn('[completeMemberBuyIn] contribution dues sync failed:', error.message);
-  }
-
-  const valuationAfter = await getEntryValuation();
-
-  try {
-    const { createMemberNotification } = require('./memberNotificationService');
-    await createMemberNotification({
-      memberId: member._id,
-      type: 'deposit',
-      title: 'Membership Activated',
-      message: `Your share/entry payment of ${formatMoney(paid, 2)} was confirmed. Your account is now Active.`,
-      relatedId: deposit._id,
-      relatedModel: 'Deposit',
-    });
-  } catch (error) {
-    console.warn('[completeMemberBuyIn] member notification failed:', error.message);
-  }
-
-  return {
-    member: member.toJSON(),
-    deposit,
-    bankLedger,
-    valuationAmount: required,
-    duesSync,
-    valuationAfter,
-    message: 'Payment confirmed successfully. Member account is now Active and contribution balances were adjusted.',
-  };
-}
-
-/**
- * Ensure the newly activated member has contribution due rows for the current year
- * (from join month through current month) so old + new member accounting stays consistent.
- */
-async function syncNewMemberContributionDues(member) {
-  const { getTargetForMonth, getOrCreateMemberDue, parseYearMonth } = require('./monthlyTargetService');
-  const now = new Date();
-  const year = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  const joinDate = member.entryBuyInPaidAt || member.ceoApprovedAt || member.membershipSubmittedAt || member.createdAt || now;
-  const join = new Date(joinDate);
-  const startMonth = (join.getFullYear() === year) ? (join.getMonth() + 1) : 1;
-
-  const months = [];
-  for (let month = startMonth; month <= currentMonth; month += 1) {
-    const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
-    const target = await getTargetForMonth(yearMonth);
-    if (target.amount == null) continue;
-    const due = await getOrCreateMemberDue(member, yearMonth, target.amount);
-    months.push({
-      yearMonth: parseYearMonth(yearMonth).yearMonth,
-      expectedAmount: money(due.expectedAmount),
-      unpaidAmount: money(due.unpaidAmount),
-      status: due.status,
-    });
-  }
-
-  return {
-    year,
-    monthsSynced: months.length,
-    months,
-  };
-}
-
-/**
- * Submit a newly created member for CEO approval with a manual share/entry amount.
- * Does not activate the account — CEO approval + payment confirmation are required.
- */
-async function prepareMemberForBuyIn(userDoc, {
-  shareEntryAmount = null,
-  entryAmountPaid = null,
-  recordedBy = '',
-} = {}) {
-  const valuation = await getEntryValuation();
-  const suggested = money(valuation.entryAmount);
-
-  const hasManual = shareEntryAmount !== null && shareEntryAmount !== undefined && String(shareEntryAmount).trim() !== '';
-  // Prefer explicit manual share; fall back to legacy entryAmountPaid only as the declared share amount (not instant pay).
-  const rawManual = hasManual ? shareEntryAmount : entryAmountPaid;
-  if (rawManual === null || rawManual === undefined || String(rawManual).trim() === '') {
-    const error = new Error('Share / entry fee amount is required. Enter the amount manually (suggested valuation is shown for reference only).');
-    error.status = 400;
-    throw error;
-  }
-
-  const manual = money(rawManual);
-  if (manual < 0 || Number.isNaN(manual)) {
-    const error = new Error('Share / entry fee amount must be zero or greater.');
-    error.status = 400;
-    throw error;
-  }
-
-  userDoc.shareEntryAmount = manual;
-  userDoc.requiredEntryAmount = manual;
-  userDoc.pendingEntryBuyIn = true;
-  userDoc.status = 'pending';
-  userDoc.membershipSubmittedAt = new Date();
-  userDoc.ceoApprovedAt = null;
-  userDoc.ceoApprovedBy = '';
-  userDoc.membershipRejectionReason = '';
-  userDoc.entryBuyInPaidAt = null;
-  await userDoc.save();
-
-  try {
-    const { createAdminNotification } = require('./adminNotificationService');
-    await createAdminNotification({
-      type: 'general',
-      title: `New member registration: ${userDoc.name}`,
-      message: `${userDoc.name} (${userDoc.email}) was submitted with manual share/entry fee ${formatMoney(manual, 2)}. Awaiting CEO approval.`,
-      relatedId: userDoc._id,
-      relatedModel: 'User',
-    });
-  } catch (error) {
-    console.warn('[prepareMemberForBuyIn] admin notification failed:', error.message);
-  }
-
-  return {
-    member: userDoc,
-    valuation: {
-      ...valuation,
-      suggestedEntryAmount: suggested,
-      entryAmount: manual,
-      manual: true,
-      formula: `Manual share/entry fee ${formatMoney(manual, 2)} (suggested equal-share ${formatMoney(suggested, 2)})`,
-    },
-    buyIn: null,
-    activated: false,
-    message: `Member submitted as Pending. CEO must approve, then cashier confirms payment of ${formatMoney(manual, 2)} before the account becomes Active.`,
-  };
-}
-
-/**
  * Replace a departing member: incoming payment settles their exit balance,
  * then activates the UM-created successor — even when society bank cash was insufficient alone.
  */
@@ -527,151 +299,9 @@ async function replaceMember({
   };
 }
 
-async function listPendingMemberRegistrations() {
-  const members = await User.find({
-    role: 'member',
-    status: { $in: ['pending', 'submitted'] },
-  }).select('-password').sort({ membershipSubmittedAt: -1, createdAt: -1 });
-
-  return members.map((m) => ({
-    id: m._id,
-    name: m.name,
-    email: m.email,
-    phone: m.phone || '',
-    status: m.status,
-    statusLabel: 'Pending / Submitted',
-    shareEntryAmount: money(m.shareEntryAmount || m.requiredEntryAmount),
-    requiredEntryAmount: money(m.requiredEntryAmount || m.shareEntryAmount),
-    membershipSubmittedAt: m.membershipSubmittedAt || m.createdAt,
-    createdAt: m.createdAt,
-  }));
-}
-
-/**
- * CEO approves a pending registration → status becomes Approved (awaiting payment confirmation).
- * Zero share amount auto-activates after CEO approval.
- */
-async function approveMemberRegistration(memberId, { approvedBy = 'CEO' } = {}) {
-  const member = await User.findOne({
-    _id: memberId,
-    role: 'member',
-    status: { $in: ['pending', 'submitted'] },
-  });
-  if (!member) {
-    const error = new Error('Pending member registration not found.');
-    error.status = 404;
-    throw error;
-  }
-
-  const required = money(member.requiredEntryAmount || member.shareEntryAmount);
-  member.status = 'approved';
-  member.ceoApprovedAt = new Date();
-  member.ceoApprovedBy = String(approvedBy || 'CEO').trim();
-  member.pendingEntryBuyIn = true;
-  member.requiredEntryAmount = required;
-  member.shareEntryAmount = required;
-  member.membershipRejectionReason = '';
-  await member.save();
-
-  try {
-    const { createAdminNotification } = require('./adminNotificationService');
-    await createAdminNotification({
-      type: 'general',
-      title: `Member approved: ${member.name}`,
-      message: required > 0
-        ? `${member.name} was approved by CEO. Cashier may now confirm share/entry payment of ${formatMoney(required, 2)}.`
-        : `${member.name} was approved by CEO with ৳0 share fee — account will activate.`,
-      relatedId: member._id,
-      relatedModel: 'User',
-    });
-  } catch (error) {
-    console.warn('[approveMemberRegistration] notification failed:', error.message);
-  }
-
-  if (required <= 0) {
-    const buyIn = await completeMemberBuyIn({
-      memberId: member._id,
-      amountPaid: 0,
-      recordedBy: approvedBy,
-      notes: 'Zero share/entry fee — activated on CEO approval',
-    });
-    return {
-      member: buyIn.member,
-      buyIn,
-      activated: true,
-      awaitingPayment: false,
-      message: 'CEO approved. Zero share fee — member account is now Active.',
-    };
-  }
-
-  return {
-    member: member.toJSON(),
-    buyIn: null,
-    activated: false,
-    awaitingPayment: true,
-    message: `CEO approved. Cashier can now confirm successful payment of ${formatMoney(required, 2)}.`,
-  };
-}
-
-async function rejectMemberRegistration(memberId, { rejectedBy = 'CEO', reason = '' } = {}) {
-  const member = await User.findOne({
-    _id: memberId,
-    role: 'member',
-    status: { $in: ['pending', 'submitted', 'approved'] },
-  });
-  if (!member) {
-    const error = new Error('Member registration not found.');
-    error.status = 404;
-    throw error;
-  }
-
-  member.status = 'blocked';
-  member.pendingEntryBuyIn = false;
-  member.membershipRejectionReason = String(reason || 'Registration rejected by CEO').trim();
-  member.ceoApprovedAt = null;
-  member.ceoApprovedBy = '';
-  await member.save();
-
-  return {
-    member: member.toJSON(),
-    message: 'Member registration rejected. Account is blocked.',
-  };
-}
-
-async function listPendingBuyInMembers() {
-  const members = await User.find({
-    role: 'member',
-    pendingEntryBuyIn: true,
-    status: 'approved',
-  }).select('-password').sort({ ceoApprovedAt: -1, createdAt: -1 });
-
-  // Include legacy inactive pending buy-ins (pre-workflow) so cashiers can finish them.
-  const legacy = await User.find({
-    role: 'member',
-    pendingEntryBuyIn: true,
-    status: 'inactive',
-  }).select('-password').sort({ createdAt: -1 });
-
-  const merged = [...members, ...legacy.filter((m) => !members.some((x) => String(x._id) === String(m._id)))];
-
-  return merged.map((m) => ({
-    id: m._id,
-    name: m.name,
-    email: m.email,
-    status: m.status,
-    statusLabel: m.status === 'approved' ? 'Approved — awaiting payment' : 'Legacy pending buy-in',
-    shareEntryAmount: money(m.shareEntryAmount || m.requiredEntryAmount),
-    requiredEntryAmount: money(m.requiredEntryAmount || m.shareEntryAmount),
-    ceoApprovedAt: m.ceoApprovedAt,
-    ceoApprovedBy: m.ceoApprovedBy || '',
-    membershipSubmittedAt: m.membershipSubmittedAt || m.createdAt,
-    createdAt: m.createdAt,
-  }));
-}
-
 async function getMigrationOverview() {
   const members = await User.find({ role: 'member', status: { $ne: 'deleted' } })
-    .select('name email savings profit advanceBalance openingSavingsBalance openingProfitBalance openingBalanceSetAt status pendingEntryBuyIn requiredEntryAmount shareEntryAmount ceoApprovedAt membershipSubmittedAt')
+    .select('name email savings profit advanceBalance openingSavingsBalance openingProfitBalance openingBalanceSetAt status')
     .sort({ name: 1 });
 
   const totals = members.reduce((acc, m) => {
@@ -683,8 +313,6 @@ async function getMigrationOverview() {
     if (Number(m.openingSavingsBalance || 0) > 0 || Number(m.openingProfitBalance || 0) > 0) {
       acc.migratedCount += 1;
     }
-    if (m.pendingEntryBuyIn && m.status === 'approved') acc.pendingBuyInCount += 1;
-    if (m.status === 'pending' || m.status === 'submitted') acc.pendingRegistrationCount += 1;
     return acc;
   }, {
     savings: 0,
@@ -693,8 +321,6 @@ async function getMigrationOverview() {
     openingSavings: 0,
     openingProfit: 0,
     migratedCount: 0,
-    pendingBuyInCount: 0,
-    pendingRegistrationCount: 0,
   });
 
   const digitalDepositSum = await Deposit.aggregate([
@@ -718,8 +344,6 @@ async function getMigrationOverview() {
       openingSavingsBalance: money(m.openingSavingsBalance),
       openingProfitBalance: money(m.openingProfitBalance),
       openingBalanceSetAt: m.openingBalanceSetAt,
-      pendingEntryBuyIn: Boolean(m.pendingEntryBuyIn),
-      requiredEntryAmount: money(m.requiredEntryAmount),
     })),
     totals: {
       totalSavings: money(totals.savings),
@@ -728,8 +352,6 @@ async function getMigrationOverview() {
       totalOpeningSavings: money(totals.openingSavings),
       totalOpeningProfit: money(totals.openingProfit),
       migratedMemberCount: totals.migratedCount,
-      pendingBuyInCount: totals.pendingBuyInCount,
-      pendingRegistrationCount: totals.pendingRegistrationCount,
       digitalDepositTotal: money(digitalDepositSum[0]?.total || 0),
       openingDepositTotal: money(openingDepositSum[0]?.total || 0),
     },
@@ -923,11 +545,4 @@ module.exports = {
   replaceMember,
   exitMemberViaSocietyFund,
   getMigrationOverview,
-  completeMemberBuyIn,
-  prepareMemberForBuyIn,
-  listPendingBuyInMembers,
-  listPendingMemberRegistrations,
-  approveMemberRegistration,
-  rejectMemberRegistration,
-  syncNewMemberContributionDues,
 };

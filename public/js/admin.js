@@ -2444,100 +2444,11 @@ async function loadMigrationOverview() {
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Profit</span><strong class="metric-value">${formatMoney(Number(t.totalProfit || 0), 2)}</strong></div></div>
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Savings</span><strong class="metric-value">${formatMoney(Number(t.totalOpeningSavings || 0), 2)}</strong></div></div>
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Profit</span><strong class="metric-value">${formatMoney(Number(t.totalOpeningProfit || 0), 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending Registrations</span><strong class="metric-value">${t.pendingRegistrationCount || 0}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting Payment</span><strong class="metric-value">${t.pendingBuyInCount || 0}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Migrated Members</span><strong class="metric-value">${t.migratedMemberCount || 0}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Digital Deposits</span><strong class="metric-value">${formatMoney(Number(t.digitalDepositTotal || 0), 2)}</strong></div></div>
     `;
   } catch (error) {
     statsEl.innerHTML = `<p class="message">${escapeCeoHtml(error.message)}</p>`;
-  }
-}
-
-async function loadPendingMemberRegistrations() {
-  const body = document.getElementById('pendingMemberRegistrationsBody');
-  const msg = document.getElementById('pendingMemberRegistrationMessage');
-  if (!body) return;
-  try {
-    const response = await fetch('/api/admin/members/pending-registrations');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load pending registrations.');
-    const members = data.members || [];
-    body.innerHTML = members.length
-      ? members.map((m) => `
-        <tr>
-          <td>${escapeCeoHtml(m.name || '')}<br><span class="text-secondary">${escapeCeoHtml(m.email || '')}</span></td>
-          <td>${formatMoney(Number(m.shareEntryAmount || m.requiredEntryAmount || 0), 2)}</td>
-          <td>${m.membershipSubmittedAt ? new Date(m.membershipSubmittedAt).toLocaleString() : '—'}</td>
-          <td>${escapeCeoHtml(m.statusLabel || m.status || 'Pending')}</td>
-          <td class="inline-actions">
-            <button type="button" class="primary-btn" data-approve-registration="${m.id}">Approve</button>
-            <button type="button" class="secondary-btn" data-reject-registration="${m.id}">Reject</button>
-          </td>
-        </tr>
-      `).join('')
-      : '<tr><td colspan="5">No pending member registrations.</td></tr>';
-
-    body.querySelectorAll('[data-approve-registration]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        if (!window.confirm('Approve this member registration? Cashier will then be able to confirm payment.')) return;
-        if (msg) {
-          msg.textContent = '';
-          msg.classList.remove('success', 'error');
-        }
-        try {
-          const res = await fetch(`/api/admin/members/${encodeURIComponent(btn.dataset.approveRegistration)}/approve-registration`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          });
-          const payload = await res.json();
-          if (!res.ok) throw new Error(payload.error || 'Unable to approve.');
-          if (msg) {
-            msg.classList.add('success');
-            msg.textContent = payload.message || 'Registration approved.';
-          }
-          await loadPendingMemberRegistrations();
-          await loadMigrationOverview();
-        } catch (error) {
-          if (msg) {
-            msg.classList.add('error');
-            msg.textContent = error.message;
-          }
-        }
-      });
-    });
-
-    body.querySelectorAll('[data-reject-registration]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const reason = window.prompt('Rejection reason (optional):', '') || '';
-        if (!window.confirm('Reject this member registration? The account will be blocked.')) return;
-        if (msg) {
-          msg.textContent = '';
-          msg.classList.remove('success', 'error');
-        }
-        try {
-          const res = await fetch(`/api/admin/members/${encodeURIComponent(btn.dataset.rejectRegistration)}/reject-registration`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason }),
-          });
-          const payload = await res.json();
-          if (!res.ok) throw new Error(payload.error || 'Unable to reject.');
-          if (msg) {
-            msg.classList.add('success');
-            msg.textContent = payload.message || 'Registration rejected.';
-          }
-          await loadPendingMemberRegistrations();
-          await loadMigrationOverview();
-        } catch (error) {
-          if (msg) {
-            msg.classList.add('error');
-            msg.textContent = error.message;
-          }
-        }
-      });
-    });
-  } catch (error) {
-    body.innerHTML = `<tr><td colspan="5">${escapeCeoHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -2676,7 +2587,6 @@ async function loadOpenMemberExitRequests() {
 async function initMemberMigrationUi() {
   await populateMigrationMemberSelects();
   await loadMigrationOverview();
-  await loadPendingMemberRegistrations();
   await loadOpenMemberExitRequests();
 
   if (memberMigrationUiBound) return;
