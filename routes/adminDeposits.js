@@ -96,9 +96,19 @@ router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation
     let message = 'Deposit recorded.';
     if (result.monthlySplit?.splitApplied) {
       const s = result.monthlySplit;
-      const bits = [`Toward ${s.yearMonth} target: ${formatMoney(Number(s.towardTarget), 2)}`];
-      if (s.surplus > 0) bits.push(`surplus ${formatMoney(Number(s.surplus), 2)} → advance`);
-      if (s.remainingUnpaid > 0) bits.push(`still due ${formatMoney(Number(s.remainingUnpaid), 2)}`);
+      const bits = [];
+      if (Number(s.towardTarget) > 0) {
+        bits.push(`Fixed deposit ${formatMoney(Number(s.towardTarget), 2)} toward ${s.yearMonth} target`);
+      }
+      if (Number(s.surplus) > 0) {
+        bits.push(`surplus ${formatMoney(Number(s.surplus), 2)} → advance (balance now ${formatMoney(Number(result.member?.advanceBalance || 0), 2)})`);
+      }
+      if (Number(s.remainingUnpaid) > 0) {
+        bits.push(`still due ${formatMoney(Number(s.remainingUnpaid), 2)}`);
+      }
+      if (!bits.length) {
+        bits.push(`Toward ${s.yearMonth} target: ${formatMoney(Number(s.towardTarget), 2)}`);
+      }
       message = bits.join(' · ');
     }
     if (result.bookBalance != null) {
@@ -108,13 +118,20 @@ router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation
       message += ' Receipt emailed to the member.';
     }
 
+    const regularId = result.regularDeposit?._id || (result.deposit?.type === 'regular' ? result.deposit._id : null);
+    const advanceId = result.advanceDeposit?._id || null;
+
     return res.status(201).json({
       ...result,
       message,
       emailSent,
       paymentChannelLabel: paymentChannelLabel(result.deposit?.paymentMethod),
       monthTarget: target,
-      receiptUrl: result.deposit?._id ? `/api/admin/deposits/${result.deposit._id}/receipt` : null,
+      receiptNumber: result.deposit?.receiptNumber || null,
+      receiptUrl: regularId || result.deposit?._id
+        ? `/api/admin/deposits/${regularId || result.deposit._id}/receipt`
+        : null,
+      advanceReceiptUrl: advanceId ? `/api/admin/deposits/${advanceId}/receipt` : null,
     });
   } catch (error) {
     return res.status(error.status || 500).json({

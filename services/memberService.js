@@ -70,10 +70,15 @@ async function saveDeposit(memberId, amount, options = {}) {
   const { normalizePaymentChannel } = require('./paymentChannelService');
   const { generateReceiptNumber } = require('./receiptService');
 
-  const member = await User.findOne({ _id: memberId, role: 'member' });
+  const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
   if (!member) {
     const error = new Error('Member not found.');
     error.status = 404;
+    throw error;
+  }
+  if (member.status && member.status !== 'active') {
+    const error = new Error('Only active members can receive deposits.');
+    error.status = 400;
     throw error;
   }
 
@@ -119,7 +124,7 @@ async function saveDeposit(memberId, amount, options = {}) {
     const parts = [
       notesBase,
       `Month ${monthlySplit.yearMonth} target ${formatMoney(money(monthlySplit.targetAmount), 2)}`,
-      towardTarget > 0 ? `applied ${formatMoney(towardTarget, 2)}` : null,
+      towardTarget > 0 ? `fixed deposit ${formatMoney(towardTarget, 2)}` : null,
       surplus > 0 ? `surplus ${formatMoney(surplus, 2)} → advance` : null,
       monthlySplit.remainingUnpaid > 0
         ? `still due ${formatMoney(monthlySplit.remainingUnpaid, 2)}`
@@ -149,6 +154,9 @@ async function saveDeposit(memberId, amount, options = {}) {
     }
 
     if (surplus > 0) {
+      const advanceReceiptNumber = towardTarget > 0
+        ? await generateReceiptNumber()
+        : receiptNumber;
       advanceDeposit = await Deposit.create({
         member: member._id,
         amount: surplus,
@@ -157,10 +165,11 @@ async function saveDeposit(memberId, amount, options = {}) {
         towardTarget: 0,
         surplusToAdvance: surplus,
         notes: notesBase
-          || `Surplus above ${monthlySplit?.yearMonth || yearMonth} fixed target of ${formatMoney(money(monthlySplit?.targetAmount), 2)}`,
+          || `Surplus above ${monthlySplit?.yearMonth || yearMonth} fixed target of ${formatMoney(money(monthlySplit?.targetAmount), 2)} → advance balance`,
         recordedBy,
         paymentMethod,
         paymentReference,
+        receiptNumber: advanceReceiptNumber,
       });
       advanceInc = money(advanceInc + surplus);
     }
@@ -230,7 +239,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       referenceType: 'Deposit',
       referenceId: (deposit || advanceDeposit)?._id,
       note: surplus > 0 && towardTarget > 0
-        ? `Member deposit: ${updatedMember.name} (${yearMonth}) — ${formatMoney(towardTarget, 2)} target + ${formatMoney(surplus, 2)} advance`
+        ? `Member deposit: ${updatedMember.name} (${yearMonth}) — ${formatMoney(towardTarget, 2)} fixed + ${formatMoney(surplus, 2)} advance`
         : surplus > 0
           ? `Member advance surplus: ${updatedMember.name} (${yearMonth})`
           : `Member deposit: ${updatedMember.name} (${yearMonth})`,
@@ -262,6 +271,8 @@ async function saveDeposit(memberId, amount, options = {}) {
         targetEmail: updatedMember.email,
         details: {
           amount: total,
+          towardTarget,
+          surplus,
           paymentMethod,
           paymentReference,
           receiptNumber: primaryDeposit?.receiptNumber || receiptNumber,
@@ -276,11 +287,19 @@ async function saveDeposit(memberId, amount, options = {}) {
 
   return {
     deposit: primaryDeposit,
-    advanceDeposit: deposit && advanceDeposit ? advanceDeposit : null,
+    regularDeposit: deposit || null,
+    advanceDeposit: advanceDeposit || null,
     member: updatedMember,
     bankLedger,
     bookBalance: bankLedger?.ledger?.bookBalance ?? null,
     ledgerWarning,
+    split: {
+      total,
+      towardTarget,
+      surplus,
+      savingsCredited: savingsInc,
+      advanceCredited: advanceInc,
+    },
     monthlySplit: monthlySplit
       ? {
         yearMonth: monthlySplit.yearMonth,

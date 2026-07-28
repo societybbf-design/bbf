@@ -231,6 +231,43 @@ async function syncMonthDues(yearMonth, { expectedAmount = null } = {}) {
 }
 
 /**
+ * Pure split of a cashier deposit against remaining monthly target due.
+ * towardTarget → regular fixed deposit / savings
+ * surplus → member advanceBalance
+ */
+function computeMonthlyDepositSplit(totalAmount, remainingDue, targetAmount = null) {
+  const total = money(totalAmount);
+  if (!(total > 0)) {
+    return {
+      towardTarget: 0,
+      surplus: 0,
+      remainingUnpaid: money(Math.max(0, money(remainingDue))),
+      splitApplied: targetAmount != null && targetAmount !== '',
+    };
+  }
+
+  if (targetAmount == null || targetAmount === '') {
+    return {
+      towardTarget: total,
+      surplus: 0,
+      remainingUnpaid: 0,
+      splitApplied: false,
+    };
+  }
+
+  const remaining = money(Math.max(0, money(remainingDue)));
+  const towardTarget = money(Math.min(total, remaining));
+  const surplus = money(Math.max(0, total - towardTarget));
+  const remainingUnpaid = money(Math.max(0, remaining - towardTarget));
+  return {
+    towardTarget,
+    surplus,
+    remainingUnpaid,
+    splitApplied: true,
+  };
+}
+
+/**
  * Apply a deposit amount against the member's monthly fixed target.
  * Returns split: towardTarget (savings), surplus (advance), and updated due.
  */
@@ -256,12 +293,11 @@ async function applyDepositToMonthlyDue({
 
   const due = await getOrCreateMemberDue(member, target.yearMonth, target.amount);
   const remaining = money(Math.max(0, money(due.expectedAmount) - money(due.paidAmount)));
-  const towardTarget = money(Math.min(total, remaining));
-  const surplus = money(Math.max(0, total - towardTarget));
+  const split = computeMonthlyDepositSplit(total, remaining, target.amount);
 
-  due.paidAmount = money(money(due.paidAmount) + towardTarget);
+  due.paidAmount = money(money(due.paidAmount) + split.towardTarget);
   due.unpaidAmount = money(Math.max(0, money(due.expectedAmount) - money(due.paidAmount)));
-  due.surplusToAdvance = money(money(due.surplusToAdvance) + surplus);
+  due.surplusToAdvance = money(money(due.surplusToAdvance) + split.surplus);
   due.status = dueStatus(due.expectedAmount, due.paidAmount);
   due.memberName = member.name || due.memberName;
   await due.save();
@@ -269,8 +305,8 @@ async function applyDepositToMonthlyDue({
   return {
     yearMonth: target.yearMonth,
     targetAmount: money(target.amount),
-    towardTarget,
-    surplus,
+    towardTarget: split.towardTarget,
+    surplus: split.surplus,
     remainingUnpaid: money(due.unpaidAmount),
     due,
     splitApplied: true,
@@ -278,10 +314,12 @@ async function applyDepositToMonthlyDue({
   };
 }
 
-async function listUnpaidMonthlyDues({ yearMonth = null, status = null } = {}) {
+async function listUnpaidMonthlyDues({ yearMonth = null, status = null, includeAll = false } = {}) {
   const filter = {};
   if (yearMonth) filter.yearMonth = parseYearMonth(yearMonth).yearMonth;
-  if (status) {
+  if (includeAll) {
+    // Return every due row for the month (paid + unpaid) for deposit split previews.
+  } else if (status) {
     filter.status = status;
   } else {
     filter.status = { $in: ['unpaid', 'partial'] };
@@ -321,6 +359,7 @@ module.exports = {
   upsertTarget,
   syncMonthDues,
   getOrCreateMemberDue,
+  computeMonthlyDepositSplit,
   applyDepositToMonthlyDue,
   listUnpaidMonthlyDues,
   dueStatus,
