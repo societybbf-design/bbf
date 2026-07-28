@@ -202,6 +202,7 @@ router.post('/:id/cashier-cover-advance', requirePermission('can_manage_deposits
     const result = await coverCashierPaymentShortfallFromAdvance({
       investmentId: req.params.id,
       lenderId: req.body?.lenderId || req.body?.memberId,
+      borrowerId: req.body?.borrowerId || req.body?.shortMemberId || null,
       amount: req.body?.amount,
       note: req.body?.note || '',
       createdBy: req.session?.user?.name || 'Cashier',
@@ -220,6 +221,7 @@ router.post('/:id/cashier-cover-reserve', requirePermission('can_manage_deposits
   try {
     const result = await coverCashierPaymentShortfallFromReserve({
       investmentId: req.params.id,
+      memberId: req.body?.memberId || req.body?.borrowerId || req.body?.shortMemberId || null,
       amount: req.body?.amount,
       note: req.body?.note || '',
       createdBy: req.session?.user?.name || 'Cashier',

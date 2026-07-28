@@ -13,10 +13,11 @@ const serverJs = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
 test('Complete payment never uses window.confirm after funding check', () => {
   const beginIdx = staffJs.indexOf('async function beginCashierCompletePayment');
   assert.ok(beginIdx > 0);
-  const beginSlice = staffJs.slice(beginIdx, beginIdx + 800);
+  const beginSlice = staffJs.slice(beginIdx, beginIdx + 1200);
+  assert.match(beginSlice, /canCompleteDirectly/);
   assert.match(beginSlice, /openCashierPaymentShortfallModal/);
   assert.doesNotMatch(beginSlice, /window\.confirm/);
-  assert.match(staffJs, /browsers often suppress it/);
+  assert.match(staffJs, /Conditional Complete payment/);
 });
 
 test('payment popup is force-created and opened before any await', () => {

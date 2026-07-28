@@ -877,6 +877,89 @@ function resolvePayoutReceiver(investment, overrides = {}) {
   };
 }
 
+/**
+ * Dry-run: can each active member cover their equal project share from
+ * savings + advance, and are current-month contribution dues settled?
+ */
+async function previewMemberShareFunding(requiredAmount) {
+  const normalizedAmount = Number((Number(requiredAmount) || 0).toFixed(2));
+  const members = await User.find({ role: 'member', status: 'active' }).sort({ createdAt: 1 });
+  if (!members.length) {
+    return {
+      yearMonth: null,
+      memberCount: 0,
+      members: [],
+      shortMembers: [],
+      hasMemberShortfall: false,
+      hasMonthlyGaps: false,
+      hasMemberProblems: false,
+      totalShareDeficit: 0,
+      totalMonthlyUnpaid: 0,
+    };
+  }
+
+  const equalShares = splitAmountEqually(normalizedAmount, members.length);
+  const {
+    yearMonthFromDate,
+    listUnpaidMonthlyDues,
+  } = require('./monthlyTargetService');
+  const yearMonth = yearMonthFromDate();
+  let unpaidDues = [];
+  try {
+    unpaidDues = await listUnpaidMonthlyDues({ yearMonth });
+  } catch (_) {
+    unpaidDues = [];
+  }
+  const unpaidByMember = new Map(
+    unpaidDues.map((row) => [String(row.memberId?._id || row.memberId), row])
+  );
+
+  const rows = members.map((member, index) => {
+    const expectedShare = equalShares[index];
+    const savings = Number(Number(member.savings || 0).toFixed(2));
+    const advanceBalance = Number(Number(member.advanceBalance || 0).toFixed(2));
+    const available = Number((savings + advanceBalance).toFixed(2));
+    const shareDeficit = Number(Math.max(0, expectedShare - available).toFixed(2));
+    const monthly = unpaidByMember.get(String(member._id));
+    const monthlyUnpaid = monthly ? Number(Number(monthly.unpaidAmount || 0).toFixed(2)) : 0;
+    const needsCover = shareDeficit > 0.001 || monthlyUnpaid > 0.001;
+    return {
+      id: member._id,
+      name: member.name || '',
+      email: member.email || '',
+      expectedShare,
+      savings,
+      advanceBalance,
+      available,
+      shareDeficit,
+      monthlyUnpaid,
+      monthlyStatus: monthly ? monthly.status : (monthlyUnpaid > 0 ? 'unpaid' : 'ok'),
+      needsCover,
+      coverSuggested: Number(Math.max(shareDeficit, monthlyUnpaid).toFixed(2)),
+    };
+  });
+
+  const shortMembers = rows.filter((row) => row.needsCover);
+  const totalShareDeficit = Number(
+    shortMembers.reduce((sum, row) => sum + Number(row.shareDeficit || 0), 0).toFixed(2)
+  );
+  const totalMonthlyUnpaid = Number(
+    shortMembers.reduce((sum, row) => sum + Number(row.monthlyUnpaid || 0), 0).toFixed(2)
+  );
+
+  return {
+    yearMonth,
+    memberCount: members.length,
+    members: rows,
+    shortMembers,
+    hasMemberShortfall: totalShareDeficit > 0.001,
+    hasMonthlyGaps: totalMonthlyUnpaid > 0.001,
+    hasMemberProblems: shortMembers.length > 0,
+    totalShareDeficit,
+    totalMonthlyUnpaid,
+  };
+}
+
 async function getCashierPaymentFundingSnapshot(investment) {
   const societyFundingAmount = Number(Number(
     investment.societyAmount > 0 ? investment.societyAmount : investment.amount
@@ -909,6 +992,9 @@ async function getCashierPaymentFundingSnapshot(investment) {
   const totalAdvanceAvailable = Number(
     advances.reduce((sum, m) => sum + Number(m.advanceBalance || 0), 0).toFixed(2)
   );
+  const memberFunding = await previewMemberShareFunding(societyFundingAmount);
+  const bookReady = openingSet && shortfall <= 0.001;
+  const canCompleteDirectly = bookReady && !memberFunding.hasMemberProblems;
 
   return {
     investmentId: investment._id,
@@ -919,14 +1005,23 @@ async function getCashierPaymentFundingSnapshot(investment) {
     openingSet,
     shortfall,
     hasShortfall: shortfall > 0.001,
-    canComplete: openingSet && shortfall <= 0.001,
+    canComplete: bookReady,
+    canCompleteDirectly,
+    needsPopup: !canCompleteDirectly,
+    memberFunding,
+    hasMemberProblems: memberFunding.hasMemberProblems,
     reserveBalance,
     totalAdvanceAvailable,
     advanceMembers: advances,
     coverOptions: {
       canUseReserve: reserveBalance > 0.001,
       canUseAdvance: totalAdvanceAvailable > 0.001,
-      maxCoverable: Number(Math.min(shortfall, reserveBalance + totalAdvanceAvailable).toFixed(2)),
+      maxCoverable: Number(
+        Math.min(
+          Math.max(shortfall, memberFunding.totalShareDeficit, memberFunding.totalMonthlyUnpaid),
+          reserveBalance + totalAdvanceAvailable
+        ).toFixed(2)
+      ),
     },
   };
 }
@@ -953,6 +1048,25 @@ async function previewCashierPayment(investmentId) {
 
   const funding = await getCashierPaymentFundingSnapshot(investment);
   const receiver = resolvePayoutReceiver(investment);
+  const shortNames = (funding.memberFunding?.shortMembers || [])
+    .map((row) => row.name || 'Member')
+    .slice(0, 5);
+  const shortLabel = shortNames.length
+    ? `${shortNames.join(', ')}${(funding.memberFunding.shortMembers.length > 5) ? '…' : ''}`
+    : '';
+
+  let message;
+  if (funding.canCompleteDirectly) {
+    message = `All member accounts are balanced and book balance covers ${formatMoney(funding.requiredAmount, 2)}. Payment can complete directly.`;
+  } else if (!funding.openingSet) {
+    message = 'Bank ledger opening balance is not set. Set it before completing payment.';
+  } else if (funding.hasMemberProblems) {
+    message = `Member account gap(s) for ${shortLabel || 'one or more members'}. Cover from another member's advance or Emergency / Reserve Fund, then complete payment.`;
+  } else if (funding.hasShortfall) {
+    message = `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it from member advance (internal borrow) or Emergency / Reserve Fund before completing payment.`;
+  } else {
+    message = 'Resolve funding issues before completing payment.';
+  }
 
   return {
     ...funding,
@@ -966,23 +1080,23 @@ async function previewCashierPayment(investmentId) {
       externalAmount: investment.externalAmount,
       status: investment.status,
     },
-    message: funding.canComplete
-      ? `Book balance ${formatMoney(funding.bookBalance, 2)} covers the required ${formatMoney(funding.requiredAmount, 2)}. Ready to complete payment.`
-      : !funding.openingSet
-        ? 'Bank ledger opening balance is not set. Set it before completing payment, or cover the shortfall from advance / reserve after opening is set.'
-        : `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it from member advance (internal borrow) or Emergency / Reserve Fund before completing payment.`,
+    message,
   };
 }
 
 /**
- * Cover book-balance shortfall by releasing a member's advance into the society bank book.
- * Debits lender advance, credits book ledger, and records an open internal borrow
- * (society project funding) for audit / later repayment to the lender's advance.
+ * Cover book-balance shortfall OR a specific member's pre-payment deficit
+ * by using another member's advance.
+ *
+ * - With borrowerId: debit lender advance → credit borrower savings (and apply
+ *   toward current-month contribution due when applicable).
+ * - Without borrowerId: release advance into the society book (existing path).
  */
 async function coverCashierPaymentShortfallFromAdvance({
   investmentId,
   lenderId,
   amount,
+  borrowerId = null,
   createdBy = 'Cashier',
   note = '',
 } = {}) {
@@ -1002,11 +1116,112 @@ async function coverCashierPaymentShortfallFromAdvance({
   if (!snapshot.openingSet) {
     const error = new Error('Set the bank ledger opening balance before covering a payment shortfall.');
     error.status = 409;
+    error.funding = snapshot;
     throw error;
   }
+
+  // --- Member deficit cover (credit borrower savings) ---
+  if (borrowerId) {
+    if (String(borrowerId) === String(lenderId)) {
+      const error = new Error('Lender and short member must be different people.');
+      error.status = 400;
+      throw error;
+    }
+
+    const shortRow = (snapshot.memberFunding?.shortMembers || [])
+      .find((row) => String(row.id) === String(borrowerId));
+    if (!shortRow || !shortRow.needsCover) {
+      const error = new Error('Selected member does not currently have a payment deficit to cover.');
+      error.status = 400;
+      error.funding = snapshot;
+      throw error;
+    }
+
+    const maxCover = Number(shortRow.coverSuggested || 0);
+    const payAmount = amount == null || amount === ''
+      ? maxCover
+      : Number(Number(amount).toFixed(2));
+    if (!(payAmount > 0)) {
+      const error = new Error('Cover amount must be greater than zero.');
+      error.status = 400;
+      throw error;
+    }
+    if (payAmount > maxCover + 0.001) {
+      const error = new Error(
+        `Cover amount exceeds ${shortRow.name}'s gap of ${formatMoney(maxCover, 2)}.`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const [lender, borrower] = await Promise.all([
+      User.findOne({ _id: lenderId, role: 'member', status: 'active' }),
+      User.findOne({ _id: borrowerId, role: 'member', status: 'active' }),
+    ]);
+    if (!lender) {
+      const error = new Error('Lender member not found or inactive.');
+      error.status = 404;
+      throw error;
+    }
+    if (!borrower) {
+      const error = new Error('Short member not found or inactive.');
+      error.status = 404;
+      throw error;
+    }
+    const advanceAvail = Number(Number(lender.advanceBalance || 0).toFixed(2));
+    if (payAmount > advanceAvail + 0.001) {
+      const error = new Error(
+        `Lender advance balance insufficient. Available: ${formatMoney(advanceAvail, 2)}.`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    lender.advanceBalance = Number((advanceAvail - payAmount).toFixed(2));
+    borrower.savings = Number((Number(borrower.savings || 0) + payAmount).toFixed(2));
+    await Promise.all([lender.save(), borrower.save()]);
+
+    const InternalBorrowing = require('../models/InternalBorrowing');
+    const borrowing = await InternalBorrowing.create({
+      investment: investment._id,
+      contribution: null,
+      lender: lender._id,
+      lenderName: lender.name,
+      borrower: borrower._id,
+      borrowerName: borrower.name,
+      amount: payAmount,
+      amountSettled: 0,
+      status: 'open',
+      note: note?.trim()
+        || `Pre-payment cover for ${borrower.name} from ${lender.name} advance · ${investment.investmentCode || 'project'}`,
+      createdBy: String(createdBy || 'Cashier').trim(),
+    });
+
+    try {
+      const { applyDepositToMonthlyDue } = require('./monthlyTargetService');
+      await applyDepositToMonthlyDue({ member: borrower, amount: payAmount });
+    } catch (_) {
+      // Monthly due update is best-effort; savings credit already applied.
+    }
+
+    const funding = await getCashierPaymentFundingSnapshot(investment);
+    return {
+      mode: 'member',
+      borrowing,
+      coveredAmount: payAmount,
+      amountCovered: payAmount,
+      borrower: { id: borrower._id, name: borrower.name, savings: borrower.savings },
+      lender: { id: lender._id, name: lender.name, advanceBalance: lender.advanceBalance },
+      funding,
+      message: `Covered ${formatMoney(payAmount, 2)} for ${borrower.name} from ${lender.name}'s advance.`,
+    };
+  }
+
+  // --- Book balance cover (existing behaviour) ---
   if (!(snapshot.shortfall > 0.001)) {
-    const error = new Error('There is no book-balance shortfall to cover.');
+    const error = new Error('There is no book-balance shortfall to cover. Select a short member if covering a member gap.');
     error.status = 400;
+    error.funding = snapshot;
     throw error;
   }
 
@@ -1041,8 +1256,6 @@ async function coverCashierPaymentShortfallFromAdvance({
     throw error;
   }
 
-  // Pick a society-side borrower marker: use an active member other than lender when possible,
-  // otherwise the lender themselves with an explicit society-funding note (audit-only borrow).
   const borrower = await User.findOne({
     role: 'member',
     status: 'active',
@@ -1083,6 +1296,7 @@ async function coverCashierPaymentShortfallFromAdvance({
 
   const funding = await getCashierPaymentFundingSnapshot(investment);
   return {
+    mode: 'book',
     borrowing,
     bankLedger,
     bookBalance: bankLedger?.ledger?.bookBalance ?? funding.bookBalance,
@@ -1093,11 +1307,16 @@ async function coverCashierPaymentShortfallFromAdvance({
 }
 
 /**
- * Cover book-balance shortfall by moving cash from Emergency / Reserve Fund back into the book.
+ * Cover book-balance shortfall OR a specific member's pre-payment deficit
+ * from the Emergency / Reserve Fund.
+ *
+ * - With memberId: debit reserve → credit that member's savings.
+ * - Without memberId: release reserve into the society book (existing path).
  */
 async function coverCashierPaymentShortfallFromReserve({
   investmentId,
   amount,
+  memberId = null,
   createdBy = 'Cashier',
   note = '',
 } = {}) {
@@ -1117,11 +1336,91 @@ async function coverCashierPaymentShortfallFromReserve({
   if (!snapshot.openingSet) {
     const error = new Error('Set the bank ledger opening balance before covering a payment shortfall.');
     error.status = 409;
+    error.funding = snapshot;
     throw error;
   }
+
+  const { debitReserve } = require('./emergencyReserveService');
+
+  if (memberId) {
+    const shortRow = (snapshot.memberFunding?.shortMembers || [])
+      .find((row) => String(row.id) === String(memberId));
+    if (!shortRow || !shortRow.needsCover) {
+      const error = new Error('Selected member does not currently have a payment deficit to cover.');
+      error.status = 400;
+      error.funding = snapshot;
+      throw error;
+    }
+
+    const maxCover = Number(shortRow.coverSuggested || 0);
+    const payAmount = amount == null || amount === ''
+      ? Math.min(maxCover, snapshot.reserveBalance)
+      : Number(Number(amount).toFixed(2));
+    if (!(payAmount > 0)) {
+      const error = new Error('Cover amount must be greater than zero.');
+      error.status = 400;
+      throw error;
+    }
+    if (payAmount > maxCover + 0.001) {
+      const error = new Error(
+        `Cover amount exceeds ${shortRow.name}'s gap of ${formatMoney(maxCover, 2)}.`
+      );
+      error.status = 400;
+      throw error;
+    }
+    if (payAmount > snapshot.reserveBalance + 0.001) {
+      const error = new Error(
+        `Emergency reserve has only ${formatMoney(snapshot.reserveBalance, 2)} available.`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const member = await User.findOne({ _id: memberId, role: 'member', status: 'active' });
+    if (!member) {
+      const error = new Error('Short member not found or inactive.');
+      error.status = 404;
+      throw error;
+    }
+
+    const reserveResult = await debitReserve(payAmount, {
+      type: 'project_cover',
+      note: note?.trim()
+        || `Pre-payment cover for ${member.name} from Emergency/Reserve · ${investment.investmentCode || ''}`,
+      createdBy,
+      referenceType: 'Investment',
+      referenceId: investment._id,
+    });
+
+    member.savings = Number((Number(member.savings || 0) + payAmount).toFixed(2));
+    await member.save();
+
+    try {
+      const { applyDepositToMonthlyDue } = require('./monthlyTargetService');
+      await applyDepositToMonthlyDue({ member, amount: payAmount });
+    } catch (_) {
+      // best-effort
+    }
+
+    const funding = await getCashierPaymentFundingSnapshot(investment);
+    return {
+      mode: 'member',
+      reserve: {
+        balance: reserveResult.balance,
+        entry: reserveResult.entry,
+      },
+      coveredAmount: payAmount,
+      amountCovered: payAmount,
+      member: { id: member._id, name: member.name, savings: member.savings },
+      funding,
+      message: `Covered ${formatMoney(payAmount, 2)} for ${member.name} from Emergency / Reserve Fund.`,
+    };
+  }
+
   if (!(snapshot.shortfall > 0.001)) {
-    const error = new Error('There is no book-balance shortfall to cover.');
+    const error = new Error('There is no book-balance shortfall to cover. Select a short member if covering a member gap.');
     error.status = 400;
+    error.funding = snapshot;
     throw error;
   }
 
@@ -1148,7 +1447,6 @@ async function coverCashierPaymentShortfallFromReserve({
     throw error;
   }
 
-  const { debitReserve } = require('./emergencyReserveService');
   const { creditInbound } = require('./bankLedgerService');
 
   const reserveResult = await debitReserve(payAmount, {
@@ -1171,6 +1469,7 @@ async function coverCashierPaymentShortfallFromReserve({
 
   const funding = await getCashierPaymentFundingSnapshot(investment);
   return {
+    mode: 'book',
     reserve: {
       balance: reserveResult.balance,
       entry: reserveResult.entry,
@@ -1224,6 +1523,20 @@ async function completeCashierPayment(investmentId, {
     );
     error.status = 409;
     error.code = 'INSUFFICIENT_BOOK_BALANCE';
+    error.funding = fundingCheck;
+    throw error;
+  }
+  if (fundingCheck.hasMemberProblems) {
+    const names = (fundingCheck.memberFunding?.shortMembers || [])
+      .map((row) => row.name)
+      .filter(Boolean)
+      .slice(0, 5)
+      .join(', ');
+    const error = new Error(
+      `One or more members cannot cover their share yet${names ? ` (${names})` : ''}. Cover the gap from advance or Emergency/Reserve Fund first.`
+    );
+    error.status = 409;
+    error.code = 'MEMBER_SHARE_SHORTFALL';
     error.funding = fundingCheck;
     throw error;
   }
@@ -1594,6 +1907,7 @@ module.exports = {
   coverCashierPaymentShortfallFromAdvance,
   coverCashierPaymentShortfallFromReserve,
   getCashierPaymentFundingSnapshot,
+  previewMemberShareFunding,
   getInvestmentApprovalDetails,
   getInvestmentDisplayStatus,
   listCashierPaymentQueue,
