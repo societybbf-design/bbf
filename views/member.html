@@ -37,7 +37,7 @@
       </a>
       <a href="#investment-requests" class="nav-item" data-page="investment-requests">
         <span class="nav-icon-wrap"><span class="nav-icon">✅</span></span>
-        <span class="nav-label" data-i18n="nav.investmentRequests">Approvals</span>
+        <span class="nav-label" data-i18n="nav.approvals">Approvals</span>
       </a>
       <a href="#portfolio" class="nav-item" data-page="portfolio">
         <span class="nav-icon-wrap"><span class="nav-icon">💼</span></span>
@@ -348,6 +348,17 @@
 
       <section class="page-section" data-page-section="investment-requests">
         <section class="panel-card table-card-wide">
+          <div class="panel-card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+            <div>
+              <h2 data-i18n="approvals.title">Approvals</h2>
+              <p class="table-subtitle" data-i18n="approvals.subtitle">Pending requests that need your review. Accept, reject, or open details without leaving this queue.</p>
+            </div>
+            <button type="button" class="secondary-btn" id="memberApprovalsRefreshBtn" data-i18n="common.refresh">Refresh</button>
+          </div>
+          <div id="memberApprovalsInbox"></div>
+        </section>
+
+        <section class="panel-card table-card-wide u-mt-1">
           <h2>New Investment Requests</h2>
           <p class="table-subtitle">Review proposed investments, open documents, and approve. Your approval is required before cashier payment.</p>
           <div id="memberInvestmentRequestsList"></div>
@@ -845,6 +856,7 @@
   <script src="/static/js/table-cards.js"></script>
   <script src="/static/js/chat-shared.js"></script>
   <script src="/static/js/money.js"></script>
+  <script src="/static/js/approvals-inbox.js"></script>
   <script src="/static/js/cashier-tracking.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="/static/js/member.js"></script>

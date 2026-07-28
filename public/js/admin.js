@@ -1222,6 +1222,7 @@ function navigateToPage(page, sectionId = null, { syncUrl = true } = {}) {
 
 const ADMIN_PAGE_I18N_KEYS = {
   dashboard: 'dashboard',
+  approvals: 'approvals',
   members: 'members',
   projects: 'projects',
   profit: 'profit',
@@ -1260,6 +1261,10 @@ function updatePageContent(page, loanTab = null) {
       void loadMonthlyContributionDashboard();
       void refreshLoanPortfolioData();
       void loadDashboardSnapshot();
+      void refreshAdminApprovalsBadge();
+      break;
+    case 'approvals':
+      void loadAdminApprovalsInbox();
       break;
     case 'members':
       void fetchMembers();
@@ -1486,7 +1491,7 @@ function applyOpsPermissionGate(user) {
 }
 
 function firstAllowedOpsPage() {
-  const preferred = ['withdrawals', 'members', 'profit', 'reports', 'messages', 'projects', 'loans', 'settings', 'dashboard'];
+  const preferred = ['approvals', 'withdrawals', 'members', 'profit', 'reports', 'messages', 'projects', 'loans', 'settings', 'dashboard'];
   for (const page of preferred) {
     const nav = document.querySelector(`.nav-item[data-page="${page}"]:not(.hidden)`);
     if (nav) return page;
@@ -2884,6 +2889,19 @@ async function fetchSummary() {
   }
 
   initializeDepositChart(data);
+}
+
+async function refreshAdminApprovalsBadge() {
+  if (!window.ApprovalsInbox?.refreshBadge) return;
+  await window.ApprovalsInbox.refreshBadge('.nav-item[data-page="approvals"]');
+}
+
+async function loadAdminApprovalsInbox() {
+  if (!window.ApprovalsInbox?.loadAndRender) return;
+  await window.ApprovalsInbox.loadAndRender('adminApprovalsInbox', {
+    badgeSelector: '.nav-item[data-page="approvals"]',
+    onNavigate: (page) => navigateToPage(page),
+  });
 }
 
 async function loadDashboardSnapshot() {
@@ -7475,6 +7493,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('refreshActivityLogBtn')?.addEventListener('click', () => {
     void loadActivityLog();
+  });
+
+  document.getElementById('adminApprovalsRefreshBtn')?.addEventListener('click', () => {
+    void loadAdminApprovalsInbox();
   });
 
   document.getElementById('selfPasswordForm')?.addEventListener('submit', async (event) => {

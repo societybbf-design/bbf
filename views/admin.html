@@ -47,6 +47,10 @@
         <span class="nav-icon-wrap"><span class="nav-icon">📊</span></span>
         <span class="nav-label" data-i18n="nav.dashboard">Dashboard</span>
       </a>
+      <a href="#approvals" class="nav-item" data-page="approvals" data-requires-permission="can_manage_loans,can_manage_kyc,can_manage_withdrawals,can_manage_investments,can_manage_members,can_manage_refunds,can_view_reports">
+        <span class="nav-icon-wrap"><span class="nav-icon">✅</span></span>
+        <span class="nav-label" data-i18n="nav.approvals">Approvals</span>
+      </a>
       <a href="#reports" class="nav-item" data-page="reports" data-requires-permission="can_view_reports">
         <span class="nav-icon-wrap"><span class="nav-icon">📋</span></span>
         <span class="nav-label" data-i18n="nav.reports">Reports</span>
@@ -446,6 +450,19 @@
 
       </section>
 
+      </section>
+
+      <section class="page-section" data-page-section="approvals">
+        <section class="panel-card table-card-wide">
+          <div class="panel-card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+            <div>
+              <h2 data-i18n="approvals.title">Approvals</h2>
+              <p class="table-subtitle" data-i18n="approvals.subtitle">Pending requests that need your review. Accept, reject, or open details without leaving this queue.</p>
+            </div>
+            <button type="button" class="secondary-btn" id="adminApprovalsRefreshBtn" data-i18n="common.refresh">Refresh</button>
+          </div>
+          <div id="adminApprovalsInbox"></div>
+        </section>
       </section>
 
       <section class="page-section" data-page-section="members">
@@ -2244,6 +2261,7 @@
   <script defer src="/static/js/theme.js"></script>
   <script defer src="/static/js/table-cards.js"></script>
   <script defer src="/static/js/password-confirm.js"></script>
+  <script defer src="/static/js/approvals-inbox.js"></script>
   <script defer src="/static/js/chat-shared.js"></script>
   <script defer src="/static/js/money.js"></script>
   <script defer src="/static/js/admin.js"></script>

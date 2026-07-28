@@ -1193,6 +1193,17 @@
           </div>
         </div>
 
+        <div class="panel-card hidden" data-staff-view="approvals" id="moduleApprovals">
+          <div class="panel-card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+            <div>
+              <h2 data-i18n="approvals.title">Approvals</h2>
+              <p class="text-secondary" data-i18n="approvals.subtitle">Pending requests that need your review. Accept, reject, or open details without leaving this queue.</p>
+            </div>
+            <button type="button" class="secondary-btn" id="staffApprovalsRefreshBtn" data-i18n="common.refresh">Refresh</button>
+          </div>
+          <div id="staffApprovalsInbox"></div>
+        </div>
+
         <div class="panel-card hidden" data-staff-view="investments" id="moduleInvestments">
           <div class="panel-card-header">
             <h2>Investments</h2>
@@ -1253,6 +1264,7 @@
   <script src="/static/js/sidebar-nav.js"></script>
   <script src="/static/js/table-cards.js"></script>
   <script src="/static/js/password-confirm.js"></script>
+  <script src="/static/js/approvals-inbox.js"></script>
   <script src="/static/js/chat-shared.js"></script>
   <script src="/static/js/money.js"></script>
   <script src="/static/js/cashier-tracking.js"></script>

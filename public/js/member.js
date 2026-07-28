@@ -83,7 +83,7 @@ let activeMemberReportType = null;
 const memberPageKeys = {
   dashboard: 'dashboard',
   investments: 'investments',
-  'investment-requests': 'investmentRequests',
+  'investment-requests': 'approvals',
   portfolio: 'portfolio',
   withdrawals: 'withdrawals',
   refunds: 'refunds',
@@ -143,9 +143,11 @@ function navigateMemberPage(page, { syncUrl = true } = {}) {
       void loadLoanDashboardSummary();
       void loadMemberInvestmentRequests();
       void loadMemberExitRequests();
+      void refreshMemberApprovalsBadge();
     }
   }
   if (page === 'investment-requests') {
+    void loadMemberApprovalsInbox();
     void loadMemberInvestmentRequests();
     void loadMemberExitRequests();
   }
@@ -866,6 +868,22 @@ async function loadSocietyInvestments() {
   } catch (error) {
     console.error('Failed to load society investments:', error);
   }
+}
+
+async function loadMemberApprovalsInbox() {
+  if (!window.ApprovalsInbox?.loadAndRender) return;
+  await window.ApprovalsInbox.loadAndRender('memberApprovalsInbox', {
+    badgeSelector: '.nav-item[data-page="investment-requests"]',
+    onActionComplete: async () => {
+      await loadMemberInvestmentRequests();
+      await loadMemberExitRequests();
+    },
+  });
+}
+
+async function refreshMemberApprovalsBadge() {
+  if (!window.ApprovalsInbox?.refreshBadge) return;
+  await window.ApprovalsInbox.refreshBadge('.nav-item[data-page="investment-requests"]');
 }
 
 async function loadMemberExitRequests() {
@@ -2076,6 +2094,10 @@ document.addEventListener('DOMContentLoaded', () => {
   bindLoanAndKycForms();
   bindMemberNotificationUi();
   bindMemberChatUi();
+
+  document.getElementById('memberApprovalsRefreshBtn')?.addEventListener('click', () => {
+    void loadMemberApprovalsInbox();
+  });
 
   const hashPage = (window.location.hash || '').replace(/^#/, '');
   const initialPage = (hashPage && document.querySelector(`[data-page="${hashPage}"]`))
