@@ -53,10 +53,6 @@
       </a>
 
       <p class="nav-section-label" data-i18n="nav.section.finance">Finance</p>
-      <a href="#deposits" class="nav-item" data-page="deposits" data-requires-permission="can_manage_deposits">
-        <span class="nav-icon-wrap"><span class="nav-icon">💰</span></span>
-        <span class="nav-label" data-i18n="nav.deposits">Deposits</span>
-      </a>
       <a href="#projects" class="nav-item" data-page="projects" data-requires-permission="can_manage_investments">
         <span class="nav-icon-wrap"><span class="nav-icon">🏗️</span></span>
         <span class="nav-label" data-i18n="nav.projects">Project Management</span>
@@ -206,10 +202,6 @@
         <button type="button" class="dashboard-quick-btn dashboard-quick-btn-notice" data-quick-nav="settings">
           <span class="dashboard-quick-icon">📢</span>
           <span data-i18n="admin.quickActions.sendNotice">Send Notice</span>
-        </button>
-        <button type="button" class="dashboard-quick-btn dashboard-quick-btn-deposit" data-quick-nav="deposits">
-          <span class="dashboard-quick-icon">💰</span>
-          <span data-i18n="admin.buttons.recordDeposit">Record Deposit</span>
         </button>
         <button type="button" class="dashboard-quick-btn dashboard-quick-btn-loan" data-quick-nav="loans">
           <span class="dashboard-quick-icon">🏛️</span>
@@ -454,88 +446,6 @@
 
       </section>
 
-      <section class="page-section" data-page-section="deposits">
-        <section class="panel-card card-form-wide">
-          <h2 data-i18n="admin.sections.monthWiseTarget">Month-wise fixed contribution target</h2>
-          <p class="table-subtitle">Set the mandatory deposit for each calendar month. Deposits above the target go to Advance; shortfalls are flagged as unpaid dues for that month.</p>
-          <form id="monthlyTargetForm" class="deposit-form">
-            <div class="form-row-2">
-              <div class="form-group">
-                <label data-i18n="admin.forms.month">
-                Month
-                  <input type="month" name="yearMonth" id="monthlyTargetMonth" required />
-                </label>
-              </div>
-              <div class="form-group">
-                <label data-i18n="admin.forms.fixedTargetAmount">
-                Fixed target amount
-                  <input type="number" name="amount" id="monthlyTargetAmount" min="0" step="0.01" required />
-                </label>
-              </div>
-            </div>
-            <div class="form-group">
-              <label data-i18n="admin.forms.notes">
-                Notes
-                <input type="text" name="notes" id="monthlyTargetNotes" placeholder="Optional" />
-              </label>
-            </div>
-            <button type="submit" class="primary-btn" data-i18n="admin.buttons.saveMonthTarget">Save month target</button>
-            <p id="monthlyTargetMessage" class="message"></p>
-          </form>
-          <div id="activeMonthTargetBox" class="panel-card u-mt-1">
-            <p class="table-subtitle">Loading active month target…</p>
-          </div>
-          <div class="table-wrapper u-mt-1">
-            <table class="data-table">
-              <thead><tr><th data-i18n="table.month">Month</th><th data-i18n="table.target">Target</th><th data-i18n="table.setBy">Set by</th><th data-i18n="table.notes">Notes</th></tr></thead>
-              <tbody id="monthlyTargetsBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel-card card-form-wide">
-          <h2 data-i18n="admin.sections.recordDeposit">Record Deposit</h2>
-          <p class="table-subtitle">Compared against this month’s fixed target. Extra → Advance balance. Shortfall → unpaid dues for the month.</p>
-          <form id="adminDepositForm" class="deposit-form">
-            <div class="form-group">
-              <label data-i18n="admin.forms.selectMember">
-                Select Member
-                <select id="selectedMemberId" name="memberId" required>
-                  <option value="">Choose a member</option>
-                </select>
-              </label>
-              <input type="hidden" id="selectedMemberName" />
-            </div>
-            <div class="form-group">
-              <label data-i18n="admin.forms.amountUsd">
-                Amount (৳)
-                <input type="number" id="depositAmount" min="0.01" step="0.01" placeholder="0.00" required />
-              </label>
-              <p class="table-subtitle" id="depositAmountHint">Enter the deposit amount for this member.</p>
-            </div>
-            <button type="submit" class="primary-btn" id="adminDepositSubmitBtn" data-i18n="admin.buttons.recordDeposit">Record Deposit</button>
-            <a id="latestReceiptLink" class="receipt-button" target="_blank" hidden>Download Receipt</a>
-            <p id="depositMessage" class="message"></p>
-          </form>
-        </section>
-
-        <section class="panel-card table-card-wide">
-          <h2 data-i18n="admin.sections.recentDeposits">Recent Deposits</h2>
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th data-i18n="table.member">Member</th>
-                  <th data-i18n="table.email">Email</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.date">Date</th>
-                  <th data-i18n="table.receipt">Receipt</th>
-                </tr>
-              </thead>
-              <tbody id="depositHistory"></tbody>
-            </table>
-          </div>
-        </section>
       </section>
 
       <section class="page-section" data-page-section="members">
@@ -553,7 +463,7 @@
           <div class="members-layout">
             <section class="panel-card table-card-wide">
               <h2 data-i18n="admin.sections.membersList">Members List</h2>
-              <p class="table-subtitle">Click a member to record a deposit or open their profile.</p>
+              <p class="table-subtitle">Click a member to open their profile. Deposits are recorded by the Cashier only.</p>
               <div class="table-wrapper">
                 <table class="data-table">
                   <thead>
@@ -1859,6 +1769,44 @@
       </section>
 
       <section class="page-section" data-page-section="settings">
+      <section class="panel-card card-form-wide">
+        <h2 data-i18n="admin.sections.monthWiseTarget">Month-wise fixed contribution target</h2>
+        <p class="table-subtitle">Set the mandatory deposit for each calendar month. Member deposits are recorded only by the Cashier. Amounts above the target go to Advance; shortfalls are unpaid dues.</p>
+        <form id="monthlyTargetForm" class="deposit-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label data-i18n="admin.forms.month">
+                Month
+                <input type="month" name="yearMonth" id="monthlyTargetMonth" required />
+              </label>
+            </div>
+            <div class="form-group">
+              <label data-i18n="admin.forms.fixedTargetAmount">
+                Fixed target amount
+                <input type="number" name="amount" id="monthlyTargetAmount" min="0" step="0.01" required />
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="admin.forms.notes">
+              Notes
+              <input type="text" name="notes" id="monthlyTargetNotes" placeholder="Optional" />
+            </label>
+          </div>
+          <button type="submit" class="primary-btn" data-i18n="admin.buttons.saveMonthTarget">Save month target</button>
+          <p id="monthlyTargetMessage" class="message"></p>
+        </form>
+        <div id="activeMonthTargetBox" class="panel-card u-mt-1">
+          <p class="table-subtitle">Loading active month target…</p>
+        </div>
+        <div class="table-wrapper u-mt-1">
+          <table class="data-table">
+            <thead><tr><th data-i18n="table.month">Month</th><th data-i18n="table.target">Target</th><th data-i18n="table.setBy">Set by</th><th data-i18n="table.notes">Notes</th></tr></thead>
+            <tbody id="monthlyTargetsBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="panel-card">
         <h2 data-i18n="admin.sections.accountSecurity">Account security</h2>
         <p class="table-subtitle">Change your own password using your current password. User Management retains oversight of password updates across the platform.</p>

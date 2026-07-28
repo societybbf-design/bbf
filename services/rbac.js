@@ -69,7 +69,7 @@ const PERMISSIONS = Object.freeze([
   {
     key: 'can_manage_deposits',
     label: 'Manage deposits',
-    description: 'Record and view member deposits.',
+    description: 'Record, receive, and verify member deposits (Cashier only).',
   },
   {
     key: 'can_manage_withdrawals',
@@ -141,7 +141,7 @@ const PERMISSIONS = Object.freeze([
 const PERMISSION_KEYS = Object.freeze(PERMISSIONS.map((p) => p.key));
 
 /** Permissions that must never be auto-granted via CEO/developer full-access bypass. */
-const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_disburse_loans']);
+const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_disburse_loans', 'can_manage_deposits']);
 
 /** User Management–only permissions (developer role or explicit grant — not CEO full-access bypass). */
 const UM_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_manage_security', 'can_proxy_member_approvals']);
@@ -281,6 +281,10 @@ function publicUserPayload(userDoc) {
   // Keep cashier loan-disbursement capability even if stored permissions predates the new key.
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_disburse_loans')) {
     permissions = [...permissions, 'can_disburse_loans'];
+  }
+  // Ensure cashiers retain deposit management even if stored permissions predate the exclusive grant.
+  if (normalizeRole(role) === 'cashier' && !permissions.includes('can_manage_deposits')) {
+    permissions = [...permissions, 'can_manage_deposits'];
   }
   // Ensure cashiers retain Profit & Loss management even if stored permissions predate the grant.
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_manage_profit')) {
