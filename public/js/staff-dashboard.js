@@ -966,21 +966,28 @@ function renderCashierPaymentShortfallModal(funding) {
   cashierPaymentShortfallState.funding = funding;
   cashierPaymentShortfallState.investmentId = funding.investmentId || funding.investment?._id || cashierPaymentShortfallState.investmentId;
 
+  const shortMembers = Array.isArray(funding.memberFunding?.shortMembers)
+    ? funding.memberFunding.shortMembers
+    : [];
+  const hasMemberProblems = Boolean(funding.hasMemberProblems || shortMembers.length);
+  const canFinish = Boolean(funding.canCompleteDirectly);
+  const advances = Array.isArray(funding.advanceMembers) ? funding.advanceMembers : [];
+
   if (titleEl) {
-    titleEl.textContent = funding.canComplete
+    titleEl.textContent = canFinish
       ? 'Ready to complete payment'
-      : 'Fix payment problem, then complete';
+      : (hasMemberProblems ? 'Member account short — cover then complete' : 'Fix payment problem, then complete');
   }
   if (subtitle) {
-    subtitle.textContent = funding.canComplete
-      ? 'Book balance is enough. Confirm below to complete payment.'
-      : (!funding.openingSet
-        ? 'Bank opening balance is not set, or book cash is short. Fix the problem below, then complete payment.'
-        : 'Book balance is short. Cover the gap from advance or Emergency / Reserve Fund, then complete payment.');
+    subtitle.textContent = canFinish
+      ? 'All member accounts are balanced. Confirm below to complete payment.'
+      : (hasMemberProblems
+        ? 'One or more members cannot cover their share or monthly contribution. Cover the gap below, then complete payment.'
+        : (!funding.openingSet
+          ? 'Bank opening balance is not set. Fix it in Bank Ledger, then try again.'
+          : 'Book balance is short. Cover the gap from advance or Emergency / Reserve Fund, then complete payment.'));
   }
 
-  const advances = Array.isArray(funding.advanceMembers) ? funding.advanceMembers : [];
-  const defaultCover = Number(funding.shortfall || 0);
   const lenderOptions = advances.length
     ? advances.map((m) => `
         <option value="${escapeHtml(String(m.id))}" data-advance="${Number(m.advanceBalance || 0)}">
@@ -989,17 +996,61 @@ function renderCashierPaymentShortfallModal(funding) {
       `).join('')
     : '<option value="">No members with advance balance</option>';
 
-  const statusBanner = funding.canComplete
+  const shortMemberOptions = shortMembers.length
+    ? shortMembers.map((m, idx) => `
+        <option value="${escapeHtml(String(m.id))}" data-cover="${Number(m.coverSuggested || 0)}" ${idx === 0 ? 'selected' : ''}>
+          ${escapeHtml(m.name || '')} — gap ${money(m.coverSuggested)}
+        </option>
+      `).join('')
+    : '<option value="">No short members</option>';
+
+  const defaultMemberCover = shortMembers.length ? Number(shortMembers[0].coverSuggested || 0) : 0;
+  const defaultBookCover = Number(funding.shortfall || 0);
+  const showMemberCover = hasMemberProblems && funding.openingSet;
+  const showBookCover = Boolean(funding.hasShortfall && funding.openingSet && !canFinish);
+
+  const shortMembersTable = shortMembers.length ? `
+    <div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
+      <h3>Accounts that are short</h3>
+      <p class="table-subtitle">Cover each gap from another member's advance or Emergency / Reserve Fund.</p>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th>Share needed</th>
+              <th>Available</th>
+              <th>Share short</th>
+              <th>Month unpaid</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${shortMembers.map((m) => `
+              <tr>
+                <td>${escapeHtml(m.name || '')}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
+                <td>${money(m.expectedShare)}</td>
+                <td>${money(m.available)} <span class="text-secondary">(sav ${money(m.savings)} + adv ${money(m.advanceBalance)})</span></td>
+                <td class="message error">${money(m.shareDeficit)}</td>
+                <td class="${Number(m.monthlyUnpaid || 0) > 0 ? 'message error' : ''}">${money(m.monthlyUnpaid)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  ` : '';
+
+  const statusBanner = canFinish
     ? `<div class="panel-card u-mb-1" style="border-left:4px solid #059669;">
          <p><strong>No funding problem.</strong> You can complete payment now.</p>
        </div>`
     : !funding.openingSet
       ? `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
-           <p><strong>Bank opening balance is not set.</strong> Set it in Bank Ledger first. Cover options unlock after opening is set.</p>
+           <p><strong>Bank opening balance is not set.</strong> Set it in Bank Ledger first.</p>
            <p class="u-mt-1"><button type="button" class="secondary-btn" id="cashierShortfallOpenLedger">Open Bank Ledger</button></p>
          </div>`
       : `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
-           <p><strong>Payment cannot complete yet.</strong> Solve the shortfall below, then click Complete payment.</p>
+           <p><strong>Payment cannot complete yet.</strong> ${escapeHtml(funding.message || 'Solve the shortfall below, then click Complete payment.')}</p>
          </div>`;
 
   content.innerHTML = `
@@ -1008,18 +1059,28 @@ function renderCashierPaymentShortfallModal(funding) {
       <p><strong>Project:</strong> ${escapeHtml(funding.investmentCode || funding.investment?.investmentCode || '—')}</p>
       <p><strong>Required (society):</strong> ${money(funding.requiredAmount)}</p>
       <p><strong>Current book balance:</strong> ${money(funding.bookBalance)}</p>
-      <p><strong>Shortfall:</strong> <span class="${funding.hasShortfall ? 'message error' : 'message success'}">${money(funding.shortfall)}</span></p>
+      <p><strong>Book shortfall:</strong> <span class="${funding.hasShortfall ? 'message error' : 'message success'}">${money(funding.shortfall)}</span></p>
       <p><strong>Emergency / Reserve Fund:</strong> ${money(funding.reserveBalance)}</p>
       <p><strong>Opening balance set:</strong> ${funding.openingSet ? 'Yes' : 'No — set it in Bank Ledger first'}</p>
       <p class="table-subtitle">${escapeHtml(funding.message || '')}</p>
     </div>
 
-    ${funding.canComplete || !funding.openingSet ? '' : `
+    ${shortMembersTable}
+
+    ${showMemberCover ? `
     <div class="form-row-2">
       <div class="panel-card">
         <h3>Internal borrow (from advance)</h3>
-        <p class="table-subtitle">Release a member's advance into the society book to cover the gap.</p>
+        <p class="table-subtitle">Move advance from a funded member into the short member's savings.</p>
         <form id="cashierShortfallAdvanceForm" class="add-member-form">
+          <input type="hidden" name="coverMode" value="member" />
+          <div class="form-group">
+            <label>Short member
+              <select name="borrowerId" id="cashierShortfallBorrower" required>
+                ${shortMemberOptions}
+              </select>
+            </label>
+          </div>
           <div class="form-group">
             <label>Lender (advance available)
               <select name="lenderId" id="cashierShortfallLender" required ${advances.length ? '' : 'disabled'}>
@@ -1030,11 +1091,11 @@ function renderCashierPaymentShortfallModal(funding) {
           <div class="form-group">
             <label>Amount (৳)
               <input type="number" name="amount" id="cashierShortfallAdvanceAmount" min="0.01" step="0.01"
-                value="${defaultCover > 0 && advances.length ? Math.min(defaultCover, Number(advances[0]?.advanceBalance || defaultCover)).toFixed(2) : ''}"
-                ${funding.hasShortfall && advances.length ? 'required' : 'disabled'} />
+                value="${defaultMemberCover > 0 && advances.length ? Math.min(defaultMemberCover, Number(advances[0]?.advanceBalance || defaultMemberCover)).toFixed(2) : ''}"
+                ${advances.length ? 'required' : 'disabled'} />
             </label>
           </div>
-          <button type="submit" class="secondary-btn" ${funding.hasShortfall && advances.length ? '' : 'disabled'}>
+          <button type="submit" class="secondary-btn" ${advances.length ? '' : 'disabled'}>
             Apply advance cover
           </button>
         </form>
@@ -1042,51 +1103,82 @@ function renderCashierPaymentShortfallModal(funding) {
 
       <div class="panel-card">
         <h3>Emergency / Reserve Fund</h3>
-        <p class="table-subtitle">Move reserve cash back into the book balance for this payout.</p>
+        <p class="table-subtitle">Credit the short member's savings from the reserve fund.</p>
         <form id="cashierShortfallReserveForm" class="add-member-form">
+          <input type="hidden" name="coverMode" value="member" />
+          <div class="form-group">
+            <label>Short member
+              <select name="memberId" id="cashierShortfallReserveMember" required>
+                ${shortMemberOptions}
+              </select>
+            </label>
+          </div>
           <div class="form-group">
             <label>Amount (৳)
               <input type="number" name="amount" id="cashierShortfallReserveAmount" min="0.01" step="0.01"
-                value="${defaultCover > 0 ? Math.min(defaultCover, Number(funding.reserveBalance || 0)).toFixed(2) : ''}"
-                ${funding.hasShortfall && Number(funding.reserveBalance || 0) > 0 ? 'required' : 'disabled'} />
+                value="${defaultMemberCover > 0 ? Math.min(defaultMemberCover, Number(funding.reserveBalance || 0)).toFixed(2) : ''}"
+                ${Number(funding.reserveBalance || 0) > 0 ? 'required' : 'disabled'} />
             </label>
           </div>
-          <button type="submit" class="secondary-btn" ${funding.hasShortfall && Number(funding.reserveBalance || 0) > 0 ? '' : 'disabled'}>
+          <button type="submit" class="secondary-btn" ${Number(funding.reserveBalance || 0) > 0 ? '' : 'disabled'}>
             Apply reserve cover
           </button>
         </form>
       </div>
     </div>
+    ` : ''}
 
-    <div class="panel-card u-mt-1">
-      <h3>Members with advance</h3>
-      ${advances.length ? `
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead><tr><th>Member</th><th>Advance</th><th>Savings</th></tr></thead>
-            <tbody>
-              ${advances.map((m) => `
-                <tr>
-                  <td>${escapeHtml(m.name || '')}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
-                  <td>${money(m.advanceBalance)}</td>
-                  <td>${money(m.savings)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      ` : '<p class="text-secondary">No members currently hold an advance balance.</p>'}
+    ${showBookCover ? `
+    <div class="form-row-2 u-mt-1">
+      <div class="panel-card">
+        <h3>Cover book shortfall (advance)</h3>
+        <p class="table-subtitle">Release a member's advance into the society book.</p>
+        <form id="cashierShortfallBookAdvanceForm" class="add-member-form">
+          <input type="hidden" name="coverMode" value="book" />
+          <div class="form-group">
+            <label>Lender (advance available)
+              <select name="lenderId" required ${advances.length ? '' : 'disabled'}>
+                ${lenderOptions}
+              </select>
+            </label>
+          </div>
+          <div class="form-group">
+            <label>Amount (৳)
+              <input type="number" name="amount" min="0.01" step="0.01"
+                value="${defaultBookCover > 0 && advances.length ? Math.min(defaultBookCover, Number(advances[0]?.advanceBalance || defaultBookCover)).toFixed(2) : ''}"
+                ${advances.length ? 'required' : 'disabled'} />
+            </label>
+          </div>
+          <button type="submit" class="secondary-btn" ${advances.length ? '' : 'disabled'}>Apply book cover</button>
+        </form>
+      </div>
+      <div class="panel-card">
+        <h3>Cover book shortfall (reserve)</h3>
+        <form id="cashierShortfallBookReserveForm" class="add-member-form">
+          <input type="hidden" name="coverMode" value="book" />
+          <div class="form-group">
+            <label>Amount (৳)
+              <input type="number" name="amount" min="0.01" step="0.01"
+                value="${defaultBookCover > 0 ? Math.min(defaultBookCover, Number(funding.reserveBalance || 0)).toFixed(2) : ''}"
+                ${Number(funding.reserveBalance || 0) > 0 ? 'required' : 'disabled'} />
+            </label>
+          </div>
+          <button type="submit" class="secondary-btn" ${Number(funding.reserveBalance || 0) > 0 ? '' : 'disabled'}>Apply book reserve cover</button>
+        </form>
+      </div>
     </div>
-    `}
+    ` : ''}
   `;
 
   if (completeBtn) {
-    completeBtn.disabled = !funding.canComplete;
-    completeBtn.textContent = funding.canComplete
+    completeBtn.disabled = !canFinish;
+    completeBtn.textContent = canFinish
       ? 'Complete payment now'
-      : (!funding.openingSet
-        ? 'Complete payment (set opening balance first)'
-        : 'Complete payment (fix shortfall first)');
+      : (hasMemberProblems
+        ? 'Complete payment (cover member gaps first)'
+        : (!funding.openingSet
+          ? 'Complete payment (set opening balance first)'
+          : 'Complete payment (fix shortfall first)'));
   }
 
   document.getElementById('cashierShortfallOpenLedger')?.addEventListener('click', () => {
@@ -1096,35 +1188,54 @@ function renderCashierPaymentShortfallModal(funding) {
     else window.location.hash = 'ledger';
   });
 
+  const syncMemberCoverAmount = (selectId, amountId) => {
+    const selected = document.getElementById(selectId)?.selectedOptions?.[0];
+    const amountInput = document.getElementById(amountId);
+    const cover = Number(selected?.dataset?.cover || 0);
+    if (amountInput && cover > 0) amountInput.value = cover.toFixed(2);
+  };
+  document.getElementById('cashierShortfallBorrower')?.addEventListener('change', () => {
+    syncMemberCoverAmount('cashierShortfallBorrower', 'cashierShortfallAdvanceAmount');
+  });
+  document.getElementById('cashierShortfallReserveMember')?.addEventListener('change', () => {
+    syncMemberCoverAmount('cashierShortfallReserveMember', 'cashierShortfallReserveAmount');
+  });
+
   document.getElementById('cashierShortfallLender')?.addEventListener('change', (event) => {
     const selected = event.target.selectedOptions?.[0];
     const advance = Number(selected?.dataset?.advance || 0);
     const amountInput = document.getElementById('cashierShortfallAdvanceAmount');
-    const shortfall = Number(cashierPaymentShortfallState.funding?.shortfall || 0);
-    if (amountInput && shortfall > 0) {
-      amountInput.value = Math.min(shortfall, advance).toFixed(2);
+    const borrowerSelected = document.getElementById('cashierShortfallBorrower')?.selectedOptions?.[0];
+    const cover = Number(borrowerSelected?.dataset?.cover || cashierPaymentShortfallState.funding?.shortfall || 0);
+    if (amountInput && cover > 0) {
+      amountInput.value = Math.min(cover, advance).toFixed(2);
       amountInput.max = String(advance);
     }
   });
+
+  const postCover = async (url, body) => {
+    setCashierPaymentShortfallMessage('');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Unable to apply cover.');
+    setCashierPaymentShortfallMessage(data.message || 'Cover applied.', false);
+    renderCashierPaymentShortfallModal(data.funding || data);
+  };
 
   document.getElementById('cashierShortfallAdvanceForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const investmentId = cashierPaymentShortfallState.investmentId;
     const formData = new FormData(event.target);
-    setCashierPaymentShortfallMessage('');
     try {
-      const res = await fetch(`/api/admin/investments/${investmentId}/cashier-cover-advance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lenderId: formData.get('lenderId'),
-          amount: formData.get('amount'),
-        }),
+      await postCover(`/api/admin/investments/${investmentId}/cashier-cover-advance`, {
+        lenderId: formData.get('lenderId'),
+        borrowerId: formData.get('borrowerId'),
+        amount: formData.get('amount'),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to apply advance cover.');
-      setCashierPaymentShortfallMessage(data.message || 'Advance cover applied.', false);
-      renderCashierPaymentShortfallModal(data.funding || data);
     } catch (error) {
       setCashierPaymentShortfallMessage(error.message, true);
     }
@@ -1134,28 +1245,50 @@ function renderCashierPaymentShortfallModal(funding) {
     event.preventDefault();
     const investmentId = cashierPaymentShortfallState.investmentId;
     const formData = new FormData(event.target);
-    setCashierPaymentShortfallMessage('');
     try {
-      const res = await fetch(`/api/admin/investments/${investmentId}/cashier-cover-reserve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: formData.get('amount'),
-        }),
+      await postCover(`/api/admin/investments/${investmentId}/cashier-cover-reserve`, {
+        memberId: formData.get('memberId'),
+        amount: formData.get('amount'),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to apply reserve cover.');
-      setCashierPaymentShortfallMessage(data.message || 'Reserve cover applied.', false);
-      renderCashierPaymentShortfallModal(data.funding || data);
+    } catch (error) {
+      setCashierPaymentShortfallMessage(error.message, true);
+    }
+  });
+
+  document.getElementById('cashierShortfallBookAdvanceForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const investmentId = cashierPaymentShortfallState.investmentId;
+    const formData = new FormData(event.target);
+    try {
+      await postCover(`/api/admin/investments/${investmentId}/cashier-cover-advance`, {
+        lenderId: formData.get('lenderId'),
+        amount: formData.get('amount'),
+      });
+    } catch (error) {
+      setCashierPaymentShortfallMessage(error.message, true);
+    }
+  });
+
+  document.getElementById('cashierShortfallBookReserveForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const investmentId = cashierPaymentShortfallState.investmentId;
+    const formData = new FormData(event.target);
+    try {
+      await postCover(`/api/admin/investments/${investmentId}/cashier-cover-reserve`, {
+        amount: formData.get('amount'),
+      });
     } catch (error) {
       setCashierPaymentShortfallMessage(error.message, true);
     }
   });
 }
 
-async function openCashierPaymentShortfallModal(investmentId, { onDone = null } = {}) {
-  // Open the popup immediately (before any await). Browsers can suppress
-  // window.confirm after await, which made Complete payment look dead.
+async function openCashierPaymentShortfallModal(investmentId, {
+  onDone = null,
+  preloaded = null,
+  preloadedError = null,
+} = {}) {
+  // Open the popup immediately (before any await) when a problem must be shown.
   const modal = ensureCashierPaymentShortfallModal();
   bindCashierPaymentShortfallModal();
   const content = document.getElementById('cashierPaymentShortfallContent');
@@ -1165,12 +1298,12 @@ async function openCashierPaymentShortfallModal(investmentId, { onDone = null } 
 
   cashierPaymentShortfallState.onDone = onDone;
   cashierPaymentShortfallState.investmentId = String(investmentId || '');
-  content.innerHTML = '<p class="text-secondary">Checking book balance and cover options…</p>';
+  content.innerHTML = '<p class="text-secondary">Checking member accounts and book balance…</p>';
   setCashierPaymentShortfallMessage('');
   const titleEl = document.getElementById('cashierPaymentShortfallTitle');
   const subtitle = document.getElementById('cashierPaymentShortfallSubtitle');
   if (titleEl) titleEl.textContent = 'Complete project payment';
-  if (subtitle) subtitle.textContent = 'Checking whether book balance covers this payout…';
+  if (subtitle) subtitle.textContent = 'Checking member contributions and book balance…';
   const completeBtn = document.getElementById('cashierPaymentShortfallComplete');
   if (completeBtn) {
     completeBtn.disabled = true;
@@ -1178,6 +1311,22 @@ async function openCashierPaymentShortfallModal(investmentId, { onDone = null } 
   }
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
+
+  if (preloadedError) {
+    content.innerHTML = `
+      <div class="panel-card" style="border-left:4px solid #dc2626;">
+        <p><strong>Unable to start payment.</strong></p>
+        <p class="message error">${escapeHtml(preloadedError)}</p>
+      </div>
+    `;
+    setCashierPaymentShortfallMessage(preloadedError, true);
+    return null;
+  }
+
+  if (preloaded) {
+    renderCashierPaymentShortfallModal(preloaded);
+    return preloaded;
+  }
 
   try {
     const res = await fetch(`/api/admin/investments/${encodeURIComponent(investmentId)}/cashier-payment-check`);
@@ -1242,21 +1391,58 @@ async function executeCashierCompletePayment(investmentId, { messageEl } = {}) {
 }
 
 /**
- * Always open the payment popup from Approvals or Payment Queue — never use
- * window.confirm after an await (browsers often suppress it, so the button
- * appears dead). If there is a shortfall/opening-balance problem, cashier
- * solves it in the popup, then completes payment from the same popup.
+ * Conditional Complete payment:
+ * - If every member account/contribution is balanced and book balance is enough,
+ *   complete payment directly (no problem popup).
+ * - Only open the interactive modal when a member deficit or book shortfall exists.
  */
 async function beginCashierCompletePayment(investmentId, { messageEl = null, onDone = null } = {}) {
   const id = String(investmentId || '').trim();
   if (!id || id === 'undefined' || id === 'null') {
     throw new Error('Investment id is missing for Complete payment.');
   }
-  return openCashierPaymentShortfallModal(id, {
-    onDone: (result) => {
-      if (typeof onDone === 'function') onDone(result);
-    },
+
+  const finish = (result) => {
+    if (typeof onDone === 'function') {
+      try { onDone(result); } catch (_) { /* ignore */ }
+    }
+    return result;
+  };
+
+  const checkRes = await fetch(`/api/admin/investments/${encodeURIComponent(id)}/cashier-payment-check`);
+  const check = await checkRes.json().catch(() => ({}));
+  if (!checkRes.ok) {
+    // Show the problem in the modal so the cashier is never left with a silent failure.
+    await openCashierPaymentShortfallModal(id, {
+      onDone,
+      preloadedError: check.error || 'Unable to check payment funding.',
+    });
+    return null;
+  }
+
+  if (check.canCompleteDirectly) {
+    try {
+      const payload = await executeCashierCompletePayment(id, { messageEl });
+      return finish({ completed: true, payload });
+    } catch (error) {
+      if (error.funding && error.funding.needsPopup) {
+        await openCashierPaymentShortfallModal(id, {
+          onDone,
+          preloaded: error.funding,
+        });
+        return null;
+      }
+      if (typeof onDone === 'function') finish({ completed: false, error: error.message });
+      throw error;
+    }
+  }
+
+  // Member/book problem — open interactive cover popup only when needed.
+  await openCashierPaymentShortfallModal(id, {
+    onDone,
+    preloaded: check,
   });
+  return null;
 }
 
 window.beginCashierCompletePayment = beginCashierCompletePayment;
@@ -1289,8 +1475,13 @@ function bindCashierPaymentShortfallModal() {
     const investmentId = cashierPaymentShortfallState.investmentId;
     if (!investmentId) return;
     const funding = cashierPaymentShortfallState.funding;
-    if (!funding?.canComplete) {
-      setCashierPaymentShortfallMessage('Cover the full shortfall before completing payment.', true);
+    if (!funding?.canCompleteDirectly) {
+      setCashierPaymentShortfallMessage(
+        funding?.hasMemberProblems
+          ? 'Cover every short member account before completing payment.'
+          : 'Cover the full shortfall before completing payment.',
+        true
+      );
       return;
     }
     const completeBtn = document.getElementById('cashierPaymentShortfallComplete');
