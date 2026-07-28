@@ -57,6 +57,7 @@ router.get('/borrowings', async (req, res) => {
 router.post('/borrowings', requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await createInternalBorrowing({
+      contributionId: req.body?.contributionId || null,
       investmentId: req.body?.investmentId,
       borrowerId: req.body?.borrowerId,
       lenderId: req.body?.lenderId,
