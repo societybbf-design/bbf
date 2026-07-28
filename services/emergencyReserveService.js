@@ -30,7 +30,8 @@ async function getActiveMembers() {
 }
 
 /**
- * Live proportional ownership of the reserve pool by savings + profit weight.
+ * Live equal ownership of the reserve pool among active members.
+ * Equal-share society: every member has the same claim — not weighted by deposits.
  */
 async function listMemberReserveShares(poolBalance = null) {
   const fund = await ensureFund();
@@ -53,12 +54,12 @@ async function listMemberReserveShares(poolBalance = null) {
         name: member.name,
         email: member.email,
         shareAmount: 0,
-        weight: Number(member.savings || 0) + Number(member.profit || 0),
+        weight: 1,
       })),
     };
   }
 
-  const plan = calculateMemberShares(members, balance, 'proportional');
+  const plan = calculateMemberShares(members, balance, 'equal');
   return {
     balance,
     memberCount: members.length,
@@ -67,7 +68,7 @@ async function listMemberReserveShares(poolBalance = null) {
       name: row.member.name,
       email: row.member.email,
       shareAmount: money(row.amount),
-      weight: money(row.weight),
+      weight: money(row.weight == null ? 1 : row.weight),
     })),
   };
 }

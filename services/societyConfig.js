@@ -1,4 +1,7 @@
-// Cooperative society model: equal monthly contributions, pooled fund, equal profit shares.
+// Cooperative society model: FIXED equal monthly contributions, pooled fund,
+// and STRICTLY EQUAL profit shares for every active member.
+// Extra deposits go to advance (not a larger profit claim). Late contribution
+// cover via internal borrow or emergency reserve must NOT change profit share.
 const DISTRIBUTION_MODE = 'equal';
 const DIVIDEND_SAVINGS_WEIGHT = Number(process.env.DIVIDEND_SAVINGS_WEIGHT) || 0.6;
 const DIVIDEND_PROFIT_WEIGHT = Number(process.env.DIVIDEND_PROFIT_WEIGHT) || 0.4;
