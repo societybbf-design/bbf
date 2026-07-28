@@ -47,12 +47,16 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
   const Investment = require('../models/Investment');
   const { start, end, startYm, endYm } = yearMonthRangeForPastYear();
 
+  const depositTypes = ['regular', 'opening_balance', 'member_buyin', 'replacement_entry', 'advance'];
   const pastYearMatch = {
-    type: { $in: ['regular', 'opening_balance', 'member_buyin', 'replacement_entry', 'advance'] },
+    type: { $in: depositTypes },
     createdAt: { $gte: start, $lte: end },
   };
 
-  const [pastYearAgg, activeProjects] = await Promise.all([
+  const activeMembers = await listActiveSocietyMembers();
+  const activeMemberIds = activeMembers.map((m) => m._id);
+
+  const [pastYearAgg, lifetimeByMember, activeProjects] = await Promise.all([
     Deposit.aggregate([
       { $match: pastYearMatch },
       {
@@ -63,6 +67,25 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
         },
       },
     ]),
+    activeMemberIds.length
+      ? Deposit.aggregate([
+        {
+          $match: {
+            member: { $in: activeMemberIds },
+            type: { $in: depositTypes },
+          },
+        },
+        {
+          $group: {
+            _id: '$member',
+            totalDeposits: { $sum: '$amount' },
+            depositCount: { $sum: 1 },
+            firstDepositAt: { $min: '$createdAt' },
+            lastDepositAt: { $max: '$createdAt' },
+          },
+        },
+      ])
+      : Promise.resolve([]),
     Investment.find({
       status: 'active',
       ledgerLockedAt: null,
@@ -70,6 +93,38 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
       .select('investmentCode sector partner amount profit returnMode societyOwnershipPct investorOwnershipPct societyAmount monthlyProfitTotal createdAt')
       .sort({ createdAt: -1 }),
   ]);
+
+  const lifetimeMap = new Map(
+    lifetimeByMember.map((row) => [String(row._id), row])
+  );
+
+  // Old/existing members: deposits from the beginning until now (auto-fetched).
+  const existingMemberDeposits = activeMembers.map((member) => {
+    const row = lifetimeMap.get(String(member._id));
+    const totalDeposits = money(row?.totalDeposits);
+    const savings = money(member.savings);
+    const profit = money(member.profit);
+    const advanceBalance = money(member.advanceBalance);
+    return {
+      memberId: member._id,
+      name: member.name,
+      email: member.email,
+      totalDepositsFromStart: totalDeposits,
+      depositCount: row?.depositCount || 0,
+      firstDepositAt: row?.firstDepositAt || null,
+      lastDepositAt: row?.lastDepositAt || null,
+      currentSavings: savings,
+      currentProfit: profit,
+      currentAdvance: advanceBalance,
+      currentBalance: money(savings + profit + advanceBalance),
+      openingSavingsBalance: money(member.openingSavingsBalance),
+      openingProfitBalance: money(member.openingProfitBalance),
+    };
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+  const totalLifetimeDeposits = money(
+    existingMemberDeposits.reduce((sum, row) => sum + Number(row.totalDepositsFromStart || 0), 0)
+  );
 
   const pastYearDeposits = {
     totalAmount: money(pastYearAgg[0]?.totalAmount || 0),
@@ -93,9 +148,11 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
         ? project.societyAmount
         : (Number(project.amount || 0) * Number(project.societyOwnershipPct || 100)) / 100
     );
-    const manualValuation = manual && manual.manualValuation != null && String(manual.manualValuation).trim() !== ''
-      ? money(manual.manualValuation)
-      : bookAmount;
+    const rawManual = manual?.manualValuation;
+    const normalizedManual = rawManual != null && String(rawManual).trim() !== ''
+      ? money(String(rawManual).replace(',', '.'))
+      : null;
+    const manualValuation = normalizedManual != null ? normalizedManual : bookAmount;
 
     return {
       investmentId: project._id,
@@ -116,6 +173,9 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
 
   return {
     pastYearDeposits,
+    existingMemberDeposits,
+    totalLifetimeDeposits,
+    existingMemberCount: existingMemberDeposits.length,
     activeProjects: projects,
     totalProjectValuation,
     runningMonthlyCount,
@@ -181,6 +241,9 @@ async function getEntryValuation({ replaceMemberId = null, manualProjectValuatio
     totalOpeningProfit,
     totalProjectValuation,
     pastYearDeposits: baseline.pastYearDeposits,
+    existingMemberDeposits: baseline.existingMemberDeposits,
+    totalLifetimeDeposits: baseline.totalLifetimeDeposits,
+    existingMemberCount: baseline.existingMemberCount,
     activeProjects: baseline.activeProjects,
     runningMonthlyCount: baseline.runningMonthlyCount,
     entryAmount,
@@ -537,7 +600,7 @@ async function prepareMemberForBuyIn(userDoc, {
       .find((row) => String(row.investmentId || '') === String(project.investmentId)
         || String(row.investmentCode || '') === String(project.investmentCode || ''));
     const manualValuation = override && override.manualValuation != null && String(override.manualValuation).trim() !== ''
-      ? money(override.manualValuation)
+      ? money(String(override.manualValuation).replace(',', '.'))
       : money(project.manualValuation);
     return {
       investmentId: project.investmentId,
@@ -563,6 +626,8 @@ async function prepareMemberForBuyIn(userDoc, {
     capturedAt: new Date(),
     recordedBy: String(recordedBy || '').trim(),
     pastYearDeposits: valuation.pastYearDeposits,
+    existingMemberDeposits: valuation.existingMemberDeposits,
+    totalLifetimeDeposits: valuation.totalLifetimeDeposits,
     activeProjects: projectRows,
     totalProjectValuation: money(projectRows.reduce((sum, p) => sum + Number(p.manualValuation || 0), 0)),
     totalSavings: valuation.totalSavings,

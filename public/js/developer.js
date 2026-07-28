@@ -127,17 +127,25 @@ function applyUmRoleDefaults() {
   void updateMemberBuyInUi(role);
 }
 
+function parseMoneyInput(value) {
+  if (value == null || String(value).trim() === '') return '';
+  const normalized = String(value).trim().replace(/\s/g, '').replace(',', '.');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : '';
+}
+
 async function collectManualProjectValuations() {
   return Array.from(document.querySelectorAll('[data-project-valuation-id]')).map((input) => ({
     investmentId: input.getAttribute('data-project-valuation-id'),
     investmentCode: input.getAttribute('data-project-code') || '',
-    manualValuation: input.value,
+    manualValuation: parseMoneyInput(input.value),
   }));
 }
 
-async function updateMemberBuyInUi(role) {
+async function updateMemberBuyInUi(role, { autofillShare = true } = {}) {
   const block = document.getElementById('devMemberBuyInBlock');
   const box = document.getElementById('devEntryValuationBox');
+  const membersBox = document.getElementById('devExistingMemberDeposits');
   const projectsBox = document.getElementById('devActiveProjectsValuation');
   const input = document.getElementById('devShareEntryAmount');
   if (!block || !box) return;
@@ -148,14 +156,14 @@ async function updateMemberBuyInUi(role) {
       input.value = '';
       input.required = false;
     }
+    if (membersBox) membersBox.innerHTML = '';
     if (projectsBox) projectsBox.innerHTML = '';
     return;
   }
 
   block.classList.remove('hidden');
   if (input) input.required = true;
-  box.innerHTML = `<p class="table-subtitle">${t('um.loadingValuation', 'Loading past-year deposits, projects, and suggested share…')}</p>`;
-  if (projectsBox) projectsBox.innerHTML = '';
+  box.innerHTML = `<p class="table-subtitle">${t('um.loadingValuation', 'Loading old-member deposits and active projects…')}</p>`;
   try {
     const manualProjectValuations = await collectManualProjectValuations();
     const qs = manualProjectValuations.length
@@ -165,22 +173,59 @@ async function updateMemberBuyInUi(role) {
     const v = data.valuation || {};
     const amount = Number(v.entryAmount || 0);
     const past = v.pastYearDeposits || {};
+    const existing = Array.isArray(v.existingMemberDeposits) ? v.existingMemberDeposits : [];
+
     box.innerHTML = `
-      <p><strong>${t('um.suggestedShareValuation', 'Suggested equal-share (reference)')}: ${formatMoney(amount, 2)}</strong></p>
+      <p><strong>${t('um.suggestedShareValuation', 'Calculated share / entry fee')}: ${formatMoney(amount, 2)}</strong></p>
       <p class="table-subtitle">${escapeHtml(v.formula || '')}</p>
-      <p class="table-subtitle">Active members: ${v.activeCount || 0} · Member balances: Savings ${formatMoney(Number(v.totalSavings || 0), 2)} + Profit ${formatMoney(Number(v.totalProfit || 0), 2)} + Advance ${formatMoney(Number(v.totalAdvance || 0), 2)}</p>
-      <p class="table-subtitle">Past-year deposits (auto): ${formatMoney(Number(past.totalAmount || 0), 2)} across ${past.depositCount || 0} records (${escapeHtml(past.from || '')} → ${escapeHtml(past.to || '')})</p>
-      <p class="table-subtitle">Active project valuations: ${formatMoney(Number(v.totalProjectValuation || 0), 2)} · Running monthly projects: ${v.runningMonthlyCount || 0}</p>
-      <p class="table-subtitle">${escapeHtml(v.profitNote || t('um.manualShareRequired', 'Enter the final share/entry fee manually. Workflow: Submit → CEO approve → Cashier payment confirm → Active.'))}</p>
+      <p class="table-subtitle">Old members: ${v.existingMemberCount || existing.length || v.activeCount || 0} · Lifetime deposits (auto): ${formatMoney(Number(v.totalLifetimeDeposits || 0), 2)}</p>
+      <p class="table-subtitle">Current balances: Savings ${formatMoney(Number(v.totalSavings || 0), 2)} + Profit ${formatMoney(Number(v.totalProfit || 0), 2)} + Advance ${formatMoney(Number(v.totalAdvance || 0), 2)}</p>
+      <p class="table-subtitle">Past-year deposits: ${formatMoney(Number(past.totalAmount || 0), 2)} · Project valuations: ${formatMoney(Number(v.totalProjectValuation || 0), 2)}</p>
+      <p class="table-subtitle">${escapeHtml(v.profitNote || 'After activation, running-project profits apply from next month by balance ratio.')}</p>
     `;
+
+    if (membersBox) {
+      membersBox.innerHTML = existing.length
+        ? `
+          <div class="panel-card">
+            <h4>${t('um.oldMemberDepositsTitle', 'Old members — deposits from beginning until now (auto)')}</h4>
+            <p class="table-subtitle">${t('um.oldMemberDepositsHelp', 'Loaded automatically from the system. You do not enter these.')}</p>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Deposits (start → now)</th>
+                    <th>Records</th>
+                    <th>Current balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${existing.map((m) => `
+                    <tr>
+                      <td>${escapeHtml(m.name || '')}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
+                      <td>${formatMoney(Number(m.totalDepositsFromStart || 0), 2)}</td>
+                      <td>${Number(m.depositCount || 0)}</td>
+                      <td>${formatMoney(Number(m.currentBalance || 0), 2)}
+                        <br><span class="text-secondary">S ${formatMoney(Number(m.currentSavings || 0), 2)} · P ${formatMoney(Number(m.currentProfit || 0), 2)}</span>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `
+        : `<p class="table-subtitle">${t('um.noOldMembers', 'No active old members yet — first member share can be ৳0.00.')}</p>`;
+    }
 
     const projects = Array.isArray(v.activeProjects) ? v.activeProjects : [];
     if (projectsBox) {
       projectsBox.innerHTML = projects.length
         ? `
           <div class="panel-card">
-            <h4>${t('um.activeProjectsTitle', 'Active / running projects (manual valuation)')}</h4>
-            <p class="table-subtitle">${t('um.activeProjectsHelp', 'Book amounts load automatically. Adjust valuations if needed — they feed the suggested share price.')}</p>
+            <h4>${t('um.activeProjectsTitle', 'Active / remaining projects — manual valuation')}</h4>
+            <p class="table-subtitle">${t('um.activeProjectsHelp', 'Book amounts load automatically. Adjust valuations yourself, then recalculate — the share amount fills in automatically.')}</p>
             <div class="table-responsive">
               <table class="data-table">
                 <thead>
@@ -198,7 +243,7 @@ async function updateMemberBuyInUi(role) {
                       <td>${escapeHtml(p.returnMode || '')}${p.isRunningMonthly ? ' · running' : ''}</td>
                       <td>${formatMoney(Number(p.bookAmount || 0), 2)}</td>
                       <td>
-                        <input type="number" min="0" step="0.01"
+                        <input type="number" min="0" step="0.01" lang="en"
                           data-project-valuation-id="${escapeHtml(String(p.investmentId || ''))}"
                           data-project-code="${escapeHtml(p.investmentCode || '')}"
                           value="${Number(p.manualValuation || p.bookAmount || 0).toFixed(2)}" />
@@ -208,19 +253,24 @@ async function updateMemberBuyInUi(role) {
                 </tbody>
               </table>
             </div>
-            <button type="button" class="secondary-btn u-mt-1" id="devRecalcShareBtn">${t('um.recalcSuggested', 'Recalculate suggested share')}</button>
+            <button type="button" class="secondary-btn u-mt-1" id="devRecalcShareBtn">${t('um.recalcSuggested', 'Recalculate share amount')}</button>
           </div>
         `
-        : `<p class="table-subtitle">${t('um.noActiveProjects', 'No active projects right now. Suggested share uses member balances only.')}</p>`;
+        : `<p class="table-subtitle">${t('um.noActiveProjects', 'No active remaining projects. Share uses old-member balances only.')}</p>
+           <button type="button" class="secondary-btn u-mt-1" id="devRecalcShareBtn">${t('um.recalcSuggested', 'Recalculate share amount')}</button>`;
 
-      document.getElementById('devRecalcShareBtn')?.addEventListener('click', () => updateMemberBuyInUi('member'));
+      document.getElementById('devRecalcShareBtn')?.addEventListener('click', () => {
+        updateMemberBuyInUi('member', { autofillShare: true });
+      });
     }
 
-    if (input && !input.value) {
-      input.placeholder = amount > 0
-        ? t('um.suggestedPlaceholder', 'Suggested {amount} — enter manually').replace('{amount}', formatMoney(amount, 2))
-        : t('um.enterShareManually', 'Enter share / entry fee (৳0 allowed for first member)');
+    if (input) {
       input.dataset.suggestedAmount = String(amount);
+      input.lang = 'en';
+      if (autofillShare || !String(input.value || '').trim()) {
+        input.value = Number(amount || 0).toFixed(2);
+      }
+      input.placeholder = t('um.autoSharePlaceholder', 'Auto-calculated share amount');
     }
   } catch (error) {
     box.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
@@ -270,23 +320,16 @@ async function ensureCreateForm() {
         permissions: getUmSelectedPermissions(),
       };
       if (role === 'member') {
-        if (shareRaw === null || String(shareRaw).trim() === '') {
+        const shareParsed = parseMoneyInput(shareRaw);
+        if (shareParsed === '' || shareParsed == null) {
           if (messageEl) {
-            messageEl.textContent = t('um.shareRequired', 'Share / entry fee amount is required for members.');
+            messageEl.textContent = t('um.shareRequired', 'Share / entry fee amount is required. Recalculate after project valuation, then submit.');
             messageEl.classList.add('error');
           }
           return;
         }
-        payload.shareEntryAmount = shareRaw;
+        payload.shareEntryAmount = shareParsed;
         payload.manualProjectValuations = await collectManualProjectValuations();
-        const openingSavings = formData.get('openingSavings');
-        const openingProfit = formData.get('openingProfit');
-        if (openingSavings != null && String(openingSavings).trim() !== '') {
-          payload.openingSavings = openingSavings;
-        }
-        if (openingProfit != null && String(openingProfit).trim() !== '') {
-          payload.openingProfit = openingProfit;
-        }
       }
       try {
         const result = await api('/api/developer/users', {
