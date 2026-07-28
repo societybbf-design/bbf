@@ -287,7 +287,7 @@ router.get('/:id/payout-voucher.pdf', requirePermission('can_manage_deposits', '
   }
 });
 
-router.get('/:id/approvals', requirePermission('can_manage_investments'), async (req, res) => {
+router.get('/:id/approvals', requirePermission('can_manage_investments', 'can_manage_deposits'), async (req, res) => {
   try {
     const details = await getInvestmentApprovalDetails(req.params.id);
     return res.json(details);

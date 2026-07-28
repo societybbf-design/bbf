@@ -877,9 +877,61 @@ let cashierPaymentShortfallState = {
   onDone: null,
 };
 
+/**
+ * Force-create the Complete payment modal if the page markup is missing/stale.
+ * Must run synchronously on click so the cashier always sees a popup.
+ */
+function ensureCashierPaymentShortfallModal() {
+  let modal = document.getElementById('cashierPaymentShortfallModal');
+  if (modal && document.getElementById('cashierPaymentShortfallContent')) {
+    modal.style.zIndex = '9000';
+    return modal;
+  }
+
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'cashierPaymentShortfallModal';
+  modal.className = 'modal hidden';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'cashierPaymentShortfallTitle');
+  modal.style.zIndex = '9000';
+  modal.innerHTML = `
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <div>
+          <h2 id="cashierPaymentShortfallTitle">Complete project payment</h2>
+          <p class="table-subtitle" id="cashierPaymentShortfallSubtitle">Check book balance, fix any shortfall, then complete payment.</p>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="modal-close" id="cashierPaymentShortfallClose" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <div id="cashierPaymentShortfallContent" class="member-profile-content">
+        <p class="text-secondary">Checking funding…</p>
+      </div>
+      <p id="cashierPaymentShortfallMessage" class="message"></p>
+      <div class="inline-actions u-mt-1" style="justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;">
+        <button type="button" class="secondary-btn" id="cashierPaymentShortfallCancel">Cancel</button>
+        <button type="button" class="primary-btn" id="cashierPaymentShortfallComplete" disabled>Complete payment</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  // Re-bind after force-create (dataset.bound may belong to a removed node).
+  const stale = document.getElementById('cashierPaymentShortfallModal');
+  if (stale) delete stale.dataset.bound;
+  bindCashierPaymentShortfallModal();
+  return modal;
+}
+
 function closeCashierPaymentShortfallModal(result = null) {
   const modal = document.getElementById('cashierPaymentShortfallModal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = '';
+  }
   const onDone = cashierPaymentShortfallState.onDone;
   cashierPaymentShortfallState = { investmentId: null, funding: null, onDone: null };
   const msg = document.getElementById('cashierPaymentShortfallMessage');
@@ -1102,27 +1154,35 @@ function renderCashierPaymentShortfallModal(funding) {
 }
 
 async function openCashierPaymentShortfallModal(investmentId, { onDone = null } = {}) {
-  const modal = document.getElementById('cashierPaymentShortfallModal');
+  // Open the popup immediately (before any await). Browsers can suppress
+  // window.confirm after await, which made Complete payment look dead.
+  const modal = ensureCashierPaymentShortfallModal();
+  bindCashierPaymentShortfallModal();
   const content = document.getElementById('cashierPaymentShortfallContent');
   if (!modal || !content) {
-    throw new Error('Payment popup is not available on this page. Open Payment Queue and try again.');
+    throw new Error('Payment popup could not be created. Refresh the page and try again.');
   }
+
   cashierPaymentShortfallState.onDone = onDone;
-  cashierPaymentShortfallState.investmentId = investmentId;
+  cashierPaymentShortfallState.investmentId = String(investmentId || '');
   content.innerHTML = '<p class="text-secondary">Checking book balance and cover options…</p>';
   setCashierPaymentShortfallMessage('');
+  const titleEl = document.getElementById('cashierPaymentShortfallTitle');
+  const subtitle = document.getElementById('cashierPaymentShortfallSubtitle');
+  if (titleEl) titleEl.textContent = 'Complete project payment';
+  if (subtitle) subtitle.textContent = 'Checking whether book balance covers this payout…';
   const completeBtn = document.getElementById('cashierPaymentShortfallComplete');
   if (completeBtn) {
     completeBtn.disabled = true;
     completeBtn.textContent = 'Complete payment';
   }
   modal.classList.remove('hidden');
+  modal.style.display = 'flex';
 
   try {
-    const res = await fetch(`/api/admin/investments/${investmentId}/cashier-payment-check`);
+    const res = await fetch(`/api/admin/investments/${encodeURIComponent(investmentId)}/cashier-payment-check`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      // Keep popup open so cashier can read the problem and cancel cleanly (onDone on close only).
       content.innerHTML = `
         <div class="panel-card" style="border-left:4px solid #dc2626;">
           <p><strong>Unable to start payment.</strong></p>
@@ -1182,15 +1242,17 @@ async function executeCashierCompletePayment(investmentId, { messageEl } = {}) {
 }
 
 /**
- * Always open the payment popup from Approvals or Payment Queue.
- * If there is a shortfall/opening-balance problem, cashier solves it in the popup,
- * then completes payment from the same popup.
+ * Always open the payment popup from Approvals or Payment Queue — never use
+ * window.confirm after an await (browsers often suppress it, so the button
+ * appears dead). If there is a shortfall/opening-balance problem, cashier
+ * solves it in the popup, then completes payment from the same popup.
  */
 async function beginCashierCompletePayment(investmentId, { messageEl = null, onDone = null } = {}) {
-  if (!investmentId) {
+  const id = String(investmentId || '').trim();
+  if (!id || id === 'undefined' || id === 'null') {
     throw new Error('Investment id is missing for Complete payment.');
   }
-  return openCashierPaymentShortfallModal(investmentId, {
+  return openCashierPaymentShortfallModal(id, {
     onDone: (result) => {
       if (typeof onDone === 'function') onDone(result);
     },
@@ -1199,6 +1261,7 @@ async function beginCashierCompletePayment(investmentId, { messageEl = null, onD
 
 window.beginCashierCompletePayment = beginCashierCompletePayment;
 window.openCashierPaymentShortfallModal = openCashierPaymentShortfallModal;
+window.ensureCashierPaymentShortfallModal = ensureCashierPaymentShortfallModal;
 
 function bindCashierPaymentShortfallModal() {
   const modal = document.getElementById('cashierPaymentShortfallModal');
@@ -1286,7 +1349,7 @@ async function loadCashierQueue() {
             <p>Bank: ${escapeHtml(receiver.bankName || '—')}</p>
           </div>
           <ul>${docs}</ul>
-          <button type="button" class="primary-btn" data-complete-payment="${item._id}">Complete Payment</button>
+          <button type="button" class="primary-btn" data-complete-payment="${escapeHtml(String(item._id || ''))}">Complete Payment</button>
         </article>
       `;
     }).join('');
