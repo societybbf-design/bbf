@@ -222,6 +222,7 @@ function navItemHtml({ titleKey, icon, active = false, panel = 'home' }) {
 
 const PANEL_I18N_KEYS = {
   home: 'nav.dashboard',
+  approvals: 'nav.approvals',
   members: 'nav.members',
   ledger: 'nav.bankLedger',
   audit: 'nav.transactionAudit',
@@ -535,7 +536,9 @@ function showStaffView(viewId, { forceReload = false } = {}) {
 async function loadViewData(viewId) {
   switch (viewId) {
     case 'home':
-      return loadCashierHomeKpis();
+      await loadCashierHomeKpis();
+      await refreshStaffApprovalsBadge();
+      return undefined;
     case 'ledger':
       return loadBankLedger();
     case 'queue':
@@ -564,9 +567,24 @@ async function loadViewData(viewId) {
       return loadLoansModule();
     case 'investments':
       return loadInvestmentsModule();
+    case 'approvals':
+      return loadStaffApprovalsInbox();
     default:
       return undefined;
   }
+}
+
+async function loadStaffApprovalsInbox() {
+  if (!window.ApprovalsInbox?.loadAndRender) return;
+  await window.ApprovalsInbox.loadAndRender('staffApprovalsInbox', {
+    badgeSelector: '[data-staff-nav="approvals"]',
+    onNavigate: (panel) => showStaffView(panel),
+  });
+}
+
+async function refreshStaffApprovalsBadge() {
+  if (!window.ApprovalsInbox?.refreshBadge) return;
+  await window.ApprovalsInbox.refreshBadge('[data-staff-nav="approvals"]');
 }
 
 function bindStaffNavigation() {
@@ -3662,6 +3680,7 @@ async function init() {
       || permissions.has('can_view_reports');
 
     const moduleCount = features.length
+      + 1 // Approvals is always available
       + (canManageLedger ? 2 : 0)
       + (showTracking ? 1 : 0)
       + (showQueue ? 1 : 0)
@@ -3686,6 +3705,7 @@ async function init() {
 
     navParts.push(`<p class="nav-section-label" data-i18n="nav.section.overview">${window.I18n?.t('nav.section.overview', 'Overview')}</p>`);
     pushNav({ icon: '🏠', active: true, panel: 'home' });
+    pushNav({ icon: '✅', panel: 'approvals', titleKey: 'nav.approvals' });
 
     navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
     if (canManageLedger) pushNav({ icon: '🏛️', panel: 'ledger' });
@@ -3759,6 +3779,12 @@ async function init() {
 
     const initial = (window.location.hash || '#home').replace(/^#/, '') || 'home';
     showStaffView(initial, { forceReload: true });
+    void refreshStaffApprovalsBadge();
+
+    document.getElementById('staffApprovalsRefreshBtn')?.addEventListener('click', () => {
+      invalidateStaffViewCache(['approvals']);
+      void loadStaffApprovalsInbox();
+    });
   } catch (error) {
     document.getElementById('dashMessage').textContent = t('staffUi.unableLoadDashboard', 'Unable to load dashboard.');
   }

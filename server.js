@@ -139,6 +139,7 @@ function buildApp(sessionStore) {
   mountProtectedUploads(app);
 
   app.use('/api/auth', authRoutes);
+  app.use('/api/approvals', require('./routes/approvals'));
   app.use('/api/developer', developerRoutes);
   app.use('/api/ceo', ceoRoutes);
   app.use('/api/admin', adminRoutes);

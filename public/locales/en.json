@@ -42,7 +42,23 @@
     "kyc": "KYC",
     "notices": "Notices",
     "chat": "Chat",
-    "cashierTracking": "Cashier Tracking"
+    "cashierTracking": "Cashier Tracking",
+    "approvals": "Approvals"
+  },
+  "approvals": {
+    "title": "Approvals",
+    "subtitle": "Pending requests that need your review. Accept, reject, or open details without leaving this queue.",
+    "empty": "No pending approvals right now.",
+    "pending": "pending",
+    "highPriority": "high priority",
+    "working": "Working…",
+    "actionSuccess": "Action completed.",
+    "actionFailed": "Unable to complete this approval action.",
+    "loadFailed": "Unable to load approvals.",
+    "confirmAccept": "Accept this request?",
+    "confirmReject": "Reject this request?",
+    "noExtraDetails": "No additional details.",
+    "actionUnavailable": "This action is not available."
   },
   "common": {
     "signOut": "Sign Out",
@@ -252,6 +268,10 @@
       "projectManagers": {
         "title": "Project Managers",
         "note": "Browse project managers and open assigned project portfolios."
+      },
+      "approvals": {
+        "title": "Approvals",
+        "note": "Pending requests that need your review. Accept, reject, or open details without leaving this queue."
       }
     },
     "member": {
@@ -264,8 +284,12 @@
         "note": "View all society investments and receipts."
       },
       "investmentRequests": {
-        "title": "Investment Requests",
-        "note": "Review and approve new investment proposals."
+        "title": "Approvals",
+        "note": "Review pending investment and exit requests that need your vote."
+      },
+      "approvals": {
+        "title": "Approvals",
+        "note": "Review pending investment and exit requests that need your vote."
       },
       "portfolio": {
         "title": "Portfolio",
