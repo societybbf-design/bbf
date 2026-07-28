@@ -319,6 +319,13 @@ async function collectStaffItems(user) {
         actions: [
           { key: 'view', label: 'View details', method: 'GET', path: `/api/admin/investments/${inv._id}/approvals` },
         ],
+        details: {
+          projectCode: inv.investmentCode || '',
+          investmentType: inv.investmentType || '',
+          investor: inv.investor?.name || inv.investorName || '',
+          location: inv.location || '',
+          returnMode: inv.returnMode === 'monthly' ? 'Monthly return' : (inv.returnMode || 'Fixed/term'),
+        },
         deepLink: { dashboard: 'admin', hash: '#projects' },
       }));
     }
@@ -355,6 +362,12 @@ async function collectStaffItems(user) {
           },
           { key: 'view', label: 'View details', method: 'GET', path: `/api/admin/investments/${inv._id}/approvals` },
         ],
+        details: {
+          projectCode: inv.investmentCode || '',
+          investmentType: inv.investmentType || '',
+          investor: inv.investor?.name || inv.investorName || '',
+          societyAmount: inv.societyAmount != null ? formatMoney(inv.societyAmount, 2) : '',
+        },
         deepLink: { dashboard: 'staff', hash: '#queue' },
       }));
     }
