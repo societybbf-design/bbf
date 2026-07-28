@@ -1232,7 +1232,7 @@ async function loadDepositsModule(options = {}) {
     const fetches = [
       fetch('/api/admin/deposits'),
       fetch('/api/admin/monthly-targets/active'),
-      fetch('/api/admin/monthly-targets/unpaid'),
+      fetch('/api/admin/monthly-targets/unpaid?includePaid=1'),
     ];
     if (!options.skipLedgerFetch) {
       fetches.push(fetch('/api/admin/bank-ledger'));
@@ -1260,6 +1260,12 @@ async function loadDepositsModule(options = {}) {
     }
 
     const target = targetData.target || {};
+    depositMonthTargetCache = target.amount != null
+      ? { yearMonth: target.yearMonth, amount: Number(target.amount), monthLabel: target.monthLabel || target.yearMonth }
+      : null;
+    depositUnpaidDuesCache = duesData.dues || [];
+    bindDepositSplitPreview();
+
     if (targetBox) {
       if (target.amount != null) {
         targetBox.innerHTML = `
@@ -1334,14 +1340,15 @@ async function loadDepositsModule(options = {}) {
 
     if (hint) {
       hint.textContent = target.amount != null
-        ? `This month’s target is ${money(target.amount)}. Extra → Advance; less → unpaid dues.`
+        ? `This month’s fixed target is ${money(target.amount)}. Amount up to the member’s remaining due → fixed deposit; any surplus automatically → Advance balance.`
         : 'No month target set — full amount credits savings until a target is configured.';
     }
     if (amountInput && target.amount != null && !amountInput.value) {
       amountInput.value = Number(target.amount).toFixed(2);
     }
+    updateDepositSplitPreview();
 
-    const dues = duesData.dues || [];
+    const dues = (duesData.dues || []).filter((d) => Number(d.unpaidAmount || 0) > 0);
     if (duesBody) {
       duesBody.innerHTML = dues.length
         ? dues.map((d) => `
@@ -1377,6 +1384,89 @@ async function loadDepositsModule(options = {}) {
     if (tbody) tbody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
     if (duesBody) duesBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
   }
+}
+
+let depositMonthTargetCache = null;
+let depositUnpaidDuesCache = [];
+let depositSplitPreviewBound = false;
+
+function getMemberRemainingMonthlyDue(memberId) {
+  if (!depositMonthTargetCache) return null;
+  if (!memberId) return Number(depositMonthTargetCache.amount || 0);
+  const due = depositUnpaidDuesCache.find((row) => String(row.memberId || row.member?._id || row.member) === String(memberId));
+  if (due) return Math.max(0, Number(due.unpaidAmount || 0));
+  // No due row yet for this member — treat remaining as the full month target.
+  return Number(depositMonthTargetCache.amount || 0);
+}
+
+function computeClientDepositSplit(totalAmount, remainingDue, targetAmount) {
+  const total = Math.max(0, Number(totalAmount || 0));
+  if (!(total > 0)) {
+    return { towardTarget: 0, surplus: 0, remainingUnpaid: Math.max(0, Number(remainingDue || 0)) };
+  }
+  if (targetAmount == null || targetAmount === '') {
+    return { towardTarget: total, surplus: 0, remainingUnpaid: 0 };
+  }
+  const remaining = Math.max(0, Number(remainingDue || 0));
+  const towardTarget = Math.min(total, remaining);
+  const surplus = Math.max(0, total - towardTarget);
+  return {
+    towardTarget: Number(towardTarget.toFixed(2)),
+    surplus: Number(surplus.toFixed(2)),
+    remainingUnpaid: Number(Math.max(0, remaining - towardTarget).toFixed(2)),
+  };
+}
+
+function updateDepositSplitPreview() {
+  const preview = document.getElementById('cashierDepositSplitPreview');
+  const previewText = document.getElementById('cashierDepositSplitPreviewText');
+  const memberSelect = document.getElementById('cashierDepositMember');
+  const amountInput = document.getElementById('cashierDepositAmount');
+  if (!preview || !previewText) return;
+
+  const amount = Number(amountInput?.value || 0);
+  if (!depositMonthTargetCache || !(amount > 0)) {
+    preview.hidden = true;
+    previewText.textContent = '';
+    return;
+  }
+
+  const memberId = memberSelect?.value || '';
+  const remaining = getMemberRemainingMonthlyDue(memberId);
+  const split = computeClientDepositSplit(amount, remaining, depositMonthTargetCache.amount);
+  const monthLabel = depositMonthTargetCache.monthLabel || depositMonthTargetCache.yearMonth;
+
+  if (split.surplus > 0 && split.towardTarget > 0) {
+    previewText.textContent = `Will record ${money(split.towardTarget)} as fixed ${monthLabel} deposit + ${money(split.surplus)} → Advance balance.`;
+  } else if (split.surplus > 0) {
+    previewText.textContent = `Month target already covered — full ${money(split.surplus)} → Advance balance.`;
+  } else if (split.remainingUnpaid > 0) {
+    previewText.textContent = `Will record ${money(split.towardTarget)} toward fixed ${monthLabel} deposit · still due after this: ${money(split.remainingUnpaid)}.`;
+  } else {
+    previewText.textContent = `Will record ${money(split.towardTarget)} as fixed ${monthLabel} deposit (target covered).`;
+  }
+  preview.hidden = false;
+}
+
+function bindDepositSplitPreview() {
+  if (depositSplitPreviewBound) {
+    updateDepositSplitPreview();
+    return;
+  }
+  depositSplitPreviewBound = true;
+  const memberSelect = document.getElementById('cashierDepositMember');
+  const amountInput = document.getElementById('cashierDepositAmount');
+
+  memberSelect?.addEventListener('change', () => {
+    const remaining = getMemberRemainingMonthlyDue(memberSelect.value);
+    if (amountInput && remaining != null && remaining > 0) {
+      amountInput.value = Number(remaining).toFixed(2);
+    }
+    updateDepositSplitPreview();
+  });
+  amountInput?.addEventListener('input', updateDepositSplitPreview);
+  amountInput?.addEventListener('change', updateDepositSplitPreview);
+  updateDepositSplitPreview();
 }
 
 let unpaidContributionsCache = [];
@@ -3560,11 +3650,24 @@ function bindModuleForms() {
         msg.classList.add('success');
         msg.textContent = data.message || 'Deposit recorded.';
       }
-      if (receipt && data.receiptUrl) {
-        const receiptLabel = data.receiptNumber ? `Receipt ${escapeHtml(data.receiptNumber)}` : 'Download deposit receipt PDF';
-        receipt.innerHTML = `<a href="${escapeHtml(data.receiptUrl)}" target="_blank" rel="noopener">${receiptLabel}</a>`;
+      if (receipt) {
+        const links = [];
+        if (data.receiptUrl) {
+          const label = data.regularDeposit?.receiptNumber || data.receiptNumber
+            ? `Fixed deposit receipt ${escapeHtml(data.regularDeposit?.receiptNumber || data.receiptNumber)}`
+            : 'Download fixed deposit receipt';
+          links.push(`<a href="${escapeHtml(data.receiptUrl)}" target="_blank" rel="noopener">${label}</a>`);
+        }
+        if (data.advanceReceiptUrl) {
+          const advLabel = data.advanceDeposit?.receiptNumber
+            ? `Advance receipt ${escapeHtml(data.advanceDeposit.receiptNumber)}`
+            : 'Download advance receipt';
+          links.push(`<a href="${escapeHtml(data.advanceReceiptUrl)}" target="_blank" rel="noopener">${advLabel}</a>`);
+        }
+        receipt.innerHTML = links.join(' · ');
       }
       event.target.reset();
+      updateDepositSplitPreview();
       await syncAfterCashIn({
         memberId,
         bookBalance: data.bookBalance ?? data.bankLedger?.ledger?.bookBalance,

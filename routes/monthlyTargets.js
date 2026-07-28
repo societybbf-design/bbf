@@ -48,7 +48,8 @@ router.get('/contribution-report', async (req, res) => {
 router.get('/unpaid', async (req, res) => {
   try {
     const yearMonth = req.query.yearMonth || yearMonthFromDate();
-    const dues = await listUnpaidMonthlyDues({ yearMonth });
+    const includeAll = String(req.query.includePaid || '') === '1';
+    const dues = await listUnpaidMonthlyDues({ yearMonth, includeAll });
     const target = await getTargetForMonth(yearMonth);
     return res.json({ yearMonth, target, dues });
   } catch (error) {
