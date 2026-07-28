@@ -14,7 +14,7 @@ const DepositSchema = new mongoose.Schema({
   },
   /**
    * regular — monthly / normal digital deposit (toward that month's fixed target)
-   * opening_balance — historical savings migrated from pre-digital period
+   * opening_balance — legacy deposit type (historical import removed; retained for existing records)
    * replacement_entry — buy-in paid by a member replacing a departing member
    * advance — surplus funds credited to member advanceBalance (not savings)
    * borrow_repayment — repayment of an internal borrowing (settles to lender advance)

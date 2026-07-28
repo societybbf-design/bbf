@@ -2,7 +2,6 @@ const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const { removeMember } = require('./memberLifecycleService');
-const { normalizePaymentChannel } = require('./paymentChannelService');
 
 function money(value) {
   const n = Number(value);
@@ -24,14 +23,6 @@ function getNextMonthStart(fromDate = new Date()) {
   return new Date(d.getFullYear(), d.getMonth() + 1, 1);
 }
 
-function yearMonthRangeForPastYear(referenceDate = new Date()) {
-  const end = new Date(referenceDate);
-  const start = new Date(end.getFullYear() - 1, end.getMonth(), 1);
-  const startYm = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
-  const endYm = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
-  return { start, end, startYm, endYm };
-}
-
 async function listActiveSocietyMembers() {
   return User.find({
     role: 'member',
@@ -40,119 +31,21 @@ async function listActiveSocietyMembers() {
   }).select('-password');
 }
 
-/**
- * Auto-fetch society past-year deposits and active (running) projects for UM baseline.
- */
-async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
+async function getActiveProjectValuation() {
   const Investment = require('../models/Investment');
-  const { start, end, startYm, endYm } = yearMonthRangeForPastYear();
-
-  const depositTypes = ['regular', 'opening_balance', 'member_buyin', 'replacement_entry', 'advance'];
-  const pastYearMatch = {
-    type: { $in: depositTypes },
-    createdAt: { $gte: start, $lte: end },
-  };
-
-  const activeMembers = await listActiveSocietyMembers();
-  const activeMemberIds = activeMembers.map((m) => m._id);
-
-  const [pastYearAgg, lifetimeByMember, activeProjects] = await Promise.all([
-    Deposit.aggregate([
-      { $match: pastYearMatch },
-      {
-        $group: {
-          _id: null,
-          totalAmount: { $sum: '$amount' },
-          depositCount: { $sum: 1 },
-        },
-      },
-    ]),
-    activeMemberIds.length
-      ? Deposit.aggregate([
-        {
-          $match: {
-            member: { $in: activeMemberIds },
-            type: { $in: depositTypes },
-          },
-        },
-        {
-          $group: {
-            _id: '$member',
-            totalDeposits: { $sum: '$amount' },
-            depositCount: { $sum: 1 },
-            firstDepositAt: { $min: '$createdAt' },
-            lastDepositAt: { $max: '$createdAt' },
-          },
-        },
-      ])
-      : Promise.resolve([]),
-    Investment.find({
-      status: 'active',
-      ledgerLockedAt: null,
-    })
-      .select('investmentCode sector partner amount profit returnMode societyOwnershipPct investorOwnershipPct societyAmount monthlyProfitTotal createdAt')
-      .sort({ createdAt: -1 }),
-  ]);
-
-  const lifetimeMap = new Map(
-    lifetimeByMember.map((row) => [String(row._id), row])
-  );
-
-  // Old/existing members: deposits from the beginning until now (auto-fetched).
-  const existingMemberDeposits = activeMembers.map((member) => {
-    const row = lifetimeMap.get(String(member._id));
-    const totalDeposits = money(row?.totalDeposits);
-    const savings = money(member.savings);
-    const profit = money(member.profit);
-    const advanceBalance = money(member.advanceBalance);
-    return {
-      memberId: member._id,
-      name: member.name,
-      email: member.email,
-      totalDepositsFromStart: totalDeposits,
-      depositCount: row?.depositCount || 0,
-      firstDepositAt: row?.firstDepositAt || null,
-      lastDepositAt: row?.lastDepositAt || null,
-      currentSavings: savings,
-      currentProfit: profit,
-      currentAdvance: advanceBalance,
-      currentBalance: money(savings + profit + advanceBalance),
-      openingSavingsBalance: money(member.openingSavingsBalance),
-      openingProfitBalance: money(member.openingProfitBalance),
-    };
-  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-
-  const totalLifetimeDeposits = money(
-    existingMemberDeposits.reduce((sum, row) => sum + Number(row.totalDepositsFromStart || 0), 0)
-  );
-
-  const pastYearDeposits = {
-    totalAmount: money(pastYearAgg[0]?.totalAmount || 0),
-    depositCount: pastYearAgg[0]?.depositCount || 0,
-    from: startYm,
-    to: endYm,
-    fetchedAt: new Date(),
-  };
-
-  const manualById = new Map(
-    (Array.isArray(manualProjectValuations) ? manualProjectValuations : [])
-      .filter((row) => row && (row.investmentId || row.investmentCode))
-      .map((row) => [String(row.investmentId || row.investmentCode), row])
-  );
+  const activeProjects = await Investment.find({
+    status: 'active',
+    ledgerLockedAt: null,
+  })
+    .select('investmentCode sector partner amount profit returnMode societyOwnershipPct societyAmount monthlyProfitTotal createdAt')
+    .sort({ createdAt: -1 });
 
   const projects = activeProjects.map((project) => {
-    const key = String(project._id);
-    const manual = manualById.get(key) || manualById.get(String(project.investmentCode || ''));
     const bookAmount = money(
       Number(project.societyAmount || 0) > 0
         ? project.societyAmount
         : (Number(project.amount || 0) * Number(project.societyOwnershipPct || 100)) / 100
     );
-    const rawManual = manual?.manualValuation;
-    const normalizedManual = rawManual != null && String(rawManual).trim() !== ''
-      ? money(String(rawManual).replace(',', '.'))
-      : null;
-    const manualValuation = normalizedManual != null ? normalizedManual : bookAmount;
 
     return {
       investmentId: project._id,
@@ -160,7 +53,6 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
       label: [project.sector, project.partner].filter(Boolean).join(' · ') || project.investmentCode || 'Project',
       returnMode: project.returnMode || 'fixed_term',
       bookAmount,
-      manualValuation,
       societyOwnershipPct: Number(project.societyOwnershipPct || 100),
       monthlyProfitTotal: money(project.monthlyProfitTotal),
       profitToDate: money(project.profit),
@@ -168,37 +60,26 @@ async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
     };
   });
 
-  const totalProjectValuation = money(projects.reduce((sum, p) => sum + Number(p.manualValuation || 0), 0));
-  const runningMonthlyCount = projects.filter((p) => p.isRunningMonthly).length;
-
   return {
-    pastYearDeposits,
-    existingMemberDeposits,
-    totalLifetimeDeposits,
-    existingMemberCount: existingMemberDeposits.length,
-    activeProjects: projects,
-    totalProjectValuation,
-    runningMonthlyCount,
+    projects,
+    totalProjectValuation: money(projects.reduce((sum, p) => sum + Number(p.bookAmount || 0), 0)),
+    runningMonthlyCount: projects.filter((p) => p.isRunningMonthly).length,
   };
 }
 
 /**
- * Society fund valuation used for new-member buy-in / replacement entry.
- * join: equal share of (savings + profit + advance + active project valuations) ÷ active members
+ * Society fund valuation used for member replacement / exit settlement.
  * replacement: departing member's savings + profit + advance (seat settlement value)
  */
-async function getEntryValuation({ replaceMemberId = null, manualProjectValuations = [] } = {}) {
+async function getEntryValuation({ replaceMemberId = null } = {}) {
   const activeMembers = await listActiveSocietyMembers();
   const totalSavings = money(activeMembers.reduce((sum, m) => sum + Number(m.savings || 0), 0));
   const totalProfit = money(activeMembers.reduce((sum, m) => sum + Number(m.profit || 0), 0));
   const totalAdvance = money(activeMembers.reduce((sum, m) => sum + Number(m.advanceBalance || 0), 0));
-  const totalOpeningSavings = money(activeMembers.reduce((sum, m) => sum + Number(m.openingSavingsBalance || 0), 0));
-  const totalOpeningProfit = money(activeMembers.reduce((sum, m) => sum + Number(m.openingProfitBalance || 0), 0));
   const totalMemberBalances = money(totalSavings + totalProfit + totalAdvance);
   const activeCount = activeMembers.length;
 
-  const baseline = await getSocietyBaselineData({ manualProjectValuations });
-  const totalProjectValuation = money(baseline.totalProjectValuation);
+  const { projects, totalProjectValuation, runningMonthlyCount } = await getActiveProjectValuation();
   const totalFund = money(totalMemberBalances + totalProjectValuation);
 
   let mode = 'join';
@@ -225,7 +106,6 @@ async function getEntryValuation({ replaceMemberId = null, manualProjectValuatio
       + Number(departing.advanceBalance || 0)
     );
   } else if (activeCount > 0) {
-    // Align buy-in with existing members' cumulative savings + profits (+ project value) proportionally (equal share).
     entryAmount = money(totalFund / activeCount);
   }
 
@@ -237,24 +117,18 @@ async function getEntryValuation({ replaceMemberId = null, manualProjectValuatio
     totalAdvance,
     totalMemberBalances,
     totalFund,
-    totalOpeningSavings,
-    totalOpeningProfit,
     totalProjectValuation,
-    pastYearDeposits: baseline.pastYearDeposits,
-    existingMemberDeposits: baseline.existingMemberDeposits,
-    totalLifetimeDeposits: baseline.totalLifetimeDeposits,
-    existingMemberCount: baseline.existingMemberCount,
-    activeProjects: baseline.activeProjects,
-    runningMonthlyCount: baseline.runningMonthlyCount,
+    activeProjects: projects,
+    runningMonthlyCount,
     entryAmount,
     formula: mode === 'replacement'
       ? 'Departing member savings + profit + advance (exit settlement value)'
       : activeCount > 0
-        ? 'Equal share = (member savings + profit + advance + active project valuations) ÷ active members — aligns new deposit with existing cumulative balances'
-        : 'First member — no buy-in required (entry ৳0.00)',
-    profitNote: baseline.runningMonthlyCount > 0
-      ? `After activation, the new member receives running-project profits from next month onward, split by each member's savings+profit balance ratio (${baseline.runningMonthlyCount} monthly project(s) active).`
-      : 'After activation, the new member receives society profit distributions from next month onward by savings+profit balance ratio.',
+        ? 'Equal share = (member savings + profit + advance + active project valuations) ÷ active members'
+        : 'No active members — entry ৳0.00',
+    profitNote: runningMonthlyCount > 0
+      ? `Running-project profits are split by each member's savings+profit balance ratio (${runningMonthlyCount} monthly project(s) active).`
+      : 'Society profit distributions use each member\'s savings+profit balance ratio.',
     departing: departing
       ? {
         id: departing._id,
@@ -263,71 +137,8 @@ async function getEntryValuation({ replaceMemberId = null, manualProjectValuatio
         savings: money(departing.savings),
         profit: money(departing.profit),
         advanceBalance: money(departing.advanceBalance),
-        openingSavingsBalance: money(departing.openingSavingsBalance),
-        openingProfitBalance: money(departing.openingProfitBalance),
       }
       : null,
-  };
-}
-
-async function setMemberOpeningBalances({
-  memberId,
-  openingSavings = 0,
-  openingProfit = 0,
-  notes = '',
-  recordedBy = 'CEO',
-}) {
-  const savingsAmt = money(openingSavings);
-  const profitAmt = money(openingProfit);
-
-  if (savingsAmt < 0 || profitAmt < 0) {
-    const error = new Error('Opening balances cannot be negative.');
-    error.status = 400;
-    throw error;
-  }
-
-  const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
-  if (!member) {
-    const error = new Error('Member not found.');
-    error.status = 404;
-    throw error;
-  }
-
-  const previousOpeningSavings = money(member.openingSavingsBalance);
-  const previousOpeningProfit = money(member.openingProfitBalance);
-  const savingsDelta = money(savingsAmt - previousOpeningSavings);
-  const profitDelta = money(profitAmt - previousOpeningProfit);
-
-  member.openingSavingsBalance = savingsAmt;
-  member.openingProfitBalance = profitAmt;
-  member.openingBalanceSetAt = new Date();
-  member.openingBalanceSetBy = String(recordedBy || 'CEO').trim();
-  member.savings = money(Number(member.savings || 0) + savingsDelta);
-  member.profit = money(Number(member.profit || 0) + profitDelta);
-  await member.save();
-
-  await Deposit.deleteMany({ member: member._id, type: 'opening_balance' });
-  let openingDeposit = null;
-  if (savingsAmt > 0) {
-    openingDeposit = await Deposit.create({
-      member: member._id,
-      amount: savingsAmt,
-      type: 'opening_balance',
-      notes: notes?.trim() || 'Historical opening balance (pre-digital migration)',
-      recordedBy: String(recordedBy || 'CEO').trim(),
-      createdAt: member.openingBalanceSetAt,
-    });
-  }
-
-  return {
-    member: member.toJSON(),
-    openingDeposit,
-    applied: {
-      openingSavings: savingsAmt,
-      openingProfit: profitAmt,
-      savingsDelta,
-      profitDelta,
-    },
   };
 }
 
@@ -384,7 +195,6 @@ async function replaceMember({
     throw error;
   }
 
-  // Cash-in from replacement first — funds the exit even if society bank cash was short
   let bankCredit = null;
   let bankDebit = null;
   const { tryCredit, tryDebit } = require('./bankLedgerService');
@@ -409,7 +219,6 @@ async function replaceMember({
     });
   }
 
-  // Route settlement to exiting member (ledger payout after the credit above)
   let exitDeposit = null;
   if (requiredEntry > 0) {
     exitDeposit = await Deposit.create({
@@ -430,7 +239,6 @@ async function replaceMember({
     });
   }
 
-  // Close departing live balances, then soft-delete (history preserved)
   departingDoc.exitSettledAt = new Date();
   departingDoc.exitSettlementAmount = requiredEntry;
   departingDoc.exitSettledBy = String(recordedBy || '').trim();
@@ -474,65 +282,6 @@ async function replaceMember({
       debit: bankDebit,
     },
     message: 'Exit settled from replacement payment. Departing member closed; successor activated with seat buy-in.',
-  };
-}
-
-async function getMigrationOverview() {
-  const members = await User.find({ role: 'member', status: { $ne: 'deleted' } })
-    .select('name email savings profit advanceBalance openingSavingsBalance openingProfitBalance openingBalanceSetAt status')
-    .sort({ name: 1 });
-
-  const totals = members.reduce((acc, m) => {
-    acc.savings += Number(m.savings || 0);
-    acc.profit += Number(m.profit || 0);
-    acc.advance += Number(m.advanceBalance || 0);
-    acc.openingSavings += Number(m.openingSavingsBalance || 0);
-    acc.openingProfit += Number(m.openingProfitBalance || 0);
-    if (Number(m.openingSavingsBalance || 0) > 0 || Number(m.openingProfitBalance || 0) > 0) {
-      acc.migratedCount += 1;
-    }
-    return acc;
-  }, {
-    savings: 0,
-    profit: 0,
-    advance: 0,
-    openingSavings: 0,
-    openingProfit: 0,
-    migratedCount: 0,
-  });
-
-  const digitalDepositSum = await Deposit.aggregate([
-    { $match: { type: { $in: ['regular', 'replacement_entry', 'member_buyin'] } } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const openingDepositSum = await Deposit.aggregate([
-    { $match: { type: 'opening_balance' } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-
-  return {
-    members: members.map((m) => ({
-      id: m._id,
-      name: m.name,
-      email: m.email,
-      status: m.status,
-      savings: money(m.savings),
-      profit: money(m.profit),
-      advanceBalance: money(m.advanceBalance),
-      openingSavingsBalance: money(m.openingSavingsBalance),
-      openingProfitBalance: money(m.openingProfitBalance),
-      openingBalanceSetAt: m.openingBalanceSetAt,
-    })),
-    totals: {
-      totalSavings: money(totals.savings),
-      totalProfit: money(totals.profit),
-      totalAdvance: money(totals.advance),
-      totalOpeningSavings: money(totals.openingSavings),
-      totalOpeningProfit: money(totals.openingProfit),
-      migratedMemberCount: totals.migratedCount,
-      digitalDepositTotal: money(digitalDepositSum[0]?.total || 0),
-      openingDepositTotal: money(openingDepositSum[0]?.total || 0),
-    },
   };
 }
 
@@ -642,7 +391,6 @@ async function exitMemberViaSocietyFund({
     });
 
     try {
-      // Hard debit — must succeed so cash and membership stay consistent
       bankDebit = await debit({
         type: 'project_payout',
         amount: settlement,
@@ -694,7 +442,6 @@ async function exitMemberViaSocietyFund({
         : 'Member exited with zero settlement. Seat removed from the active pool.',
     };
   } catch (err) {
-    // Best-effort reverse of the bank debit if membership updates fail after payout.
     if (settlement > 0 && bankDebit) {
       try {
         const { credit } = require('./bankLedgerService');
@@ -718,12 +465,8 @@ module.exports = {
   money,
   amountsMatch,
   getNextMonthStart,
-  yearMonthRangeForPastYear,
   listActiveSocietyMembers,
-  getSocietyBaselineData,
   getEntryValuation,
-  setMemberOpeningBalances,
   replaceMember,
   exitMemberViaSocietyFund,
-  getMigrationOverview,
 };
