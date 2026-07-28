@@ -184,17 +184,19 @@ async function recordExternalInvestment({
 
 async function distributeSocietyShareToMembers(societyShare, recordedBy, options = {}) {
   if (!(societyShare > 0)) {
-    return { memberCount: 0, shares: [], updatedMembers: [], distributionType: 'balance' };
+    return { memberCount: 0, shares: [], updatedMembers: [], distributionType: 'equal' };
   }
   const { distributeAmountToMembers } = require('./profitService');
+  const { getDistributionType } = require('./societyConfig');
   const now = new Date();
   const yearMonth = options.yearMonth
     || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  // Running-project profits: include members eligible for this month, split by savings+profit balance ratio.
+  // Equal-share society: every eligible active member gets the same profit.
+  // Late payment / internal borrow / emergency cover do not change eligibility or share size.
   return distributeAmountToMembers({
     totalAmount: societyShare,
-    distributionType: 'balance',
-    forceDistributionType: true,
+    distributionType: getDistributionType(),
+    forceDistributionType: false,
     distributedBy: recordedBy,
     yearMonth,
     asOfDate: options.asOfDate || now,
@@ -257,7 +259,7 @@ async function recordMonthlyProjectReturn({
     saleAmount: 0,
     profitAmount: profit,
     outcomeType: 'profit',
-    distributionType: distribution.distributionType || 'balance',
+    distributionType: distribution.distributionType || getDistributionType(),
     memberCount: distribution.memberCount,
     shares: distribution.shares,
     societyProfitShare: split.societyShare,
@@ -265,7 +267,7 @@ async function recordMonthlyProjectReturn({
     societyOwnershipPct: split.societyOwnershipPct,
     investorOwnershipPct: split.investorOwnershipPct,
     distributionKind: 'monthly_return',
-    notes: notes?.trim() || `Monthly project return (${periodYearMonth}) — balance-ratio split; new members from next month after join`,
+    notes: notes?.trim() || `Monthly project return (${periodYearMonth}) — equal share among eligible members; new members from next month after join`,
     recordedBy: String(recordedBy || 'Cashier').trim(),
   });
 
@@ -291,7 +293,7 @@ async function recordMonthlyProjectReturn({
     distribution,
     yearMonth: periodYearMonth,
     bankLedger,
-    message: `Monthly return ${formatMoney(profit, 2)} for ${periodYearMonth} split — society ${formatMoney(split.societyShare, 2)} by balance ratio among ${distribution.memberCount} eligible member(s), investor ${formatMoney(split.investorShare, 2)}.`,
+    message: `Monthly return ${formatMoney(profit, 2)} for ${periodYearMonth} split — society ${formatMoney(split.societyShare, 2)} equally among ${distribution.memberCount} eligible member(s), investor ${formatMoney(split.investorShare, 2)}.`,
   };
 }
 

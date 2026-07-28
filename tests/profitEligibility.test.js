@@ -44,24 +44,24 @@ test('memberBalanceWeight uses savings + profit', () => {
   assert.equal(memberBalanceWeight({ savings: 0, profit: 0 }), 0);
 });
 
-test('calculateMemberShares balance mode splits by savings+profit ratio', () => {
+test('calculateMemberShares balance request is forced equal in equal-share society', () => {
   const members = [
-    { _id: '1', name: 'A', savings: 100, profit: 100 }, // weight 200
-    { _id: '2', name: 'B', savings: 300, profit: 100 }, // weight 400
+    { _id: '1', name: 'A', savings: 100, profit: 100 }, // would be weight 200 under balance
+    { _id: '2', name: 'B', savings: 300, profit: 100 }, // would be weight 400 under balance
   ];
   const shares = calculateMemberShares(members, 90, 'balance');
-  assert.equal(shares[0].amount, 30);
-  assert.equal(shares[1].amount, 60);
+  assert.equal(shares[0].amount, 45);
+  assert.equal(shares[1].amount, 45);
 });
 
-test('calculateMemberShares proportional uses balance ratio (savings+profit)', () => {
+test('calculateMemberShares proportional request is forced equal in equal-share society', () => {
   const members = [
     { _id: '1', name: 'A', savings: 100, profit: 0 },
     { _id: '2', name: 'B', savings: 300, profit: 0 },
   ];
   const shares = calculateMemberShares(members, 100, 'proportional');
-  assert.equal(shares[0].amount, 25);
-  assert.equal(shares[1].amount, 75);
+  assert.equal(shares[0].amount, 50);
+  assert.equal(shares[1].amount, 50);
 });
 
 test('new member activated mid-month is not eligible until next month cutoff', () => {

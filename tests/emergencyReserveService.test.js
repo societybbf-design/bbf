@@ -10,15 +10,15 @@ test('money helper rounds to two decimals', () => {
   assert.equal(money(null), 0);
 });
 
-test('reserve shares split proportionally by savings+profit weight', () => {
+test('reserve shares split equally among active members (equal-share society)', () => {
   const members = [
     { _id: 'a', name: 'A', savings: 7000, profit: 0 },
     { _id: 'b', name: 'B', savings: 3000, profit: 0 },
   ];
   const shares = calculateMemberShares(members, 1000, 'proportional');
   assert.equal(shares.length, 2);
-  assert.equal(shares[0].amount, 700);
-  assert.equal(shares[1].amount, 300);
+  assert.equal(shares[0].amount, 500);
+  assert.equal(shares[1].amount, 500);
 });
 
 test('equal fallback when all weights are zero', () => {

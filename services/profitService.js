@@ -2,12 +2,18 @@ const User = require('../models/User');
 const ProfitDistribution = require('../models/ProfitDistribution');
 const InvestmentProfit = require('../models/InvestmentProfit');
 const { getInvestmentByCode, refundToTotalSavings } = require('./investmentService');
-const { getDistributionType, getDividendWeights } = require('./societyConfig');
+const {
+  getDistributionType,
+  getDividendWeights,
+  isEqualShareSociety,
+} = require('./societyConfig');
 
 /**
  * Active members only (excludes pending/approved/blocked).
  * Optional asOfDate / yearMonth gates new members until profitEligibleFrom
  * (typically the 1st of the month after activation).
+ * Profit eligibility is NOT reduced by late contribution payment, internal
+ * borrow cover, or emergency-reserve cover — equal shares stay intact.
  */
 function getActiveMembersFilter({ asOfDate = null, yearMonth = null } = {}) {
   const filter = {
@@ -46,11 +52,31 @@ function memberBalanceWeight(member) {
   return Math.max(0, Number(member.savings || 0) + Number(member.profit || 0));
 }
 
+/**
+ * Society rule: equal monthly contributions + equal profit shares.
+ * When equal-share mode is on, never allow balance/proportional/weighted splits
+ * that would reward higher deposits or balances with more profit.
+ */
+function resolveSocietyDistributionType(requestedType = null, { force = false } = {}) {
+  if (isEqualShareSociety()) {
+    return 'equal';
+  }
+  if (force && requestedType) {
+    return requestedType;
+  }
+  return requestedType || getDistributionType();
+}
+
 async function listProfitEligibleMembers(options = {}) {
   return User.find(getActiveMembersFilter(options));
 }
 
 function calculateDividendShares(members, totalAmount) {
+  // Equal-share society: dividends must also be equal — no savings/profit weighting.
+  if (isEqualShareSociety()) {
+    return calculateMemberShares(members, totalAmount, 'equal');
+  }
+
   if (!members.length) {
     return [];
   }
@@ -92,19 +118,22 @@ function calculateDividendShares(members, totalAmount) {
 async function previewAutomaticDividend(totalAmount) {
   const members = await listProfitEligibleMembers();
   const sharePlan = calculateDividendShares(members, totalAmount);
-  const { savingsWeight, profitWeight } = getDividendWeights();
+  const { savingsWeight, profitWeight } = isEqualShareSociety()
+    ? { savingsWeight: 0, profitWeight: 0 }
+    : getDividendWeights();
 
   return {
     totalAmount: Number(totalAmount) || 0,
     memberCount: members.length,
     savingsWeight,
     profitWeight,
+    distributionType: isEqualShareSociety() ? 'equal' : 'dividend_auto',
     preview: sharePlan.map((item) => ({
       memberId: item.member._id,
       memberName: item.member.name,
       savings: Number(item.member.savings || 0),
       profit: Number(item.member.profit || 0),
-      weight: item.weight,
+      weight: item.weight == null ? 1 : item.weight,
       dividendShare: item.amount,
     })),
   };
@@ -150,10 +179,12 @@ async function distributeAutomaticDividend({
 
   const profitDistribution = await ProfitDistribution.create({
     totalAmount: normalizedTotal,
-    distributionType: 'dividend_auto',
+    distributionType: isEqualShareSociety() ? 'equal' : 'dividend_auto',
     memberCount: members.length,
     shares,
-    notes: notes?.trim() || 'Automatic dividend based on savings and profit.',
+    notes: notes?.trim() || (isEqualShareSociety()
+      ? 'Equal dividend among active members (fixed contribution society — deposits cannot increase profit share).'
+      : 'Automatic dividend based on savings and profit.'),
     distributedBy: distributedBy?.trim() || 'Admin',
   });
 
@@ -178,8 +209,13 @@ function calculateMemberShares(members, totalAmount, distributionType = 'equal')
     return [];
   }
 
-  // balance / proportional: split by each member's savings+profit share ratio
-  if (distributionType === 'proportional' || distributionType === 'balance') {
+  // Absolute society rule: equal share mode never weights by deposits/balances.
+  const effectiveType = isEqualShareSociety()
+    ? 'equal'
+    : (distributionType || getDistributionType());
+
+  // balance / proportional only when society is NOT equal-share.
+  if (effectiveType === 'proportional' || effectiveType === 'balance') {
     const weights = members.map((member) => memberBalanceWeight(member));
     const totalWeight = weights.reduce((sum, value) => sum + value, 0);
     if (totalWeight <= 0) {
@@ -370,10 +406,9 @@ async function distributeAmountToMembers({
     throw error;
   }
 
-  const societyDistributionType = getDistributionType();
-  const resolvedType = forceDistributionType && distributionType
-    ? distributionType
-    : (distributionType || societyDistributionType);
+  const resolvedType = resolveSocietyDistributionType(distributionType, {
+    force: forceDistributionType,
+  });
   const sharePlan = calculateMemberShares(members, totalAmount, resolvedType);
   const shares = [];
 
@@ -724,6 +759,7 @@ module.exports = {
   memberBalanceWeight,
   getActiveMembersFilter,
   resolveProfitCutoffDate,
+  resolveSocietyDistributionType,
   listProfitEligibleMembers,
   distributeProfit,
   distributeAmountToMembers,
