@@ -651,6 +651,7 @@ async function disburseLoanApplication(loanId, {
   transferReference = '',
   disbursementNote = '',
   disbursedBy = 'Admin',
+  fundingSource = 'bank',
 } = {}) {
   const loan = await LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' });
   if (!loan) {
@@ -678,13 +679,50 @@ async function disburseLoanApplication(loanId, {
     throw error;
   }
 
+  const source = String(fundingSource || 'bank').toLowerCase() === 'reserve' ? 'reserve' : 'bank';
+  const amount = Number(loan.amount || 0);
+
+  // Reserve path: earmarked cash leaves the Emergency / Reserve Fund (already taken from book when allocated).
+  // Bank path: debit society book balance directly.
+  let reserveResult = null;
+  let ledgerResult = null;
+  if (source === 'reserve') {
+    const { debitReserve } = require('./emergencyReserveService');
+    reserveResult = await debitReserve(amount, {
+      type: 'loan_disbursement',
+      note: `Loan disbursement (${loan.loanType || 'loan'}) → ${loan.member?.name || 'member'} from Emergency / Reserve Fund`,
+      createdBy: disbursedBy,
+      referenceType: 'LoanApplication',
+      referenceId: loan._id,
+    });
+  } else {
+    const { debit: ledgerDebit } = require('./bankLedgerService');
+    try {
+      ledgerResult = await ledgerDebit({
+        type: 'loan_disbursement',
+        amount,
+        referenceType: 'LoanApplication',
+        referenceId: loan._id,
+        note: `Loan disbursement ${loan.loanType || ''} → ${loan.member?.name || 'member'}`,
+        createdBy: disbursedBy,
+      });
+    } catch (error) {
+      const err = new Error(error.message || 'Unable to debit book balance for loan disbursement.');
+      err.status = error.status || 400;
+      throw err;
+    }
+  }
+
   loan.status = 'disbursed';
   loan.paymentMethod = normalizedPaymentMethod;
   loan.disbursedAt = new Date();
   loan.disbursedBy = disbursedBy?.trim() || 'Admin';
   loan.disbursementReference = transferReference?.trim() || '';
-  loan.disbursementNote = disbursementNote?.trim() || '';
-  loan.outstandingBalance = Number(loan.amount || 0);
+  loan.disbursementNote = [
+    disbursementNote?.trim() || '',
+    source === 'reserve' ? 'Funded from Emergency / Reserve Fund' : 'Funded from society book balance',
+  ].filter(Boolean).join(' · ');
+  loan.outstandingBalance = amount;
   loan.totalRepaid = 0;
   loan.repaymentStatus = 'active';
   if (!loan.installmentMonths) {
@@ -692,38 +730,25 @@ async function disburseLoanApplication(loanId, {
   }
   await loan.save();
 
-  try {
-    const { tryDebit } = require('./bankLedgerService');
-    await tryDebit({
-      type: 'loan_disbursement',
-      amount: Number(loan.amount || 0),
-      referenceType: 'LoanApplication',
-      referenceId: loan._id,
-      note: `Loan disbursement ${loan.loanType || ''} → ${loan.member?.name || 'member'}`,
-      createdBy: disbursedBy,
-    });
-  } catch (error) {
-    console.warn('[disburseLoanApplication] ledger debit failed:', error.message);
-  }
-
   const member = loan.member;
   const paymentLabel = formatPaymentMethodLabel(loan.paymentMethod);
   const referenceNote = loan.disbursementReference ? ` Reference: ${loan.disbursementReference}.` : '';
-  const transferMessage = `Dear ${member.name}, your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} has been transferred to you via ${paymentLabel}.${referenceNote}`;
+  const sourceNote = source === 'reserve' ? ' (Emergency / Reserve Fund)' : '';
+  const transferMessage = `Dear ${member.name}, your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} has been transferred to you via ${paymentLabel}${sourceNote}.${referenceNote}`;
 
   if (member?.email) {
     await sendTransactionalEmail({
       to: member.email,
       subject: 'Loan Money Transferred',
       text: transferMessage,
-      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan of <strong>${formatMoney(Number(loan.amount), 2)}</strong> has been transferred to you.</p><p><strong>Method:</strong> ${paymentLabel}</p>${loan.disbursementReference ? `<p><strong>Reference:</strong> ${loan.disbursementReference}</p>` : ''}${loan.disbursementNote ? `<p><strong>Note:</strong> ${loan.disbursementNote}</p>` : ''}<p>Please check your member dashboard for full transfer details.</p>`,
+      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan of <strong>${formatMoney(Number(loan.amount), 2)}</strong> has been transferred to you.</p><p><strong>Method:</strong> ${paymentLabel}</p><p><strong>Funding:</strong> ${source === 'reserve' ? 'Emergency / Reserve Fund' : 'Society book balance'}</p>${loan.disbursementReference ? `<p><strong>Reference:</strong> ${loan.disbursementReference}</p>` : ''}${loan.disbursementNote ? `<p><strong>Note:</strong> ${loan.disbursementNote}</p>` : ''}<p>Please check your member dashboard for full transfer details.</p>`,
     });
   }
 
   if (member?.phone) {
     await sendSms({
       to: member.phone,
-      message: `Loan transferred: ${formatMoney(Number(loan.amount), 2)} via ${paymentLabel}.${referenceNote}`,
+      message: `Loan transferred: ${formatMoney(Number(loan.amount), 2)} via ${paymentLabel}${sourceNote}.${referenceNote}`,
     });
   }
 
@@ -731,12 +756,17 @@ async function disburseLoanApplication(loanId, {
     memberId: loan.member._id || loan.member,
     type: 'loan',
     title: 'Loan Money Transferred',
-    message: `Your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was transferred via ${paymentLabel}.${referenceNote}`,
+    message: `Your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was transferred via ${paymentLabel}${sourceNote}.${referenceNote}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
   });
 
-  return loan;
+  return {
+    loan,
+    fundingSource: source,
+    reserveBalance: reserveResult?.balance ?? null,
+    bookBalance: ledgerResult?.ledger?.bookBalance ?? null,
+  };
 }
 
 module.exports = {

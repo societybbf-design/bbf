@@ -225,6 +225,14 @@
           </div>
         </button>
 
+        <button type="button" class="metric-card metric-card-5 report-metric-card member-metric-card" aria-pressed="false">
+          <div class="metric-icon">🛡️</div>
+          <div class="metric-content">
+            <span class="metric-label">Emergency Reserve Share</span>
+            <strong class="metric-value" id="memberReserveShare">৳0</strong>
+          </div>
+        </button>
+
         <button type="button" class="metric-card metric-card-3 report-metric-card member-metric-card" data-member-report-type="investments" aria-pressed="false">
           <div class="metric-icon">💼</div>
           <div class="metric-content">
@@ -570,6 +578,28 @@
                 </tr>
               </thead>
               <tbody id="loanApplicationsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide u-mt-1">
+          <h2>Internal borrows (advance)</h2>
+          <p class="table-subtitle">When project shares are covered from another member’s advance, the borrow stays unpaid until Cashier settles repayment back to that lender.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Counterparty</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th>Outstanding</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.date">Date</th>
+                </tr>
+              </thead>
+              <tbody id="memberBorrowingsBody">
+                <tr><td colspan="6">Loading…</td></tr>
+              </tbody>
             </table>
           </div>
         </section>

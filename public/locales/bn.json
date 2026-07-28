@@ -43,7 +43,8 @@
     "notices": "নোটিশ",
     "chat": "চ্যাট",
     "cashierTracking": "ক্যাশিয়ার ট্র্যাকিং",
-    "approvals": "অনুমোদন"
+    "approvals": "অনুমোদন",
+    "emergencyReserve": "জরুরি / রিজার্ভ তহবিল"
   },
   "approvals": {
     "title": "অনুমোদন",

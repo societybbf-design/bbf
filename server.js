@@ -25,6 +25,7 @@ const salesRoutes = require('./routes/sales');
 const bankLedgerRoutes = require('./routes/bankLedger');
 const profitPoolRoutes = require('./routes/profitPool');
 const advanceBorrowingRoutes = require('./routes/advanceBorrowing');
+const emergencyReserveRoutes = require('./routes/emergencyReserve');
 const monthlyTargetsRoutes = require('./routes/monthlyTargets');
 const transactionAuditRoutes = require('./routes/transactionAudit');
 const cashierTrackingRoutes = require('./routes/cashierTracking');
@@ -157,6 +158,7 @@ function buildApp(sessionStore) {
   app.use('/api/admin/bank-ledger', bankLedgerRoutes);
   app.use('/api/admin/profit-pool', profitPoolRoutes);
   app.use('/api/admin/funding', advanceBorrowingRoutes);
+  app.use('/api/admin/emergency-reserve', emergencyReserveRoutes);
   app.use('/api/admin/monthly-targets', monthlyTargetsRoutes);
   app.use('/api/admin/transaction-audit', transactionAuditRoutes);
   app.use('/api/cashier-tracking', cashierTrackingRoutes);

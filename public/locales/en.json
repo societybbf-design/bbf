@@ -43,7 +43,8 @@
     "notices": "Notices",
     "chat": "Chat",
     "cashierTracking": "Cashier Tracking",
-    "approvals": "Approvals"
+    "approvals": "Approvals",
+    "emergencyReserve": "Emergency / Reserve Fund"
   },
   "approvals": {
     "title": "Approvals",
