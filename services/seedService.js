@@ -128,12 +128,12 @@ async function seedDefaultUsers() {
       await user.save();
     }
 
-    // Ensure cashiers can access Messenger chat + loan disbursement/repayments
+    // Ensure cashiers can access Messenger chat + loan disbursement/repayments + Profit & Loss
     const cashiers = await User.find({ role: 'cashier', status: { $ne: 'deleted' } });
     for (const cashier of cashiers) {
       let perms = Array.isArray(cashier.permissions) ? [...cashier.permissions] : [];
       let changed = false;
-      ['can_manage_chat', 'can_manage_members', 'can_disburse_loans'].forEach((key) => {
+      ['can_manage_chat', 'can_manage_members', 'can_disburse_loans', 'can_manage_profit'].forEach((key) => {
         if (!perms.includes(key)) {
           perms.push(key);
           changed = true;

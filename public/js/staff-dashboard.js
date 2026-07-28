@@ -42,7 +42,7 @@ const ROLE_META = {
   },
   cashier: {
     title: 'Cashier Dashboard',
-    subtitle: 'Handle deposits, withdrawals, refunds, loan payouts, bank ledger, and investment payments.',
+    subtitle: 'Handle deposits, withdrawals, refunds, loan payouts, bank ledger, Profit & Loss, and investment payments.',
   },
   employee: {
     title: 'Employee Dashboard',
@@ -64,7 +64,7 @@ const FEATURE_CATALOG = [
   { key: 'can_manage_loans', title: 'Loan Review', detail: 'View pending loan applications (CEO approves).', icon: '📄', panel: 'loans', catalogKey: 'loan_review' },
   { key: 'can_manage_investments', title: 'Investments', detail: 'Investment summary and payment queue.', icon: '📈', panel: 'investments' },
   { key: 'can_manage_ious', title: 'IOUs', detail: 'Investment-related tracking.', icon: '📝', panel: 'investments' },
-  { key: 'can_manage_profit', title: 'Profit & Dividends', detail: 'Log and distribute monthly profits.', icon: '💹', panel: 'profit' },
+  { key: 'can_manage_profit', title: 'Profit & Loss', detail: 'Record investment P&L, distribute profits, and automatic dividends.', icon: '💹', panel: 'profit' },
   { key: 'can_manage_refunds', title: 'Refunds', detail: 'Create member refunds.', icon: '↩️', panel: 'refunds' },
   { key: 'can_manage_kyc', title: 'KYC', detail: 'KYC is handled in Settings workflows.', icon: '🪪', panel: 'home' },
   { key: 'can_view_reports', title: 'Reports', detail: 'Society summaries and Z-report.', icon: '📊', panel: 'reports' },
@@ -228,7 +228,7 @@ const PANEL_I18N_KEYS = {
   tracking: 'nav.cashierTracking',
   queue: 'nav.paymentQueue',
   funding: 'nav.advancesBorrow',
-  profit: 'nav.profitPool',
+  profit: 'nav.profitLoss',
   deposits: 'nav.deposits',
   withdrawals: 'nav.withdrawals',
   investments: 'nav.investments',
@@ -253,7 +253,7 @@ const HOME_MODULE_COPY = {
   deposits: { title: 'Deposits', detail: 'Record member deposits', icon: '🪙' },
   withdrawals: { title: 'Withdrawals', detail: 'Review payout requests', icon: '↗️' },
   funding: { title: 'Advances & Borrowing', detail: 'Advances, unpaid shares & settle', icon: '🔄' },
-  profit: { title: 'Profit Pool', detail: 'Log and distribute profits', icon: '💹' },
+  profit: { title: 'Profit & Loss', detail: 'Investment P&L, distributions & dividends', icon: '💹' },
   reports: { title: 'Reports', detail: 'Society summaries & Z-report', icon: '📊' },
   refunds: { title: 'Refunds', detail: 'Create member refunds', icon: '↩️' },
   chat: { title: 'Chat', detail: 'Message society members', icon: '💬' },
@@ -739,6 +739,114 @@ async function loadProfitPool(options = {}) {
     }
   } catch (error) {
     if (messageEl) messageEl.textContent = error.message;
+  }
+
+  await Promise.all([
+    loadStaffInvestmentProfitHistory(),
+    loadStaffProfitHistory(),
+    loadStaffProfitMemberStatus(),
+  ]);
+}
+
+async function loadStaffInvestmentProfitHistory() {
+  const list = document.getElementById('staffInvestmentProfitHistoryList');
+  if (!list) return;
+  try {
+    const response = await fetch('/api/admin/profit/investment-history');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      list.innerHTML = `<tr><td colspan="7">${escapeHtml(data.error || 'Unable to load investment profit history.')}</td></tr>`;
+      return;
+    }
+    const records = data.records || [];
+    if (!records.length) {
+      list.innerHTML = '<tr><td colspan="7">No investment profit records yet.</td></tr>';
+      return;
+    }
+    list.innerHTML = records.map((item) => {
+      const isLoss = item.outcomeType === 'loss';
+      const amount = Number(item.profitAmount || 0);
+      return `
+        <tr>
+          <td>${escapeHtml(new Date(item.createdAt).toLocaleString())}</td>
+          <td>${escapeHtml(item.investmentCode || '-')}</td>
+          <td>${money(item.investmentAmount)}</td>
+          <td>${money(item.saleAmount)}</td>
+          <td>${isLoss ? '-' : ''}${money(amount)}</td>
+          <td>${isLoss ? 'Loss' : 'Profit'}</td>
+          <td>${escapeHtml(item.notes || '-')}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (error) {
+    list.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function loadStaffProfitHistory() {
+  const list = document.getElementById('staffProfitHistoryList');
+  const lastEl = document.getElementById('staffLastProfitDistribution');
+  if (!list && !lastEl) return;
+  try {
+    const response = await fetch('/api/admin/profit/history');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (list) list.innerHTML = `<tr><td colspan="5">${escapeHtml(data.error || 'Unable to load profit history.')}</td></tr>`;
+      return;
+    }
+    const distributions = data.distributions || [];
+    if (lastEl) {
+      if (!distributions.length) {
+        lastEl.textContent = 'Last distribution: Not yet distributed';
+      } else {
+        const latest = distributions[0];
+        lastEl.textContent = `Last distribution: ${money(latest.totalAmount)} on ${new Date(latest.createdAt).toLocaleString()} (Equal Share)`;
+      }
+    }
+    if (!list) return;
+    if (!distributions.length) {
+      list.innerHTML = '<tr><td colspan="5">No profit distributions yet.</td></tr>';
+      return;
+    }
+    list.innerHTML = distributions.map((item) => `
+      <tr>
+        <td>${escapeHtml(new Date(item.createdAt).toLocaleString())}</td>
+        <td>${money(item.totalAmount)}</td>
+        <td>Equal Share</td>
+        <td>${item.memberCount || 0}</td>
+        <td>${escapeHtml(item.notes || '-')}</td>
+      </tr>
+    `).join('');
+  } catch (error) {
+    if (list) list.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function loadStaffProfitMemberStatus() {
+  const list = document.getElementById('staffProfitMemberStatusList');
+  if (!list) return;
+  try {
+    const response = await fetch('/api/admin/members');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      list.innerHTML = `<tr><td colspan="4">${escapeHtml(data.error || 'Unable to load members.')}</td></tr>`;
+      return;
+    }
+    const members = (data.members || []).filter((m) => (m.status || 'active') === 'active');
+    if (!members.length) {
+      list.innerHTML = '<tr><td colspan="4">No active members yet.</td></tr>';
+      return;
+    }
+    list.innerHTML = members.map((member) => `
+      <tr>
+        <td>${escapeHtml(member.name || '-')}</td>
+        <td>${escapeHtml(member.email || '-')}</td>
+        <td>${money(member.savings)}</td>
+        <td>${money(member.profit)}</td>
+      </tr>
+    `).join('');
+  } catch (error) {
+    list.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -2946,6 +3054,300 @@ function bindLedgerForms() {
 }
 
 function bindProfitPoolForms() {
+  if (bindProfitPoolForms.bound) return;
+  bindProfitPoolForms.bound = true;
+
+  const staffProfitFormState = new WeakMap();
+  let staffProfitLookupTimer = null;
+
+  function getStaffProfitFields(form) {
+    return {
+      codeInput: form.querySelector('.profit-code-input'),
+      nameInput: form.querySelector('.profit-name-input'),
+      dobInput: form.querySelector('.profit-dob-input'),
+      locationInput: form.querySelector('.profit-location-input'),
+      amountInput: form.querySelector('.profit-amount-input'),
+      saleInput: form.querySelector('.profit-sale-input'),
+      profitInput: form.querySelector('.profit-profit-input'),
+      statusEl: form.querySelector('.profit-lookup-status'),
+      messageEl: form.querySelector('.profit-form-message'),
+    };
+  }
+
+  function clearStaffProfitAutofill(form) {
+    const fields = getStaffProfitFields(form);
+    staffProfitFormState.delete(form);
+    if (fields.nameInput) fields.nameInput.value = '';
+    if (fields.dobInput) fields.dobInput.value = '';
+    if (fields.locationInput) fields.locationInput.value = '';
+    if (fields.amountInput) fields.amountInput.value = '';
+    if (fields.profitInput) fields.profitInput.value = '';
+  }
+
+  function updateStaffCalculatedProfit(form) {
+    const fields = getStaffProfitFields(form);
+    const selected = staffProfitFormState.get(form);
+    if (!selected || !fields.saleInput || !fields.profitInput) return;
+    const invested = Number(selected.amount || selected.investmentAmount || 0);
+    const sale = Number(fields.saleInput.value || 0);
+    if (Number.isFinite(sale) && Number.isFinite(invested)) {
+      fields.profitInput.value = Number((sale - invested).toFixed(2));
+    }
+  }
+
+  async function lookupStaffInvestmentForProfit(form, code) {
+    const fields = getStaffProfitFields(form);
+    const normalized = String(code || '').trim().toUpperCase();
+    if (!normalized) {
+      clearStaffProfitAutofill(form);
+      if (fields.statusEl) fields.statusEl.textContent = 'Enter an Investment ID to load details.';
+      return;
+    }
+    try {
+      if (fields.statusEl) fields.statusEl.textContent = 'Looking up investment…';
+      const response = await fetch(`/api/admin/profit/investment-lookup/${encodeURIComponent(normalized)}`);
+      const data = await response.json();
+      if (!response.ok) {
+        clearStaffProfitAutofill(form);
+        if (fields.statusEl) fields.statusEl.textContent = data.error || 'Investment not found.';
+        return;
+      }
+      const investment = data.investment || {};
+      staffProfitFormState.set(form, investment);
+      if (fields.nameInput) fields.nameInput.value = investment.investorName || investment.investor?.name || '';
+      if (fields.dobInput) fields.dobInput.value = investment.dateOfBirth || '';
+      if (fields.locationInput) fields.locationInput.value = investment.location || '';
+      if (fields.amountInput) fields.amountInput.value = money(investment.amount || investment.investmentAmount);
+      updateStaffCalculatedProfit(form);
+      if (fields.statusEl) fields.statusEl.textContent = `Loaded ${investment.investmentCode || normalized}.`;
+    } catch (error) {
+      clearStaffProfitAutofill(form);
+      if (fields.statusEl) fields.statusEl.textContent = error.message;
+    }
+  }
+
+  document.querySelectorAll('#staffInvestmentProfitForm').forEach((form) => {
+    const fields = getStaffProfitFields(form);
+    fields.codeInput?.addEventListener('input', () => {
+      clearTimeout(staffProfitLookupTimer);
+      staffProfitLookupTimer = setTimeout(() => {
+        void lookupStaffInvestmentForProfit(form, fields.codeInput.value);
+      }, 350);
+    });
+    fields.codeInput?.addEventListener('blur', () => {
+      void lookupStaffInvestmentForProfit(form, fields.codeInput.value);
+    });
+    fields.saleInput?.addEventListener('input', () => updateStaffCalculatedProfit(form));
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const msg = fields.messageEl;
+      if (msg) {
+        msg.textContent = '';
+        msg.classList.remove('success', 'error');
+      }
+      const formData = new FormData(form);
+      try {
+        const response = await fetch('/api/admin/profit/investment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            investmentCode: formData.get('investmentCode'),
+            saleAmount: Number(formData.get('saleAmount')) || 0,
+            profitAmount: Number(formData.get('profitAmount')) || 0,
+            distributionType: 'equal',
+            notes: formData.get('notes'),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to record investment profit.');
+        form.reset();
+        clearStaffProfitAutofill(form);
+        if (msg) {
+          msg.classList.add('success');
+          msg.textContent = data.message || 'Investment profit recorded and distributed.';
+        }
+        await loadProfitPool();
+      } catch (error) {
+        if (msg) {
+          msg.classList.add('error');
+          msg.textContent = error.message;
+        }
+      }
+    });
+  });
+
+  document.querySelectorAll('#staffInvestmentLossForm').forEach((form) => {
+    const codeInput = form.querySelector('.loss-code-input');
+    const nameInput = form.querySelector('.loss-name-input');
+    const investedInput = form.querySelector('.loss-amount-invested-input');
+    const saleInput = form.querySelector('.loss-sale-input');
+    const lossInput = form.querySelector('.loss-amount-input');
+    const statusEl = form.querySelector('.loss-lookup-status');
+    const messageEl = form.querySelector('.loss-form-message');
+    let investedAmount = 0;
+    let lossLookupTimer = null;
+
+    const updateLoss = () => {
+      const sale = Number(saleInput?.value || 0);
+      if (investedAmount > 0 && sale < investedAmount) {
+        if (lossInput) lossInput.value = Number((investedAmount - sale).toFixed(2));
+      }
+    };
+
+    const lookupLoss = async () => {
+      const code = String(codeInput?.value || '').trim().toUpperCase();
+      if (!code) return;
+      try {
+        if (statusEl) statusEl.textContent = 'Looking up investment…';
+        const response = await fetch(`/api/admin/profit/investment-lookup/${encodeURIComponent(code)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Investment not found.');
+        const investment = data.investment || {};
+        investedAmount = Number(investment.amount || investment.investmentAmount || 0);
+        if (nameInput) nameInput.value = investment.investorName || investment.investor?.name || '';
+        if (investedInput) investedInput.value = money(investedAmount);
+        updateLoss();
+        if (statusEl) statusEl.textContent = `Loaded ${investment.investmentCode || code}.`;
+      } catch (error) {
+        if (statusEl) statusEl.textContent = error.message;
+      }
+    };
+
+    codeInput?.addEventListener('input', () => {
+      clearTimeout(lossLookupTimer);
+      lossLookupTimer = setTimeout(() => { void lookupLoss(); }, 350);
+    });
+    codeInput?.addEventListener('blur', () => { void lookupLoss(); });
+    saleInput?.addEventListener('input', updateLoss);
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (messageEl) {
+        messageEl.textContent = '';
+        messageEl.classList.remove('success', 'error');
+      }
+      const formData = new FormData(form);
+      try {
+        const response = await fetch('/api/admin/profit/investment-loss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            investmentCode: formData.get('investmentCode'),
+            saleAmount: Number(formData.get('saleAmount')) || 0,
+            lossAmount: Number(formData.get('lossAmount')) || 0,
+            notes: formData.get('notes'),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to record investment loss.');
+        form.reset();
+        investedAmount = 0;
+        if (messageEl) {
+          messageEl.classList.add('success');
+          messageEl.textContent = data.message || 'Investment loss recorded and shared.';
+        }
+        await loadProfitPool();
+      } catch (error) {
+        if (messageEl) {
+          messageEl.classList.add('error');
+          messageEl.textContent = error.message;
+        }
+      }
+    });
+  });
+
+  document.getElementById('staffProfitDistributionForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('staffProfitDistributionMessage');
+    const formData = new FormData(event.target);
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+    try {
+      const response = await fetch('/api/admin/profit/distribute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          totalAmount: Number(formData.get('totalAmount')),
+          distributionType: 'equal',
+          notes: formData.get('notes'),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to distribute profit.');
+      event.target.reset();
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = `Distributed ${money(data.distribution?.totalAmount || formData.get('totalAmount'))} to ${data.updatedMembers?.length || data.distribution?.memberCount || 0} members.`;
+      }
+      await loadProfitPool();
+    } catch (error) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.getElementById('staffPreviewDividendBtn')?.addEventListener('click', async () => {
+    const amountInput = document.getElementById('staffDividendPoolAmount');
+    const previewBody = document.getElementById('staffDividendPreviewBody');
+    const totalAmount = Number(amountInput?.value || 0);
+    if (!totalAmount || totalAmount <= 0 || !previewBody) return;
+    try {
+      const response = await fetch('/api/admin/profit/dividend/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalAmount }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to preview dividend.');
+      previewBody.innerHTML = (data.preview || []).map((row) => `
+        <tr>
+          <td>${escapeHtml(row.memberName || '-')}</td>
+          <td>${money(row.savings)}</td>
+          <td>${money(row.profit)}</td>
+          <td>${Number(row.weight || 0).toFixed(2)}</td>
+          <td>${money(row.dividendShare)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5">No active members found.</td></tr>';
+    } catch (error) {
+      previewBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+    }
+  });
+
+  document.getElementById('staffDividendPreviewForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('staffDividendMessage');
+    const amountInput = document.getElementById('staffDividendPoolAmount');
+    const totalAmount = Number(amountInput?.value || 0);
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+    try {
+      const response = await fetch('/api/admin/profit/dividend/distribute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalAmount, notes: 'Automatic dividend distribution' }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to distribute dividend.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Dividend distributed successfully.';
+      }
+      await loadProfitPool();
+    } catch (error) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
   document.getElementById('monthlyProfitForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const msg = document.getElementById('profitPoolMessage');
@@ -3254,7 +3656,7 @@ async function init() {
     staffCanManageLedger = canManageLedger;
     const showLedger = canManageLedger || permissions.has('can_view_reports');
     const showTracking = showLedger && !canManageLedger;
-    const showProfit = permissions.has('can_manage_profit') || permissions.has('can_manage_deposits');
+    const showProfit = permissions.has('can_manage_profit');
     const showMembers = permissions.has('can_manage_members')
       || permissions.has('can_manage_deposits')
       || permissions.has('can_view_reports');
