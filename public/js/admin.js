@@ -2462,9 +2462,16 @@ async function loadPendingMemberRegistrations() {
     if (!response.ok) throw new Error(data.error || 'Unable to load pending registrations.');
     const members = data.members || [];
     body.innerHTML = members.length
-      ? members.map((m) => `
+      ? members.map((m) => {
+        const baseline = m.registrationBaseline || {};
+        const pastTotal = Number(baseline.pastYearDeposits?.totalAmount || 0);
+        const projects = Number(baseline.totalProjectValuation || 0);
+        const suggested = Number(baseline.suggestedEntryAmount || 0);
+        return `
         <tr>
-          <td>${escapeCeoHtml(m.name || '')}<br><span class="text-secondary">${escapeCeoHtml(m.email || '')}</span></td>
+          <td>${escapeCeoHtml(m.name || '')}<br><span class="text-secondary">${escapeCeoHtml(m.email || '')}</span>
+            <br><span class="text-secondary">Past-year deposits ${formatMoney(pastTotal, 2)} · Projects ${formatMoney(projects, 2)} · Suggested ${formatMoney(suggested, 2)}</span>
+          </td>
           <td>${formatMoney(Number(m.shareEntryAmount || m.requiredEntryAmount || 0), 2)}</td>
           <td>${m.membershipSubmittedAt ? new Date(m.membershipSubmittedAt).toLocaleString() : '—'}</td>
           <td>${escapeCeoHtml(m.statusLabel || m.status || 'Pending')}</td>
@@ -2473,7 +2480,8 @@ async function loadPendingMemberRegistrations() {
             <button type="button" class="secondary-btn" data-reject-registration="${m.id}">Reject</button>
           </td>
         </tr>
-      `).join('')
+      `;
+      }).join('')
       : '<tr><td colspan="5">No pending member registrations.</td></tr>';
 
     body.querySelectorAll('[data-approve-registration]').forEach((btn) => {

@@ -2,6 +2,7 @@ const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const { removeMember } = require('./memberLifecycleService');
+const { normalizePaymentChannel } = require('./paymentChannelService');
 
 function money(value) {
   const n = Number(value);
@@ -13,6 +14,24 @@ function amountsMatch(a, b) {
   return Math.abs(money(a) - money(b)) < 0.015;
 }
 
+/** First day of the calendar month after `fromDate` (profit eligibility start). */
+function getNextMonthStart(fromDate = new Date()) {
+  const d = new Date(fromDate);
+  if (Number.isNaN(d.getTime())) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  }
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1);
+}
+
+function yearMonthRangeForPastYear(referenceDate = new Date()) {
+  const end = new Date(referenceDate);
+  const start = new Date(end.getFullYear() - 1, end.getMonth(), 1);
+  const startYm = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+  const endYm = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
+  return { start, end, startYm, endYm };
+}
+
 async function listActiveSocietyMembers() {
   return User.find({
     role: 'member',
@@ -22,19 +41,105 @@ async function listActiveSocietyMembers() {
 }
 
 /**
+ * Auto-fetch society past-year deposits and active (running) projects for UM baseline.
+ */
+async function getSocietyBaselineData({ manualProjectValuations = [] } = {}) {
+  const Investment = require('../models/Investment');
+  const { start, end, startYm, endYm } = yearMonthRangeForPastYear();
+
+  const pastYearMatch = {
+    type: { $in: ['regular', 'opening_balance', 'member_buyin', 'replacement_entry', 'advance'] },
+    createdAt: { $gte: start, $lte: end },
+  };
+
+  const [pastYearAgg, activeProjects] = await Promise.all([
+    Deposit.aggregate([
+      { $match: pastYearMatch },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$amount' },
+          depositCount: { $sum: 1 },
+        },
+      },
+    ]),
+    Investment.find({
+      status: 'active',
+      ledgerLockedAt: null,
+    })
+      .select('investmentCode sector partner amount profit returnMode societyOwnershipPct investorOwnershipPct societyAmount monthlyProfitTotal createdAt')
+      .sort({ createdAt: -1 }),
+  ]);
+
+  const pastYearDeposits = {
+    totalAmount: money(pastYearAgg[0]?.totalAmount || 0),
+    depositCount: pastYearAgg[0]?.depositCount || 0,
+    from: startYm,
+    to: endYm,
+    fetchedAt: new Date(),
+  };
+
+  const manualById = new Map(
+    (Array.isArray(manualProjectValuations) ? manualProjectValuations : [])
+      .filter((row) => row && (row.investmentId || row.investmentCode))
+      .map((row) => [String(row.investmentId || row.investmentCode), row])
+  );
+
+  const projects = activeProjects.map((project) => {
+    const key = String(project._id);
+    const manual = manualById.get(key) || manualById.get(String(project.investmentCode || ''));
+    const bookAmount = money(
+      Number(project.societyAmount || 0) > 0
+        ? project.societyAmount
+        : (Number(project.amount || 0) * Number(project.societyOwnershipPct || 100)) / 100
+    );
+    const manualValuation = manual && manual.manualValuation != null && String(manual.manualValuation).trim() !== ''
+      ? money(manual.manualValuation)
+      : bookAmount;
+
+    return {
+      investmentId: project._id,
+      investmentCode: project.investmentCode || '',
+      label: [project.sector, project.partner].filter(Boolean).join(' · ') || project.investmentCode || 'Project',
+      returnMode: project.returnMode || 'fixed_term',
+      bookAmount,
+      manualValuation,
+      societyOwnershipPct: Number(project.societyOwnershipPct || 100),
+      monthlyProfitTotal: money(project.monthlyProfitTotal),
+      profitToDate: money(project.profit),
+      isRunningMonthly: project.returnMode === 'monthly',
+    };
+  });
+
+  const totalProjectValuation = money(projects.reduce((sum, p) => sum + Number(p.manualValuation || 0), 0));
+  const runningMonthlyCount = projects.filter((p) => p.isRunningMonthly).length;
+
+  return {
+    pastYearDeposits,
+    activeProjects: projects,
+    totalProjectValuation,
+    runningMonthlyCount,
+  };
+}
+
+/**
  * Society fund valuation used for new-member buy-in / replacement entry.
- * join: equal share of (savings + profit + advance) ÷ active members
+ * join: equal share of (savings + profit + advance + active project valuations) ÷ active members
  * replacement: departing member's savings + profit + advance (seat settlement value)
  */
-async function getEntryValuation({ replaceMemberId = null } = {}) {
+async function getEntryValuation({ replaceMemberId = null, manualProjectValuations = [] } = {}) {
   const activeMembers = await listActiveSocietyMembers();
   const totalSavings = money(activeMembers.reduce((sum, m) => sum + Number(m.savings || 0), 0));
   const totalProfit = money(activeMembers.reduce((sum, m) => sum + Number(m.profit || 0), 0));
   const totalAdvance = money(activeMembers.reduce((sum, m) => sum + Number(m.advanceBalance || 0), 0));
   const totalOpeningSavings = money(activeMembers.reduce((sum, m) => sum + Number(m.openingSavingsBalance || 0), 0));
   const totalOpeningProfit = money(activeMembers.reduce((sum, m) => sum + Number(m.openingProfitBalance || 0), 0));
-  const totalFund = money(totalSavings + totalProfit + totalAdvance);
+  const totalMemberBalances = money(totalSavings + totalProfit + totalAdvance);
   const activeCount = activeMembers.length;
+
+  const baseline = await getSocietyBaselineData({ manualProjectValuations });
+  const totalProjectValuation = money(baseline.totalProjectValuation);
+  const totalFund = money(totalMemberBalances + totalProjectValuation);
 
   let mode = 'join';
   let departing = null;
@@ -60,6 +165,7 @@ async function getEntryValuation({ replaceMemberId = null } = {}) {
       + Number(departing.advanceBalance || 0)
     );
   } else if (activeCount > 0) {
+    // Align buy-in with existing members' cumulative savings + profits (+ project value) proportionally (equal share).
     entryAmount = money(totalFund / activeCount);
   }
 
@@ -69,15 +175,23 @@ async function getEntryValuation({ replaceMemberId = null } = {}) {
     totalSavings,
     totalProfit,
     totalAdvance,
+    totalMemberBalances,
     totalFund,
     totalOpeningSavings,
     totalOpeningProfit,
+    totalProjectValuation,
+    pastYearDeposits: baseline.pastYearDeposits,
+    activeProjects: baseline.activeProjects,
+    runningMonthlyCount: baseline.runningMonthlyCount,
     entryAmount,
     formula: mode === 'replacement'
       ? 'Departing member savings + profit + advance (exit settlement value)'
       : activeCount > 0
-        ? 'Equal share = (total savings + profit + advance) ÷ active members'
+        ? 'Equal share = (member savings + profit + advance + active project valuations) ÷ active members — aligns new deposit with existing cumulative balances'
         : 'First member — no buy-in required (entry ৳0.00)',
+    profitNote: baseline.runningMonthlyCount > 0
+      ? `After activation, the new member receives running-project profits from next month onward, split by each member's savings+profit balance ratio (${baseline.runningMonthlyCount} monthly project(s) active).`
+      : 'After activation, the new member receives society profit distributions from next month onward by savings+profit balance ratio.',
     departing: departing
       ? {
         id: departing._id,
@@ -156,13 +270,16 @@ async function setMemberOpeningBalances({
 
 /**
  * Complete share/entry buy-in after CEO approval.
- * Credits bank ledger, activates the account, and syncs current-year contribution dues.
+ * Credits bank ledger, activates the account, sets next-month profit eligibility,
+ * and syncs current-year contribution dues.
  */
 async function completeMemberBuyIn({
   memberId,
   amountPaid,
   notes = '',
   recordedBy = 'Cashier',
+  paymentMethod = 'cash',
+  paymentReference = '',
 } = {}) {
   const member = await User.findOne({
     _id: memberId,
@@ -213,21 +330,70 @@ async function completeMemberBuyIn({
     throw error;
   }
 
+  const channel = normalizePaymentChannel(paymentMethod, 'cash');
+  const activatedAt = new Date();
+  const profitEligibleFrom = getNextMonthStart(activatedAt);
+
   const deposit = await Deposit.create({
     member: member._id,
     amount: paid,
     type: 'member_buyin',
-    notes: notes?.trim() || `Share / entry fee buy-in (${formatMoney(required, 2)})`,
+    notes: notes?.trim() || `Share / entry fee buy-in (${formatMoney(required, 2)}) via ${channel}`,
     recordedBy: String(recordedBy || '').trim(),
+    paymentMethod: channel,
+    paymentReference: String(paymentReference || '').trim(),
   });
 
   member.savings = money(Number(member.savings || 0) + paid);
   member.pendingEntryBuyIn = false;
   member.requiredEntryAmount = required;
   member.shareEntryAmount = required;
-  member.entryBuyInPaidAt = new Date();
+  member.entryBuyInPaidAt = activatedAt;
+  member.profitEligibleFrom = profitEligibleFrom;
   member.status = 'active';
+
+  // Credit historical opening balances captured at registration (once).
+  const plannedOpeningSavings = money(member.registrationBaseline?.plannedOpeningSavings);
+  const plannedOpeningProfit = money(member.registrationBaseline?.plannedOpeningProfit);
+  const shouldApplyOpening = (plannedOpeningSavings > 0 || plannedOpeningProfit > 0)
+    && !member.registrationBaseline?.openingBalancesApplied;
+  if (shouldApplyOpening) {
+    member.openingSavingsBalance = plannedOpeningSavings;
+    member.openingProfitBalance = plannedOpeningProfit;
+    member.openingBalanceSetAt = activatedAt;
+    member.openingBalanceSetBy = String(recordedBy || 'Cashier').trim();
+    member.savings = money(Number(member.savings || 0) + plannedOpeningSavings);
+    member.profit = money(Number(member.profit || 0) + plannedOpeningProfit);
+  }
+
+  if (member.registrationBaseline && typeof member.registrationBaseline === 'object') {
+    member.registrationBaseline = {
+      ...member.registrationBaseline,
+      openingBalancesApplied: Boolean(shouldApplyOpening || member.registrationBaseline.openingBalancesApplied),
+      activatedAt,
+      profitEligibleFrom,
+      paymentMethod: channel,
+    };
+    member.markModified('registrationBaseline');
+  }
+
   await member.save();
+
+  if (shouldApplyOpening && plannedOpeningSavings > 0) {
+    try {
+      await Deposit.create({
+        member: member._id,
+        amount: plannedOpeningSavings,
+        type: 'opening_balance',
+        notes: 'Historical opening balance from member registration baseline',
+        recordedBy: String(recordedBy || '').trim(),
+        paymentMethod: channel,
+        createdAt: activatedAt,
+      });
+    } catch (error) {
+      console.warn('[completeMemberBuyIn] opening deposit create failed:', error.message);
+    }
+  }
 
   let bankLedger = null;
   if (paid > 0) {
@@ -240,7 +406,7 @@ async function completeMemberBuyIn({
         referenceId: deposit._id,
         note: `Member share/entry payment: ${member.name}`,
         createdBy: recordedBy,
-        paymentChannel: 'cash',
+        paymentChannel: channel,
       });
     } catch (error) {
       console.warn('[completeMemberBuyIn] bank ledger credit failed:', error.message);
@@ -262,7 +428,7 @@ async function completeMemberBuyIn({
       memberId: member._id,
       type: 'deposit',
       title: 'Membership Activated',
-      message: `Your share/entry payment of ${formatMoney(paid, 2)} was confirmed. Your account is now Active.`,
+      message: `Your share/entry payment of ${formatMoney(paid, 2)} was confirmed (${channel}). Your account is now Active. Running project profits apply from ${profitEligibleFrom.toISOString().slice(0, 10)} onward.`,
       relatedId: deposit._id,
       relatedModel: 'Deposit',
     });
@@ -275,9 +441,11 @@ async function completeMemberBuyIn({
     deposit,
     bankLedger,
     valuationAmount: required,
+    paymentMethod: channel,
+    profitEligibleFrom,
     duesSync,
     valuationAfter,
-    message: 'Payment confirmed successfully. Member account is now Active and contribution balances were adjusted.',
+    message: `Payment confirmed successfully via ${channel}. Member account is now Active. Running-project profits start next month (${profitEligibleFrom.toISOString().slice(0, 10)}).`,
   };
 }
 
@@ -317,14 +485,18 @@ async function syncNewMemberContributionDues(member) {
 
 /**
  * Submit a newly created member for CEO approval with a manual share/entry amount.
+ * Captures past-year deposit baseline, optional manual project valuations, and opening balances.
  * Does not activate the account — CEO approval + payment confirmation are required.
  */
 async function prepareMemberForBuyIn(userDoc, {
   shareEntryAmount = null,
   entryAmountPaid = null,
   recordedBy = '',
+  manualProjectValuations = [],
+  openingSavings = null,
+  openingProfit = null,
 } = {}) {
-  const valuation = await getEntryValuation();
+  const valuation = await getEntryValuation({ manualProjectValuations });
   const suggested = money(valuation.entryAmount);
 
   const hasManual = shareEntryAmount !== null && shareEntryAmount !== undefined && String(shareEntryAmount).trim() !== '';
@@ -343,6 +515,39 @@ async function prepareMemberForBuyIn(userDoc, {
     throw error;
   }
 
+  const openingSavingsAmt = openingSavings != null && String(openingSavings).trim() !== ''
+    ? money(openingSavings)
+    : null;
+  const openingProfitAmt = openingProfit != null && String(openingProfit).trim() !== ''
+    ? money(openingProfit)
+    : null;
+  if (openingSavingsAmt != null && openingSavingsAmt < 0) {
+    const error = new Error('Opening savings cannot be negative.');
+    error.status = 400;
+    throw error;
+  }
+  if (openingProfitAmt != null && openingProfitAmt < 0) {
+    const error = new Error('Opening profit cannot be negative.');
+    error.status = 400;
+    throw error;
+  }
+
+  const projectRows = (valuation.activeProjects || []).map((project) => {
+    const override = (Array.isArray(manualProjectValuations) ? manualProjectValuations : [])
+      .find((row) => String(row.investmentId || '') === String(project.investmentId)
+        || String(row.investmentCode || '') === String(project.investmentCode || ''));
+    const manualValuation = override && override.manualValuation != null && String(override.manualValuation).trim() !== ''
+      ? money(override.manualValuation)
+      : money(project.manualValuation);
+    return {
+      investmentId: project.investmentId,
+      investmentCode: project.investmentCode,
+      label: project.label,
+      bookAmount: money(project.bookAmount),
+      manualValuation,
+    };
+  });
+
   userDoc.shareEntryAmount = manual;
   userDoc.requiredEntryAmount = manual;
   userDoc.pendingEntryBuyIn = true;
@@ -352,6 +557,28 @@ async function prepareMemberForBuyIn(userDoc, {
   userDoc.ceoApprovedBy = '';
   userDoc.membershipRejectionReason = '';
   userDoc.entryBuyInPaidAt = null;
+  userDoc.profitEligibleFrom = null;
+  userDoc.manualProjectValuations = projectRows;
+  userDoc.registrationBaseline = {
+    capturedAt: new Date(),
+    recordedBy: String(recordedBy || '').trim(),
+    pastYearDeposits: valuation.pastYearDeposits,
+    activeProjects: projectRows,
+    totalProjectValuation: money(projectRows.reduce((sum, p) => sum + Number(p.manualValuation || 0), 0)),
+    totalSavings: valuation.totalSavings,
+    totalProfit: valuation.totalProfit,
+    totalAdvance: valuation.totalAdvance,
+    totalFund: valuation.totalFund,
+    suggestedEntryAmount: suggested,
+    finalSharePrice: manual,
+    activeCount: valuation.activeCount,
+    formula: valuation.formula,
+    profitNote: valuation.profitNote,
+    plannedOpeningSavings: openingSavingsAmt != null ? openingSavingsAmt : 0,
+    plannedOpeningProfit: openingProfitAmt != null ? openingProfitAmt : 0,
+    openingBalancesApplied: false,
+  };
+
   await userDoc.save();
 
   try {
@@ -359,7 +586,7 @@ async function prepareMemberForBuyIn(userDoc, {
     await createAdminNotification({
       type: 'general',
       title: `New member registration: ${userDoc.name}`,
-      message: `${userDoc.name} (${userDoc.email}) was submitted with manual share/entry fee ${formatMoney(manual, 2)}. Awaiting CEO approval.`,
+      message: `${userDoc.name} (${userDoc.email}) was submitted with manual share/entry fee ${formatMoney(manual, 2)} (suggested ${formatMoney(suggested, 2)}). Past-year deposits ${formatMoney(valuation.pastYearDeposits?.totalAmount || 0, 2)}. Awaiting CEO approval.`,
       relatedId: userDoc._id,
       relatedModel: 'User',
     });
@@ -378,7 +605,7 @@ async function prepareMemberForBuyIn(userDoc, {
     },
     buyIn: null,
     activated: false,
-    message: `Member submitted as Pending. CEO must approve, then cashier confirms payment of ${formatMoney(manual, 2)} before the account becomes Active.`,
+    message: `Member submitted as Pending. CEO must approve, then cashier confirms payment of ${formatMoney(manual, 2)} before the account becomes Active. Running-project profits apply from the month after activation.`,
   };
 }
 
@@ -503,6 +730,7 @@ async function replaceMember({
   successor.pendingEntryBuyIn = false;
   successor.requiredEntryAmount = requiredEntry;
   successor.entryBuyInPaidAt = new Date();
+  successor.profitEligibleFrom = getNextMonthStart(successor.entryBuyInPaidAt);
   successor.status = 'active';
   await successor.save();
 
@@ -544,6 +772,9 @@ async function listPendingMemberRegistrations() {
     requiredEntryAmount: money(m.requiredEntryAmount || m.shareEntryAmount),
     membershipSubmittedAt: m.membershipSubmittedAt || m.createdAt,
     createdAt: m.createdAt,
+    registrationBaseline: m.registrationBaseline || null,
+    openingSavingsBalance: money(m.openingSavingsBalance),
+    openingProfitBalance: money(m.openingProfitBalance),
   }));
 }
 
@@ -917,7 +1148,10 @@ async function exitMemberViaSocietyFund({
 module.exports = {
   money,
   amountsMatch,
+  getNextMonthStart,
+  yearMonthRangeForPastYear,
   listActiveSocietyMembers,
+  getSocietyBaselineData,
   getEntryValuation,
   setMemberOpeningBalances,
   replaceMember,

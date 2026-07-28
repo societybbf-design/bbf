@@ -1284,10 +1284,12 @@ async function loadFundingModule() {
 
     const valuation = buyIns.valuation || {};
     if (buyInValBox) {
+      const past = valuation.pastYearDeposits || {};
       buyInValBox.innerHTML = `
         <p><strong>Suggested equal-share (reference): ${money(valuation.entryAmount)}</strong></p>
         <p class="text-secondary">${escapeHtml(valuation.formula || '')}</p>
-        <p class="text-secondary">Active members: ${valuation.activeCount || 0} · Fund ${money(valuation.totalFund)}. Payment amount is the manual share fee set at registration (CEO-approved).</p>
+        <p class="text-secondary">Active members: ${valuation.activeCount || 0} · Fund ${money(valuation.totalFund)} (balances + project valuations). Payment amount is the manual share fee set at registration (CEO-approved).</p>
+        <p class="text-secondary">Past-year deposits: ${money(past.totalAmount)} · Running monthly projects: ${valuation.runningMonthlyCount || 0}. After confirmation, profits apply from next month by balance ratio.</p>
       `;
     }
 
@@ -1300,11 +1302,22 @@ async function loadFundingModule() {
             <td>${money(m.requiredEntryAmount ?? m.shareEntryAmount)}</td>
             <td>${escapeHtml(m.statusLabel || m.status)}</td>
             <td>
-              <button type="button" class="primary-btn"
-                data-complete-buyin="${m.id}"
-                data-required="${Number(m.requiredEntryAmount || m.shareEntryAmount || 0).toFixed(2)}">
-                Confirm ${money(m.requiredEntryAmount ?? m.shareEntryAmount)} received
-              </button>
+              <div class="inline-actions" style="flex-wrap:wrap;gap:0.5rem;align-items:center;">
+                <label class="text-secondary">
+                  Payment method
+                  <select data-buyin-payment="${m.id}" required>
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank Transfer</option>
+                    <option value="mfs">Mobile Financial Services</option>
+                  </select>
+                </label>
+                <input type="text" data-buyin-reference="${m.id}" placeholder="Reference (optional)" />
+                <button type="button" class="primary-btn"
+                  data-complete-buyin="${m.id}"
+                  data-required="${Number(m.requiredEntryAmount || m.shareEntryAmount || 0).toFixed(2)}">
+                  Confirm ${money(m.requiredEntryAmount ?? m.shareEntryAmount)} received
+                </button>
+              </div>
             </td>
           </tr>
         `).join('')
@@ -1315,21 +1328,26 @@ async function loadFundingModule() {
       btn.onclick = async () => {
         const msg = document.getElementById('cashierBuyInMessage');
         const required = btn.dataset.required;
-        if (!window.confirm(`Confirm successful payment of ${formatMoney(required)}? This activates the member and adjusts balances.`)) return;
+        const memberId = btn.dataset.completeBuyin;
+        const paymentMethod = document.querySelector(`[data-buyin-payment="${memberId}"]`)?.value || 'cash';
+        const paymentReference = document.querySelector(`[data-buyin-reference="${memberId}"]`)?.value || '';
+        if (!window.confirm(`Confirm successful ${paymentChannelLabel(paymentMethod)} payment of ${formatMoney(required)}? This activates the member. Running-project profits start next month.`)) return;
         try {
           const res = await fetch('/api/admin/funding/member-buyin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              memberId: btn.dataset.completeBuyin,
+              memberId,
               amountPaid: required,
+              paymentMethod,
+              paymentReference,
             }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Unable to confirm payment.');
           if (msg) {
             msg.classList.add('success');
-            msg.textContent = data.message || `Payment of ${formatMoney(required)} confirmed. Member activated.`;
+            msg.textContent = data.message || `Payment of ${formatMoney(required)} confirmed via ${paymentChannelLabel(paymentMethod)}. Member activated.`;
           }
           await loadFundingModule();
         } catch (error) {

@@ -70,8 +70,17 @@ router.post('/users', async (req, res) => {
 router.get('/entry-valuation', async (req, res) => {
   try {
     const { getEntryValuation } = require('../services/memberMigrationService');
+    let manualProjectValuations = [];
+    if (req.query.manualProjectValuations) {
+      try {
+        manualProjectValuations = JSON.parse(req.query.manualProjectValuations);
+      } catch (_) {
+        manualProjectValuations = [];
+      }
+    }
     const valuation = await getEntryValuation({
       replaceMemberId: req.query.replaceMemberId || null,
+      manualProjectValuations,
     });
     return res.json({ valuation });
   } catch (error) {
@@ -87,6 +96,8 @@ router.post('/members/:id/buy-in', async (req, res) => {
       amountPaid: req.body?.amountPaid ?? req.body?.amount,
       notes: req.body?.notes || '',
       recordedBy: req.session?.user?.name || 'User Management',
+      paymentMethod: req.body?.paymentMethod || req.body?.paymentChannel || 'cash',
+      paymentReference: req.body?.paymentReference || '',
     });
     return res.status(201).json(result);
   } catch (error) {

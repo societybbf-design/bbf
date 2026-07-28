@@ -511,6 +511,9 @@ async function createManagedUser({
   permissions,
   shareEntryAmount,
   entryAmountPaid,
+  manualProjectValuations,
+  openingSavings,
+  openingProfit,
 }, actor, ip) {
   if (!name || !email || !password || !role) {
     const err = new Error('Name, email, password, and role are required.');
@@ -564,6 +567,9 @@ async function createManagedUser({
         shareEntryAmount: shareEntryAmount ?? entryAmountPaid,
         entryAmountPaid: shareEntryAmount ?? entryAmountPaid,
         recordedBy: actor?.name || actor?.email || 'User Management',
+        manualProjectValuations: Array.isArray(manualProjectValuations) ? manualProjectValuations : [],
+        openingSavings,
+        openingProfit,
       });
     } catch (buyInError) {
       await User.findByIdAndDelete(user._id);
