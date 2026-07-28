@@ -34,7 +34,7 @@ const ProfitDistributionSchema = new mongoose.Schema({
   },
   distributionType: {
     type: String,
-    enum: ['equal', 'proportional', 'dividend_auto'],
+    enum: ['equal', 'proportional', 'dividend_auto', 'balance'],
     default: 'equal',
   },
   memberCount: {

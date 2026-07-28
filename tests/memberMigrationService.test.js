@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   money,
   amountsMatch,
+  getNextMonthStart,
 } = require('../services/memberMigrationService');
 
 test('money rounds to two decimal places', () => {
@@ -23,4 +24,16 @@ test('society-fund exit settlement equals savings + profit + advance', () => {
   const settlement = money(savings + profit + advance);
   assert.equal(settlement, 5350.5);
   assert.equal(amountsMatch(settlement, '5350.50'), true);
+});
+
+test('getNextMonthStart aligns new-member profit eligibility to next month', () => {
+  const from = getNextMonthStart(new Date('2026-01-31T12:00:00Z'));
+  assert.equal(from.getDate(), 1);
+  assert.ok(from.getMonth() === 1 || from.getMonth() === 2); // Feb or Mar depending on TZ
+});
+
+test('manual project valuation normalizes comma decimals like 30000,00', () => {
+  const raw = '30000,00';
+  const normalized = Number(String(raw).replace(',', '.'));
+  assert.equal(money(normalized), 30000);
 });

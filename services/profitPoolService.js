@@ -116,16 +116,18 @@ async function distributeEqually({
 
   const distributionResult = await distributeAmountToMembers({
     totalAmount: toDistribute,
-    distributionType: 'equal',
+    distributionType: 'balance',
+    forceDistributionType: true,
     distributedBy,
+    yearMonth: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
   });
 
   const profitDistribution = await ProfitDistribution.create({
     totalAmount: toDistribute,
-    distributionType: 'equal',
+    distributionType: 'balance',
     memberCount: distributionResult.memberCount,
     shares: distributionResult.shares,
-    notes: note?.trim() || 'Equal distribution from monthly profit pool',
+    notes: note?.trim() || 'Balance-ratio distribution from monthly profit pool (eligible members for current month)',
     distributedBy: distributedBy?.trim() || 'Cashier',
   });
 

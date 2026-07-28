@@ -91,6 +91,35 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  /**
+   * First calendar month the member may receive running-project / pool profits.
+   * Set to the 1st of the month after activation so current-month income
+   * stays with existing members; next month onwards includes the new member.
+   */
+  profitEligibleFrom: {
+    type: Date,
+    default: null,
+    index: true,
+  },
+  /**
+   * Snapshot of society baseline shown at registration (past-year deposits,
+   * active project valuations, suggested share) for audit / CEO review.
+   */
+  registrationBaseline: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+  /** Manual project valuations entered by User Management at registration */
+  manualProjectValuations: {
+    type: [{
+      investmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Investment' },
+      investmentCode: { type: String, trim: true, default: '' },
+      label: { type: String, trim: true, default: '' },
+      bookAmount: { type: Number, default: 0 },
+      manualValuation: { type: Number, default: 0 },
+    }],
+    default: [],
+  },
   /** Exit settlement metadata (when replaced or paid out from society fund) */
   exitSettledAt: {
     type: Date,
