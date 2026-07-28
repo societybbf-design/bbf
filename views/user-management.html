@@ -136,36 +136,25 @@
               <div id="devMemberBuyInBlock" class="permissions-block hidden">
                 <div class="permissions-header">
                   <div>
-                    <h3 data-i18n="um.buyInTitle">Member share / entry fee (manual)</h3>
+                    <h3 data-i18n="um.buyInTitle">New member share / entry fee</h3>
                     <p class="text-secondary" id="devEntryValuationNote" data-i18n="um.buyInHelp">
-                      Past-year deposits and active projects load automatically. Enter project valuations and the final share price manually. Workflow: Submit → CEO approve → Cashier payment confirm → Active. Running-project profits start next month.
+                      1) Old members’ deposits from the beginning until now load automatically.
+                      2) Adjust remaining active-project valuations yourself.
+                      3) The share amount is calculated automatically — then submit the request for CEO approval.
                     </p>
                   </div>
                 </div>
                 <div id="devEntryValuationBox" class="panel-card u-mb-1">
                   <p class="table-subtitle" data-i18n="um.selectMemberRole">Select role “Member” to load live valuation.</p>
                 </div>
+                <div id="devExistingMemberDeposits" class="u-mb-1"></div>
                 <div id="devActiveProjectsValuation" class="u-mb-1"></div>
-                <div class="form-row-2">
-                  <div class="form-group">
-                    <label data-i18n="um.openingSavings">
-                      Past / opening savings (৳) — optional
-                      <input type="number" name="openingSavings" id="devOpeningSavings" min="0" step="0.01" placeholder="0.00" />
-                    </label>
-                  </div>
-                  <div class="form-group">
-                    <label data-i18n="um.openingProfit">
-                      Past / opening profit (৳) — optional
-                      <input type="number" name="openingProfit" id="devOpeningProfit" min="0" step="0.01" placeholder="0.00" />
-                    </label>
-                  </div>
-                </div>
                 <div class="form-group">
                   <label data-i18n="um.shareEntryAmount">
-                    Final share / entry fee amount (৳) — manual
-                    <input data-i18n-placeholder="um.shareEntryPlaceholder" type="number" name="shareEntryAmount" id="devShareEntryAmount" min="0" step="0.01" required placeholder="Enter share or entry fee manually" />
+                    Share / entry fee amount (৳) — auto-calculated
+                    <input data-i18n-placeholder="um.shareEntryPlaceholder" type="number" name="shareEntryAmount" id="devShareEntryAmount" min="0" step="0.01" required placeholder="Calculated after project valuation" />
                   </label>
-                  <p class="text-secondary" data-i18n="um.shareEntryNote">Required. Aligns the new member with existing cumulative savings and profits. Account stays Pending until CEO approval and Cashier payment confirmation.</p>
+                  <p class="text-secondary" data-i18n="um.shareEntryNote">Filled automatically from old-member deposits + your project valuations. You may adjust before submitting. Request stays Pending until CEO approval and Cashier payment confirmation.</p>
                 </div>
               </div>
               <div class="permissions-block">
