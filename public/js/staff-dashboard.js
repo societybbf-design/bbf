@@ -1411,7 +1411,6 @@ async function loadFundingModule() {
     });
   } catch (error) {
     if (advanceBody) advanceBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
-    if (buyInBody) buyInBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
