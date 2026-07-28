@@ -129,6 +129,8 @@ router.post('/member-buyin', requirePasswordConfirmation, async (req, res) => {
       amountPaid: req.body?.amountPaid ?? req.body?.amount,
       notes: req.body?.notes || '',
       recordedBy: req.session?.user?.name || 'Cashier',
+      paymentMethod: req.body?.paymentMethod || req.body?.paymentChannel || 'cash',
+      paymentReference: req.body?.paymentReference || '',
     });
     return res.status(201).json(result);
   } catch (error) {

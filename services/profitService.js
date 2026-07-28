@@ -4,8 +4,50 @@ const InvestmentProfit = require('../models/InvestmentProfit');
 const { getInvestmentByCode, refundToTotalSavings } = require('./investmentService');
 const { getDistributionType, getDividendWeights } = require('./societyConfig');
 
-function getActiveMembersFilter() {
-  return { role: 'member', status: { $nin: ['inactive', 'deleted'] } };
+/**
+ * Active members only (excludes pending/approved/blocked).
+ * Optional asOfDate / yearMonth gates new members until profitEligibleFrom
+ * (typically the 1st of the month after activation).
+ */
+function getActiveMembersFilter({ asOfDate = null, yearMonth = null } = {}) {
+  const filter = {
+    role: 'member',
+    status: 'active',
+    pendingEntryBuyIn: { $ne: true },
+  };
+
+  const cutoff = resolveProfitCutoffDate({ asOfDate, yearMonth });
+  if (cutoff) {
+    filter.$or = [
+      { profitEligibleFrom: null },
+      { profitEligibleFrom: { $exists: false } },
+      { profitEligibleFrom: { $lte: cutoff } },
+    ];
+  }
+
+  return filter;
+}
+
+function resolveProfitCutoffDate({ asOfDate = null, yearMonth = null } = {}) {
+  if (yearMonth && /^\d{4}-\d{2}$/.test(String(yearMonth))) {
+    const [year, month] = String(yearMonth).split('-').map(Number);
+    return new Date(year, month - 1, 1);
+  }
+  if (asOfDate) {
+    const d = new Date(asOfDate);
+    if (!Number.isNaN(d.getTime())) {
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    }
+  }
+  return null;
+}
+
+function memberBalanceWeight(member) {
+  return Math.max(0, Number(member.savings || 0) + Number(member.profit || 0));
+}
+
+async function listProfitEligibleMembers(options = {}) {
+  return User.find(getActiveMembersFilter(options));
 }
 
 function calculateDividendShares(members, totalAmount) {
@@ -48,7 +90,7 @@ function calculateDividendShares(members, totalAmount) {
 }
 
 async function previewAutomaticDividend(totalAmount) {
-  const members = await User.find(getActiveMembersFilter());
+  const members = await listProfitEligibleMembers();
   const sharePlan = calculateDividendShares(members, totalAmount);
   const { savingsWeight, profitWeight } = getDividendWeights();
 
@@ -80,7 +122,7 @@ async function distributeAutomaticDividend({
     throw error;
   }
 
-  const members = await User.find(getActiveMembersFilter());
+  const members = await listProfitEligibleMembers();
   if (!members.length) {
     const error = new Error('No active members available for dividend distribution.');
     error.status = 400;
@@ -136,16 +178,17 @@ function calculateMemberShares(members, totalAmount, distributionType = 'equal')
     return [];
   }
 
-  if (distributionType === 'proportional') {
-    const totalSavings = members.reduce((sum, member) => sum + Number(member.savings || 0), 0);
-    if (totalSavings <= 0) {
+  // balance / proportional: split by each member's savings+profit share ratio
+  if (distributionType === 'proportional' || distributionType === 'balance') {
+    const weights = members.map((member) => memberBalanceWeight(member));
+    const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+    if (totalWeight <= 0) {
       return calculateMemberShares(members, normalizedTotal, 'equal');
     }
 
     let allocated = 0;
     const shares = members.map((member, index) => {
-      const savings = Number(member.savings || 0);
-      let amount = Number(((savings / totalSavings) * normalizedTotal).toFixed(2));
+      let amount = Number(((weights[index] / totalWeight) * normalizedTotal).toFixed(2));
 
       if (index === members.length - 1) {
         amount = Number((normalizedTotal - allocated).toFixed(2));
@@ -156,6 +199,7 @@ function calculateMemberShares(members, totalAmount, distributionType = 'equal')
       return {
         member,
         amount: Math.max(amount, 0),
+        weight: weights[index],
       };
     });
 
@@ -176,6 +220,7 @@ function calculateMemberShares(members, totalAmount, distributionType = 'equal')
     return {
       member,
       amount: Math.max(amount, 0),
+      weight: 1,
     };
   });
 }
@@ -193,11 +238,15 @@ async function distributeProfit({
     throw error;
   }
 
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const societyDistributionType = getDistributionType();
   const distribution = await distributeAmountToMembers({
     totalAmount: normalizedTotal,
     distributionType: societyDistributionType,
     distributedBy,
+    yearMonth,
+    asOfDate: now,
   });
 
   const profitDistribution = await ProfitDistribution.create({
@@ -308,18 +357,24 @@ async function getMemberProfitHistory(memberId, limit = 10) {
 
 async function distributeAmountToMembers({
   totalAmount,
-  distributionType = 'equal',
+  distributionType = null,
   distributedBy = 'Admin',
+  asOfDate = null,
+  yearMonth = null,
+  forceDistributionType = false,
 }) {
-  const members = await User.find(getActiveMembersFilter());
+  const members = await listProfitEligibleMembers({ asOfDate, yearMonth });
   if (!members.length) {
-    const error = new Error('No members available for profit distribution.');
+    const error = new Error('No eligible active members available for profit distribution.');
     error.status = 400;
     throw error;
   }
 
   const societyDistributionType = getDistributionType();
-  const sharePlan = calculateMemberShares(members, totalAmount, societyDistributionType);
+  const resolvedType = forceDistributionType && distributionType
+    ? distributionType
+    : (distributionType || societyDistributionType);
+  const sharePlan = calculateMemberShares(members, totalAmount, resolvedType);
   const shares = [];
 
   for (const item of sharePlan) {
@@ -334,12 +389,15 @@ async function distributeAmountToMembers({
       amount: Number(item.amount || 0),
       previousProfit,
       newProfit,
+      weight: item.weight,
     });
   }
 
   return {
     shares,
     memberCount: members.length,
+    distributionType: resolvedType,
+    yearMonth: yearMonth || null,
     updatedMembers: shares.map((share) => ({
       memberId: share.member,
       memberName: share.memberName,
@@ -352,10 +410,12 @@ async function distributeAmountToMembers({
 async function applyLossToMembers({
   totalLoss,
   distributedBy = 'Admin',
+  asOfDate = null,
+  yearMonth = null,
 }) {
-  const members = await User.find(getActiveMembersFilter());
+  const members = await listProfitEligibleMembers({ asOfDate, yearMonth });
   if (!members.length) {
-    const error = new Error('No members available for loss distribution.');
+    const error = new Error('No eligible active members available for loss distribution.');
     error.status = 400;
     throw error;
   }
@@ -661,6 +721,10 @@ async function lookupInvestmentForProfit(investmentCode) {
 module.exports = {
   applyLossToMembers,
   calculateMemberShares,
+  memberBalanceWeight,
+  getActiveMembersFilter,
+  resolveProfitCutoffDate,
+  listProfitEligibleMembers,
   distributeProfit,
   distributeAmountToMembers,
   getProfitHistory,

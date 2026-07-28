@@ -72,7 +72,7 @@ const InvestmentProfitSchema = new mongoose.Schema({
   },
   distributionType: {
     type: String,
-    enum: ['equal', 'proportional'],
+    enum: ['equal', 'proportional', 'balance'],
     default: 'equal',
   },
   memberCount: {

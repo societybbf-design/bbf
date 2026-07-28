@@ -161,6 +161,7 @@ router.post('/:id/monthly-return', requirePermission('can_manage_deposits', 'can
       profitAmount: req.body?.profitAmount || req.body?.amount,
       notes: req.body?.notes,
       recordedBy: req.session?.user?.name || 'Cashier',
+      yearMonth: req.body?.yearMonth || null,
     });
     return res.status(201).json(result);
   } catch (error) {
