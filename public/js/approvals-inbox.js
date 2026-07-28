@@ -443,8 +443,17 @@
           && String(action.path || '').includes('/api/admin/investments/')
           && String(action.path || '').includes('/cashier-complete');
 
-        if (isInvestmentCashierComplete && typeof window.beginCashierCompletePayment === 'function') {
-          const investmentId = String(action.path).split('/')[4];
+        if (isInvestmentCashierComplete) {
+          const pathMatch = String(action.path || '').match(/\/investments\/([^/]+)\/cashier-complete/i);
+          const investmentId = String(pathMatch?.[1] || item.entityId || '').trim();
+          if (!investmentId) {
+            setMessage(container, t('approvals.missingInvestment', 'Investment id missing for Complete payment.'), true);
+            return;
+          }
+          if (typeof window.beginCashierCompletePayment !== 'function') {
+            setMessage(container, t('approvals.paymentUiMissing', 'Payment popup is not loaded. Hard-refresh the page (Ctrl+Shift+R) and try again.'), true);
+            return;
+          }
           btn.disabled = true;
           setMessage(container, t('approvals.working', 'Opening payment popup…'));
           try {

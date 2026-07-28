@@ -44,7 +44,43 @@ const app = express();
 const port = Number(process.env.PORT) || 4000;
 const mongoUri = String(process.env.MONGO_URI || process.env.MONGODB_URI || '').trim();
 const isProduction = process.env.NODE_ENV === 'production';
-const ASSET_VERSION = process.env.ASSET_VERSION || String(Date.now());
+
+function computeAssetVersion() {
+  if (process.env.ASSET_VERSION) return String(process.env.ASSET_VERSION);
+  try {
+    const crypto = require('crypto');
+    const roots = [
+      path.join(__dirname, 'public', 'js'),
+      path.join(__dirname, 'public', 'css'),
+      path.join(__dirname, 'views'),
+    ];
+    const hash = crypto.createHash('sha1');
+    for (const root of roots) {
+      if (!fs.existsSync(root)) continue;
+      const stack = [root];
+      while (stack.length) {
+        const current = stack.pop();
+        const entries = fs.readdirSync(current, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = path.join(current, entry.name);
+          if (entry.isDirectory()) {
+            stack.push(full);
+            continue;
+          }
+          const st = fs.statSync(full);
+          hash.update(full);
+          hash.update(String(st.mtimeMs));
+          hash.update(String(st.size));
+        }
+      }
+    }
+    return hash.digest('hex').slice(0, 12);
+  } catch (_) {
+    return String(Date.now());
+  }
+}
+
+const ASSET_VERSION = computeAssetVersion();
 const sessionSecret = process.env.SESSION_SECRET || '';
 
 let httpServer = null;
