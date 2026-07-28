@@ -8,12 +8,21 @@ const {
 } = require('../services/rbac');
 
 test('can_disburse_loans is cashier-exclusive', () => {
-  assert.deepEqual(CASHIER_EXCLUSIVE_PERMISSIONS, ['can_disburse_loans']);
+  assert.deepEqual(CASHIER_EXCLUSIVE_PERMISSIONS, ['can_disburse_loans', 'can_manage_deposits']);
   assert.equal(userHasPermission({ role: 'cashier', permissions: [] }, 'can_disburse_loans'), true);
   assert.equal(userHasPermission({ role: 'ceo', permissions: ['can_disburse_loans'] }, 'can_disburse_loans'), false);
   assert.equal(userHasPermission({ role: 'admin' }, 'can_disburse_loans'), false);
   assert.equal(userHasPermission({ role: 'developer' }, 'can_disburse_loans'), false);
   assert.equal(userHasPermission({ role: 'project_manager' }, 'can_disburse_loans'), false);
+});
+
+test('can_manage_deposits is cashier-exclusive', () => {
+  assert.equal(userHasPermission({ role: 'cashier', permissions: [] }, 'can_manage_deposits'), true);
+  assert.equal(userHasPermission({ role: 'ceo', permissions: [] }, 'can_manage_deposits'), false);
+  assert.equal(userHasPermission({ role: 'ceo', permissions: ['can_manage_deposits'] }, 'can_manage_deposits'), false);
+  assert.equal(userHasPermission({ role: 'developer' }, 'can_manage_deposits'), false);
+  assert.equal(getDefaultPermissions('ceo').includes('can_manage_deposits'), false);
+  assert.equal(getDefaultPermissions('cashier').includes('can_manage_deposits'), true);
 });
 
 test('CEO retains loan review but not disbursement defaults', () => {
@@ -77,4 +86,17 @@ test('publicUserPayload strips disbursement from CEO and grants it to cashier', 
   });
   assert.equal(cashierPayload.permissions.includes('can_disburse_loans'), true);
   assert.equal(cashierPayload.permissions.includes('can_manage_profit'), true);
+  assert.equal(cashierPayload.permissions.includes('can_manage_deposits'), true);
+});
+
+test('publicUserPayload strips deposit management from CEO', () => {
+  const ceoPayload = publicUserPayload({
+    _id: '4',
+    email: 'ceo2@example.com',
+    role: 'ceo',
+    name: 'CEO Two',
+    permissions: ['can_manage_deposits', 'can_manage_members'],
+  });
+  assert.equal(ceoPayload.permissions.includes('can_manage_deposits'), false);
+  assert.equal(ceoPayload.permissions.includes('can_manage_members'), true);
 });

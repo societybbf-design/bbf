@@ -1169,6 +1169,10 @@ function navigateToPage(page, sectionId = null, { syncUrl = true } = {}) {
   if (page === 'investments') {
     page = 'projects';
   }
+  // Member deposit recording is Cashier-only; legacy #deposits opens Settings (month targets).
+  if (page === 'deposits') {
+    page = 'settings';
+  }
   if (typeof canOpenOpsPage === 'function' && !canOpenOpsPage(page)) {
     page = firstAllowedOpsPage();
   }
@@ -1219,7 +1223,6 @@ function navigateToPage(page, sectionId = null, { syncUrl = true } = {}) {
 const ADMIN_PAGE_I18N_KEYS = {
   dashboard: 'dashboard',
   members: 'members',
-  deposits: 'deposits',
   projects: 'projects',
   profit: 'profit',
   sales: 'sales',
@@ -1258,10 +1261,6 @@ function updatePageContent(page, loanTab = null) {
       void refreshLoanPortfolioData();
       void loadDashboardSnapshot();
       break;
-    case 'deposits':
-      void fetchDepositHistory();
-      void loadMonthlyTargetsUi();
-      break;
     case 'members':
       void fetchMembers();
       break;
@@ -1299,6 +1298,7 @@ function updatePageContent(page, loanTab = null) {
     case 'settings':
       void loadPendingKycDocuments();
       void loadNotices();
+      void loadMonthlyTargetsUi();
       break;
     case 'messages':
       stopChatPolling('admin-page');
@@ -1486,7 +1486,7 @@ function applyOpsPermissionGate(user) {
 }
 
 function firstAllowedOpsPage() {
-  const preferred = ['deposits', 'withdrawals', 'members', 'profit', 'reports', 'messages', 'projects', 'loans', 'settings', 'dashboard'];
+  const preferred = ['withdrawals', 'members', 'profit', 'reports', 'messages', 'projects', 'loans', 'settings', 'dashboard'];
   for (const page of preferred) {
     const nav = document.querySelector(`.nav-item[data-page="${page}"]:not(.hidden)`);
     if (nav) return page;
@@ -2385,6 +2385,10 @@ function resolveAdminBootPage() {
   if (hashPage === 'investments') {
     return { page: 'projects' };
   }
+  // Legacy Deposits hash — recording is Cashier-only; open Settings for month targets.
+  if (hashPage === 'deposits') {
+    return { page: 'settings' };
+  }
   if (handleAdminDeepLink()) {
     return { handled: true };
   }
@@ -2959,7 +2963,7 @@ function bindDashboardNotes() {
 
 const adminDashboardPageMap = {
   members: 'members',
-  deposits: 'deposits',
+  deposits: 'reports',
   savings: 'members',
   profit: 'profit',
   investments: 'projects',
@@ -3303,17 +3307,12 @@ function renderMembers(members) {
 
 function attachMemberClickHandlers() {
   document.querySelectorAll('.clickable-row').forEach((row) => {
-    row.addEventListener('click', () => {
-      if (selectedMemberId) {
-        selectedMemberId.value = row.dataset.memberId;
-      }
-      if (selectedMemberName) {
-        selectedMemberName.value = row.dataset.memberName;
-      }
-      navigateToPage('deposits');
-      depositAmount?.focus();
+    row.addEventListener('click', async () => {
+      const memberId = row.dataset.memberId;
+      if (!memberId) return;
       document.querySelectorAll('.clickable-row').forEach((item) => item.classList.remove('selected-row'));
       row.classList.add('selected-row');
+      await openMemberProfile(memberId);
     });
   });
 
@@ -3345,19 +3344,8 @@ function buildMonthlyHistoryRows(monthlyHistory) {
 function buildProfileDepositForm(memberId, formPrefix = 'profile') {
   return `
     <section class="panel-card">
-      <h3>Record Deposit</h3>
-      <p class="table-subtitle">এই member-এর জন্য সরাসরি deposit যোগ করুন।</p>
-      <form class="deposit-form profile-deposit-form" data-member-id="${memberId}" data-form-prefix="${formPrefix}">
-        <div class="form-group">
-          <label>
-            Amount (৳)
-            <input type="number" name="amount" min="0.01" step="0.01" placeholder="0.00" required />
-          </label>
-        </div>
-        <button type="submit" class="primary-btn">Add Deposit</button>
-        <a class="receipt-button profile-deposit-receipt" target="_blank" hidden>Download Receipt</a>
-        <p class="message profile-deposit-message"></p>
-      </form>
+      <h3>Deposits</h3>
+      <p class="table-subtitle">Member deposits are recorded only by the Cashier. Use the monthly history below for oversight.</p>
     </section>
   `;
 }
@@ -4057,20 +4045,10 @@ function buildMemberProfileHtml(data, options = {}) {
 }
 
 async function recordMemberDeposit(memberId, amount) {
-  const response = await fetch('/api/admin/deposits', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ memberId, amount }),
-  });
-
-  let data = {};
-  try {
-    data = await response.json();
-  } catch (error) {
-    data = { error: 'Unexpected server response while saving deposit.' };
-  }
-
-  return { ok: response.ok, data };
+  return {
+    ok: false,
+    data: { error: 'Only the Cashier can record member deposits.' },
+  };
 }
 
 function validateDepositAmount(amount) {
@@ -4210,82 +4188,7 @@ function setDepositSubmitting(form, isSubmitting) {
 }
 
 function bindProfileDepositForms(container, onDepositSuccess) {
-  if (!container) {
-    return;
-  }
-
-  applyDepositFormSettings();
-
-  container.querySelectorAll('.profile-deposit-form').forEach((form) => {
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const messageEl = form.querySelector('.profile-deposit-message');
-      const receiptLinkEl = form.querySelector('.profile-deposit-receipt');
-      const memberId = form.dataset.memberId;
-      const amount = Number(form.querySelector('[name="amount"]').value);
-
-      messageEl.textContent = '';
-      messageEl.classList.remove('success', 'error');
-
-      if (!memberId) {
-        messageEl.classList.add('error');
-        messageEl.textContent = 'Member not found.';
-        return;
-      }
-
-      if (!amount || amount <= 0) {
-        messageEl.classList.add('error');
-        messageEl.textContent = 'Enter a valid deposit amount.';
-        return;
-      }
-
-      const amountError = validateDepositAmount(amount);
-      if (amountError) {
-        messageEl.classList.add('error');
-        messageEl.textContent = amountError;
-        return;
-      }
-
-      try {
-        setDepositSubmitting(form, true);
-        const { ok, data } = await recordMemberDeposit(memberId, amount);
-        if (!ok) {
-          if (receiptLinkEl) {
-            receiptLinkEl.hidden = true;
-          }
-          messageEl.classList.add('error');
-          messageEl.textContent = data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
-          return;
-        }
-
-        form.reset();
-        messageEl.classList.add('success');
-        messageEl.textContent = data.emailSent
-          ? 'Deposit recorded and receipt email sent.'
-          : 'Deposit recorded successfully. Receipt can be downloaded below.';
-        if (receiptLinkEl) {
-          receiptLinkEl.hidden = false;
-          receiptLinkEl.href = `/api/admin/deposits/${data.deposit._id}/receipt`;
-        }
-
-        await fetchMembers();
-        await fetchSummary();
-        await fetchDepositHistory();
-
-        if (onDepositSuccess) {
-          await onDepositSuccess();
-        }
-      } catch (error) {
-        if (receiptLinkEl) {
-          receiptLinkEl.hidden = true;
-        }
-        messageEl.classList.add('error');
-        messageEl.textContent = t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
-      } finally {
-        setDepositSubmitting(form, false);
-      }
-    });
-  });
+  // Deposit recording is Cashier-only — no CEO profile deposit forms.
 }
 
 function bindProfileTabs(container, activeTab = 'overview') {

@@ -9,9 +9,23 @@ const { paymentChannelLabel } = require('../services/paymentChannelService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const { clientIp } = require('../services/securityService');
 
-router.use(requireAuth, requirePermission('can_manage_deposits'));
+router.use(requireAuth);
 
-router.get('/', async (req, res) => {
+function requireCashierRole(req, res, next) {
+  if (req.session?.user?.role === 'cashier') {
+    return next();
+  }
+  return res.status(403).json({
+    error: 'Only the Cashier can record member deposits.',
+  });
+}
+
+/** Read history/receipts: Cashier or report viewers (CEO oversight). */
+const viewDeposits = requirePermission('can_manage_deposits', 'can_view_reports');
+/** Create deposits: Cashier-only permission + hard role check. */
+const recordDeposits = requirePermission('can_manage_deposits');
+
+router.get('/', viewDeposits, async (req, res) => {
   try {
     const deposits = await getAllDeposits();
     res.json({ deposits });
@@ -20,7 +34,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id/receipt', async (req, res) => {
+router.get('/:id/receipt', viewDeposits, async (req, res) => {
   try {
     const { id } = req.params;
     const deposit = await Deposit.findById(id).populate({ path: 'member', select: 'name email' });
@@ -42,7 +56,7 @@ router.get('/:id/receipt', async (req, res) => {
   }
 });
 
-router.post('/', requirePasswordConfirmation, async (req, res) => {
+router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
   try {
     const { memberId, amount, yearMonth, notes, paymentMethod, paymentReference } = req.body;
     if (!memberId || typeof amount === 'undefined' || amount === null) {
@@ -60,7 +74,7 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
     const result = await saveDeposit(memberId, numericAmount, {
       yearMonth: applyMonth,
       notes: notes || '',
-      recordedBy: req.session?.user?.name || 'Admin',
+      recordedBy: req.session?.user?.name || 'Cashier',
       paymentMethod,
       paymentReference,
       actor: req.session?.user || null,
@@ -72,7 +86,7 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
       const emailResult = await sendDepositReceipt(
         result.member,
         result.deposit,
-        req.session.user.name || 'Admin'
+        req.session.user.name || 'Cashier'
       );
       emailSent = Boolean(emailResult?.sent);
     } catch (error) {
@@ -88,33 +102,24 @@ router.post('/', requirePasswordConfirmation, async (req, res) => {
       message = bits.join(' · ');
     }
     if (result.bookBalance != null) {
-      message += ` · Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}`;
+      message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
     }
-    if (result.ledgerWarning) {
-      message += ` · Ledger warning: ${result.ledgerWarning}`;
-    }
-    if (result.deposit?.receiptNumber) {
-      message += ` · Receipt ${result.deposit.receiptNumber}`;
+    if (emailSent) {
+      message += ' Receipt emailed to the member.';
     }
 
     return res.status(201).json({
-      deposit: result.deposit,
-      advanceDeposit: result.advanceDeposit,
-      member: result.member,
-      monthlySplit: result.monthlySplit,
-      bankLedger: result.bankLedger,
-      bookBalance: result.bookBalance,
-      ledgerWarning: result.ledgerWarning || null,
-      activeMonthTarget: target,
+      ...result,
       message,
       emailSent,
-      receiptNumber: result.deposit?.receiptNumber || null,
-      paymentMethod: result.deposit?.paymentMethod || paymentMethod || 'cash',
-      paymentMethodLabel: paymentChannelLabel(result.deposit?.paymentMethod || paymentMethod),
+      paymentChannelLabel: paymentChannelLabel(result.deposit?.paymentMethod),
+      monthTarget: target,
       receiptUrl: result.deposit?._id ? `/api/admin/deposits/${result.deposit._id}/receipt` : null,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to save admin deposit.' });
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to record deposit.',
+    });
   }
 });
 
