@@ -24,13 +24,8 @@ const { listInvestorUsers, getInvestorPortfolio } = require('../services/investm
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const {
   getEntryValuation,
-  setMemberOpeningBalances,
   replaceMember,
   exitMemberViaSocietyFund,
-  getMigrationOverview,
-  listPendingMemberRegistrations,
-  approveMemberRegistration,
-  rejectMemberRegistration,
 } = require('../services/memberMigrationService');
 const { userHasPermission, isFullAccessRole } = require('../services/rbac');
 
@@ -39,7 +34,7 @@ router.use(requireAuth, requirePermission('can_manage_members', 'can_view_report
 const manageMembers = requirePermission('can_manage_members');
 const manageNotices = requirePermission('can_manage_notices');
 const manageRefunds = requirePermission('can_manage_refunds');
-const manageMigration = requirePermission('can_manage_members');
+const manageMemberOperations = requirePermission('can_manage_members');
 
 function stripSensitiveMemberFields(member) {
   if (!member) return member;
@@ -68,48 +63,7 @@ router.get('/members', async (req, res) => {
   });
 });
 
-router.get('/members/migration-overview', manageMigration, async (req, res) => {
-  try {
-    const overview = await getMigrationOverview();
-    return res.json(overview);
-  } catch (error) {
-    return res.status(500).json({ error: 'Unable to load migration overview.' });
-  }
-});
-
-router.get('/members/pending-registrations', manageMigration, async (req, res) => {
-  try {
-    const members = await listPendingMemberRegistrations();
-    return res.json({ members });
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to load pending registrations.' });
-  }
-});
-
-router.post('/members/:id/approve-registration', manageMigration, requirePasswordConfirmation, async (req, res) => {
-  try {
-    const result = await approveMemberRegistration(req.params.id, {
-      approvedBy: req.session?.user?.name || 'CEO',
-    });
-    return res.json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to approve member registration.' });
-  }
-});
-
-router.post('/members/:id/reject-registration', manageMigration, requirePasswordConfirmation, async (req, res) => {
-  try {
-    const result = await rejectMemberRegistration(req.params.id, {
-      rejectedBy: req.session?.user?.name || 'CEO',
-      reason: req.body?.reason || '',
-    });
-    return res.json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to reject member registration.' });
-  }
-});
-
-router.get('/members/entry-valuation', manageMigration, async (req, res) => {
+router.get('/members/entry-valuation', manageMemberOperations, async (req, res) => {
   try {
     const valuation = await getEntryValuation({
       replaceMemberId: req.query.replaceMemberId || null,
@@ -120,7 +74,7 @@ router.get('/members/entry-valuation', manageMigration, async (req, res) => {
   }
 });
 
-router.post('/members/replace', manageMigration, requirePasswordConfirmation, async (req, res) => {
+router.post('/members/replace', manageMemberOperations, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await replaceMember({
       departingMemberId: req.body?.departingMemberId,
@@ -135,25 +89,10 @@ router.post('/members/replace', manageMigration, requirePasswordConfirmation, as
   }
 });
 
-router.post('/members/exit-society-fund', manageMigration, requirePasswordConfirmation, async (req, res) => {
+router.post('/members/exit-society-fund', manageMemberOperations, requirePasswordConfirmation, async (req, res) => {
   return res.status(400).json({
     error: 'Direct society-fund exit is disabled. Initiate a Member Exit request so the departing member and remaining members can approve, then the Cashier completes payout.',
   });
-});
-
-router.patch('/members/:id/opening-balance', manageMigration, requirePasswordConfirmation, async (req, res) => {
-  try {
-    const result = await setMemberOpeningBalances({
-      memberId: req.params.id,
-      openingSavings: req.body?.openingSavings,
-      openingProfit: req.body?.openingProfit,
-      notes: req.body?.notes,
-      recordedBy: req.session?.user?.name || 'CEO',
-    });
-    return res.json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to set opening balance.' });
-  }
 });
 
 router.get('/members/deleted/list', async (req, res) => {
@@ -274,14 +213,14 @@ router.post('/members', async (req, res) => {
   });
 });
 
-// Profile metadata only — balances must go through deposit / opening-balance / refund flows.
+// Profile metadata only — balances must go through deposit or refund flows.
 router.put('/members/:id', manageMembers, requirePasswordConfirmation, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, profilePicture, dateOfBirth, gender } = req.body;
     if (typeof req.body?.savings !== 'undefined' || typeof req.body?.profit !== 'undefined') {
       return res.status(403).json({
-        error: 'Savings and profit cannot be edited directly. Use deposits, opening balance, or refund tools.',
+        error: 'Savings and profit cannot be edited directly. Use deposits or refund tools.',
       });
     }
     if (typeof req.body?.status !== 'undefined') {

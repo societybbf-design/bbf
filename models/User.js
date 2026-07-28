@@ -101,25 +101,6 @@ const UserSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
-  /**
-   * Snapshot of society baseline shown at registration (past-year deposits,
-   * active project valuations, suggested share) for audit / CEO review.
-   */
-  registrationBaseline: {
-    type: mongoose.Schema.Types.Mixed,
-    default: null,
-  },
-  /** Manual project valuations entered by User Management at registration */
-  manualProjectValuations: {
-    type: [{
-      investmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Investment' },
-      investmentCode: { type: String, trim: true, default: '' },
-      label: { type: String, trim: true, default: '' },
-      bookAmount: { type: Number, default: 0 },
-      manualValuation: { type: Number, default: 0 },
-    }],
-    default: [],
-  },
   /** Exit settlement metadata (when replaced or paid out from society fund) */
   exitSettledAt: {
     type: Date,
@@ -139,27 +120,6 @@ const UserSchema = new mongoose.Schema({
   exitSettlementSource: {
     type: String,
     enum: ['', 'replacement', 'society_fund', 'approved_exit'],
-    default: '',
-  },
-  /** Historical savings migrated from pre-digital operations */
-  openingSavingsBalance: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  /** Historical profit migrated from pre-digital operations */
-  openingProfitBalance: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  openingBalanceSetAt: {
-    type: Date,
-    default: null,
-  },
-  openingBalanceSetBy: {
-    type: String,
-    trim: true,
     default: '',
   },
   /** Member this account replaced (seat transfer) — historical records of the old member stay intact */

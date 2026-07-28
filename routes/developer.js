@@ -67,44 +67,6 @@ router.post('/users', async (req, res) => {
   }
 });
 
-router.get('/entry-valuation', async (req, res) => {
-  try {
-    const { getEntryValuation } = require('../services/memberMigrationService');
-    let manualProjectValuations = [];
-    if (req.query.manualProjectValuations) {
-      try {
-        manualProjectValuations = JSON.parse(req.query.manualProjectValuations);
-      } catch (_) {
-        manualProjectValuations = [];
-      }
-    }
-    const valuation = await getEntryValuation({
-      replaceMemberId: req.query.replaceMemberId || null,
-      manualProjectValuations,
-    });
-    return res.json({ valuation });
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to load entry valuation.' });
-  }
-});
-
-router.post('/members/:id/buy-in', async (req, res) => {
-  try {
-    const { completeMemberBuyIn } = require('../services/memberMigrationService');
-    const result = await completeMemberBuyIn({
-      memberId: req.params.id,
-      amountPaid: req.body?.amountPaid ?? req.body?.amount,
-      notes: req.body?.notes || '',
-      recordedBy: req.session?.user?.name || 'User Management',
-      paymentMethod: req.body?.paymentMethod || req.body?.paymentChannel || 'cash',
-      paymentReference: req.body?.paymentReference || '',
-    });
-    return res.status(201).json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to complete member buy-in.' });
-  }
-});
-
 router.get('/users/:id', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);

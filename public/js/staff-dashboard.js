@@ -1261,104 +1261,21 @@ async function loadFundingModule() {
   const borrowingsBody = document.getElementById('cashierBorrowingsBody');
   const contribSelect = document.getElementById('cashierBorrowContribution');
   const lenderSelect = document.getElementById('cashierBorrowLender');
-  const buyInBody = document.getElementById('cashierPendingBuyInBody');
-  const buyInValBox = document.getElementById('cashierBuyInValuationBox');
 
   try {
-    const [, advRes, unpaidRes, borrowRes, buyInRes] = await Promise.all([
+    const [, advRes, unpaidRes, borrowRes] = await Promise.all([
       ensureMembersOptions(['cashierAdvanceMember', 'cashierBorrowLender']),
       fetch('/api/admin/funding/advances'),
       fetch('/api/admin/funding/unpaid-contributions'),
       fetch('/api/admin/funding/borrowings?status=open'),
-      fetch('/api/admin/funding/pending-buyins'),
     ]);
     const advances = await advRes.json();
     const unpaid = await unpaidRes.json();
     const borrowings = await borrowRes.json();
-    const buyIns = await buyInRes.json();
 
     if (!advRes.ok) throw new Error(advances.error || 'Unable to load advances.');
     if (!unpaidRes.ok) throw new Error(unpaid.error || 'Unable to load unpaid shares.');
     if (!borrowRes.ok) throw new Error(borrowings.error || 'Unable to load borrowings.');
-    if (!buyInRes.ok) throw new Error(buyIns.error || 'Unable to load pending buy-ins.');
-
-    const valuation = buyIns.valuation || {};
-    if (buyInValBox) {
-      const past = valuation.pastYearDeposits || {};
-      buyInValBox.innerHTML = `
-        <p><strong>Suggested equal-share (reference): ${money(valuation.entryAmount)}</strong></p>
-        <p class="text-secondary">${escapeHtml(valuation.formula || '')}</p>
-        <p class="text-secondary">Active members: ${valuation.activeCount || 0} · Fund ${money(valuation.totalFund)} (balances + project valuations). Payment amount is the manual share fee set at registration (CEO-approved).</p>
-        <p class="text-secondary">Past-year deposits: ${money(past.totalAmount)} · Running monthly projects: ${valuation.runningMonthlyCount || 0}. After confirmation, profits apply from next month by balance ratio.</p>
-      `;
-    }
-
-    const pendingMembers = buyIns.members || [];
-    if (buyInBody) {
-      buyInBody.innerHTML = pendingMembers.length
-        ? pendingMembers.map((m) => `
-          <tr>
-            <td>${escapeHtml(m.name)}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
-            <td>${money(m.requiredEntryAmount ?? m.shareEntryAmount)}</td>
-            <td>${escapeHtml(m.statusLabel || m.status)}</td>
-            <td>
-              <div class="inline-actions" style="flex-wrap:wrap;gap:0.5rem;align-items:center;">
-                <label class="text-secondary">
-                  Payment method
-                  <select data-buyin-payment="${m.id}" required>
-                    <option value="cash">Cash</option>
-                    <option value="bank">Bank Transfer</option>
-                    <option value="mfs">Mobile Financial Services</option>
-                  </select>
-                </label>
-                <input type="text" data-buyin-reference="${m.id}" placeholder="Reference (optional)" />
-                <button type="button" class="primary-btn"
-                  data-complete-buyin="${m.id}"
-                  data-required="${Number(m.requiredEntryAmount || m.shareEntryAmount || 0).toFixed(2)}">
-                  Confirm ${money(m.requiredEntryAmount ?? m.shareEntryAmount)} received
-                </button>
-              </div>
-            </td>
-          </tr>
-        `).join('')
-        : '<tr><td colspan="4">No CEO-approved members awaiting payment confirmation.</td></tr>';
-    }
-
-    document.querySelectorAll('[data-complete-buyin]').forEach((btn) => {
-      btn.onclick = async () => {
-        const msg = document.getElementById('cashierBuyInMessage');
-        const required = btn.dataset.required;
-        const memberId = btn.dataset.completeBuyin;
-        const paymentMethod = document.querySelector(`[data-buyin-payment="${memberId}"]`)?.value || 'cash';
-        const paymentReference = document.querySelector(`[data-buyin-reference="${memberId}"]`)?.value || '';
-        if (!window.confirm(`Confirm successful ${paymentChannelLabel(paymentMethod)} payment of ${formatMoney(required)}? This activates the member. Running-project profits start next month.`)) return;
-        try {
-          const res = await fetch('/api/admin/funding/member-buyin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              memberId,
-              amountPaid: required,
-              paymentMethod,
-              paymentReference,
-            }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Unable to confirm payment.');
-          if (msg) {
-            msg.classList.add('success');
-            msg.textContent = data.message || `Payment of ${formatMoney(required)} confirmed via ${paymentChannelLabel(paymentMethod)}. Member activated.`;
-          }
-          await loadFundingModule();
-        } catch (error) {
-          if (msg) {
-            msg.classList.remove('success');
-            msg.classList.add('error');
-            msg.textContent = error.message;
-          }
-        }
-      };
-    });
 
     const members = advances.members || [];
     if (advanceBody) {
@@ -1494,7 +1411,6 @@ async function loadFundingModule() {
     });
   } catch (error) {
     if (advanceBody) advanceBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
-    if (buyInBody) buyInBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 

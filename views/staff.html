@@ -403,24 +403,11 @@
         <!-- ADVANCES & INTERNAL BORROWING -->
         <div class="panel-card hidden" data-staff-view="funding" id="moduleFunding">
           <div class="panel-card-header">
-            <h2 data-i18n="staffUi.advancesBorrowing">Advances, Buy-ins &amp; Internal Borrowing</h2>
-            <p class="text-secondary">Record advances, confirm CEO-approved member share/entry payments, cover unpaid project shares, and settle repayments (credits the bank ledger).</p>
+            <h2 data-i18n="staffUi.advancesBorrowing">Advances &amp; Internal Borrowing</h2>
+            <p class="text-secondary">Record advance balances, cover unpaid project shares, and settle repayments (credits the bank ledger).</p>
           </div>
 
-          <h3>CEO-approved — confirm payment</h3>
-          <p class="text-secondary">Only members approved by the CEO appear here. Select the payment method, then confirm that the share/entry fee was received to activate the account. Running-project profits start the following month.</p>
-          <div id="cashierBuyInValuationBox" class="panel-card u-mb-1">
-            <p class="table-subtitle">Loading suggested share valuation (reference)…</p>
-          </div>
-          <div class="table-wrapper">
-            <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th>Share / entry fee</th><th data-i18n="table.status">Status</th><th>Confirm payment</th></tr></thead>
-              <tbody id="cashierPendingBuyInBody"><tr><td colspan="4" data-i18n="common.loading">Loading…</td></tr></tbody>
-            </table>
-          </div>
-          <p id="cashierBuyInMessage" class="message"></p>
-
-          <h3 class="u-mt-1">Record advance deposit</h3>
+          <h3>Record advance deposit</h3>
           <form id="cashierAdvanceForm" class="add-member-form">
             <div class="form-row-2">
               <div class="form-group">

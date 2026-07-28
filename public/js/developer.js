@@ -124,157 +124,6 @@ function applyUmRoleDefaults() {
   const role = document.getElementById('devRoleSelect')?.value;
   const match = (umMeta.roles || []).find((r) => r.value === role);
   renderUmPermissions(match?.defaultPermissions || []);
-  void updateMemberBuyInUi(role);
-}
-
-function parseMoneyInput(value) {
-  if (value == null || String(value).trim() === '') return '';
-  const normalized = String(value).trim().replace(/\s/g, '').replace(',', '.');
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : '';
-}
-
-async function collectManualProjectValuations() {
-  return Array.from(document.querySelectorAll('[data-project-valuation-id]')).map((input) => ({
-    investmentId: input.getAttribute('data-project-valuation-id'),
-    investmentCode: input.getAttribute('data-project-code') || '',
-    manualValuation: parseMoneyInput(input.value),
-  }));
-}
-
-async function updateMemberBuyInUi(role, { autofillShare = true } = {}) {
-  const block = document.getElementById('devMemberBuyInBlock');
-  const box = document.getElementById('devEntryValuationBox');
-  const membersBox = document.getElementById('devExistingMemberDeposits');
-  const projectsBox = document.getElementById('devActiveProjectsValuation');
-  const input = document.getElementById('devShareEntryAmount');
-  if (!block || !box) return;
-
-  if (role !== 'member') {
-    block.classList.add('hidden');
-    if (input) {
-      input.value = '';
-      input.required = false;
-    }
-    if (membersBox) membersBox.innerHTML = '';
-    if (projectsBox) projectsBox.innerHTML = '';
-    return;
-  }
-
-  block.classList.remove('hidden');
-  if (input) input.required = true;
-  box.innerHTML = `<p class="table-subtitle">${t('um.loadingValuation', 'Loading old-member deposits and active projects…')}</p>`;
-  try {
-    const manualProjectValuations = await collectManualProjectValuations();
-    const qs = manualProjectValuations.length
-      ? `?manualProjectValuations=${encodeURIComponent(JSON.stringify(manualProjectValuations))}`
-      : '';
-    const data = await api(`/api/developer/entry-valuation${qs}`);
-    const v = data.valuation || {};
-    const amount = Number(v.entryAmount || 0);
-    const past = v.pastYearDeposits || {};
-    const existing = Array.isArray(v.existingMemberDeposits) ? v.existingMemberDeposits : [];
-
-    box.innerHTML = `
-      <p><strong>${t('um.suggestedShareValuation', 'Calculated share / entry fee')}: ${formatMoney(amount, 2)}</strong></p>
-      <p class="table-subtitle">${escapeHtml(v.formula || '')}</p>
-      <p class="table-subtitle">Old members: ${v.existingMemberCount || existing.length || v.activeCount || 0} · Lifetime deposits (auto): ${formatMoney(Number(v.totalLifetimeDeposits || 0), 2)}</p>
-      <p class="table-subtitle">Current balances: Savings ${formatMoney(Number(v.totalSavings || 0), 2)} + Profit ${formatMoney(Number(v.totalProfit || 0), 2)} + Advance ${formatMoney(Number(v.totalAdvance || 0), 2)}</p>
-      <p class="table-subtitle">Past-year deposits: ${formatMoney(Number(past.totalAmount || 0), 2)} · Project valuations: ${formatMoney(Number(v.totalProjectValuation || 0), 2)}</p>
-      <p class="table-subtitle">${escapeHtml(v.profitNote || 'After activation, running-project profits apply from next month by balance ratio.')}</p>
-    `;
-
-    if (membersBox) {
-      membersBox.innerHTML = existing.length
-        ? `
-          <div class="panel-card">
-            <h4>${t('um.oldMemberDepositsTitle', 'Old members — deposits from beginning until now (auto)')}</h4>
-            <p class="table-subtitle">${t('um.oldMemberDepositsHelp', 'Loaded automatically from the system. You do not enter these.')}</p>
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Deposits (start → now)</th>
-                    <th>Records</th>
-                    <th>Current balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${existing.map((m) => `
-                    <tr>
-                      <td>${escapeHtml(m.name || '')}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
-                      <td>${formatMoney(Number(m.totalDepositsFromStart || 0), 2)}</td>
-                      <td>${Number(m.depositCount || 0)}</td>
-                      <td>${formatMoney(Number(m.currentBalance || 0), 2)}
-                        <br><span class="text-secondary">S ${formatMoney(Number(m.currentSavings || 0), 2)} · P ${formatMoney(Number(m.currentProfit || 0), 2)}</span>
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        `
-        : `<p class="table-subtitle">${t('um.noOldMembers', 'No active old members yet — first member share can be ৳0.00.')}</p>`;
-    }
-
-    const projects = Array.isArray(v.activeProjects) ? v.activeProjects : [];
-    if (projectsBox) {
-      projectsBox.innerHTML = projects.length
-        ? `
-          <div class="panel-card">
-            <h4>${t('um.activeProjectsTitle', 'Active / remaining projects — manual valuation')}</h4>
-            <p class="table-subtitle">${t('um.activeProjectsHelp', 'Book amounts load automatically. Adjust valuations yourself, then recalculate — the share amount fills in automatically.')}</p>
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Project</th>
-                    <th>Mode</th>
-                    <th>Book (society)</th>
-                    <th>Manual valuation (৳)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${projects.map((p) => `
-                    <tr>
-                      <td>${escapeHtml(p.investmentCode || '')}<br><span class="text-secondary">${escapeHtml(p.label || '')}</span></td>
-                      <td>${escapeHtml(p.returnMode || '')}${p.isRunningMonthly ? ' · running' : ''}</td>
-                      <td>${formatMoney(Number(p.bookAmount || 0), 2)}</td>
-                      <td>
-                        <input type="number" min="0" step="0.01" lang="en"
-                          data-project-valuation-id="${escapeHtml(String(p.investmentId || ''))}"
-                          data-project-code="${escapeHtml(p.investmentCode || '')}"
-                          value="${Number(p.manualValuation || p.bookAmount || 0).toFixed(2)}" />
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-            <button type="button" class="secondary-btn u-mt-1" id="devRecalcShareBtn">${t('um.recalcSuggested', 'Recalculate share amount')}</button>
-          </div>
-        `
-        : `<p class="table-subtitle">${t('um.noActiveProjects', 'No active remaining projects. Share uses old-member balances only.')}</p>
-           <button type="button" class="secondary-btn u-mt-1" id="devRecalcShareBtn">${t('um.recalcSuggested', 'Recalculate share amount')}</button>`;
-
-      document.getElementById('devRecalcShareBtn')?.addEventListener('click', () => {
-        updateMemberBuyInUi('member', { autofillShare: true });
-      });
-    }
-
-    if (input) {
-      input.dataset.suggestedAmount = String(amount);
-      input.lang = 'en';
-      if (autofillShare || !String(input.value || '').trim()) {
-        input.value = Number(amount || 0).toFixed(2);
-      }
-      input.placeholder = t('um.autoSharePlaceholder', 'Auto-calculated share amount');
-    }
-  } catch (error) {
-    box.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
-  }
 }
 
 function getUmSelectedPermissions() {
@@ -311,7 +160,6 @@ async function ensureCreateForm() {
       }
       const formData = new FormData(form);
       const role = formData.get('role');
-      const shareRaw = formData.get('shareEntryAmount');
       const payload = {
         name: formData.get('name'),
         email: formData.get('email'),
@@ -319,25 +167,13 @@ async function ensureCreateForm() {
         role,
         permissions: getUmSelectedPermissions(),
       };
-      if (role === 'member') {
-        const shareParsed = parseMoneyInput(shareRaw);
-        if (shareParsed === '' || shareParsed == null) {
-          if (messageEl) {
-            messageEl.textContent = t('um.shareRequired', 'Share / entry fee amount is required. Recalculate after project valuation, then submit.');
-            messageEl.classList.add('error');
-          }
-          return;
-        }
-        payload.shareEntryAmount = shareParsed;
-        payload.manualProjectValuations = await collectManualProjectValuations();
-      }
       try {
         const result = await api('/api/developer/users', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
         if (messageEl) {
-          messageEl.textContent = result.message || t('um.accountCreatedPending', 'Member submitted as Pending for CEO approval.');
+          messageEl.textContent = result.message || t('um.accountCreated', 'Account created.');
           messageEl.classList.add('success');
         }
         form.reset();
@@ -438,12 +274,6 @@ function renderActiveRoleDirectory() {
 function lockBadge(user) {
   if (user.status === 'deleted') {
     return `<span class="status-pill">Deleted ${formatDate(user.deletedAt)}</span>`;
-  }
-  if (user.status === 'pending' || user.status === 'submitted') {
-    return `<span class="status-pill">${t('um.statusPendingCeo', 'Pending CEO · share {amount}').replace('{amount}', formatMoney(Number(user.shareEntryAmount || user.requiredEntryAmount || 0), 2))}</span>`;
-  }
-  if (user.status === 'approved' || user.pendingEntryBuyIn) {
-    return `<span class="status-pill">${t('um.statusAwaitingPayment', 'Awaiting payment · {amount}').replace('{amount}', formatMoney(Number(user.requiredEntryAmount || user.shareEntryAmount || 0), 2))}</span>`;
   }
   if (user.isTemporarilyLocked) return `<span class="status-pill">${t('um.locked24h', 'Locked 24h')}</span>`;
   if (user.hasPendingOtp) return `<span class="status-pill">${t('um.otpPending', 'OTP pending')}</span>`;

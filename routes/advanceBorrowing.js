@@ -9,9 +9,6 @@ const {
   listMemberAdvanceBalances,
 } = require('../services/advanceBorrowingService');
 const {
-  completeMemberBuyIn,
-  listPendingBuyInMembers,
-  getEntryValuation,
   replaceMember,
 } = require('../services/memberMigrationService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
@@ -107,34 +104,6 @@ router.post('/unpaid-contributions/:id/repay', requirePasswordConfirmation, asyn
     return res.json(result);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to record contribution repayment.' });
-  }
-});
-
-router.get('/pending-buyins', async (req, res) => {
-  try {
-    const [members, valuation] = await Promise.all([
-      listPendingBuyInMembers(),
-      getEntryValuation(),
-    ]);
-    return res.json({ members, valuation });
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to load pending buy-ins.' });
-  }
-});
-
-router.post('/member-buyin', requirePasswordConfirmation, async (req, res) => {
-  try {
-    const result = await completeMemberBuyIn({
-      memberId: req.body?.memberId,
-      amountPaid: req.body?.amountPaid ?? req.body?.amount,
-      notes: req.body?.notes || '',
-      recordedBy: req.session?.user?.name || 'Cashier',
-      paymentMethod: req.body?.paymentMethod || req.body?.paymentChannel || 'cash',
-      paymentReference: req.body?.paymentReference || '',
-    });
-    return res.status(201).json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to complete buy-in.' });
   }
 });
 

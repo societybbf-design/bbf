@@ -2389,21 +2389,20 @@ function restoreAdminLocation({ fromPopState = false } = {}) {
 async function initCeoPanel() {
   try {
     await loadCeoStaffDirectory();
-    await initMemberMigrationUi();
+    await initMemberOperationsUi();
   } catch (error) {
     const messageEl = document.getElementById('ceoCreateMessage');
     if (messageEl) messageEl.textContent = error.message;
   }
 }
 
-let memberMigrationUiBound = false;
+let memberOperationsUiBound = false;
 
-async function populateMigrationMemberSelects() {
-  const openingSelect = document.getElementById('openingBalanceMemberSelect');
+async function populateMemberOperationSelects() {
   const replaceSelect = document.getElementById('replaceDepartingSelect');
   const replaceNewSelect = document.getElementById('replaceNewMemberSelect');
   const societyExitSelect = document.getElementById('societyExitMemberSelect');
-  if (!openingSelect && !replaceSelect && !replaceNewSelect && !societyExitSelect) return;
+  if (!replaceSelect && !replaceNewSelect && !societyExitSelect) return;
 
   try {
     const response = await fetch('/api/admin/members');
@@ -2411,12 +2410,9 @@ async function populateMigrationMemberSelects() {
     if (!response.ok) throw new Error(data.error || 'Unable to load members.');
     const members = (data.members || []).filter((m) => (m.status || 'active') === 'active');
     const options = members.map((m) => (
-      `<option value="${m._id}" data-savings="${Number(m.savings || 0)}" data-profit="${Number(m.profit || 0)}" data-open-s="${Number(m.openingSavingsBalance || 0)}" data-open-p="${Number(m.openingProfitBalance || 0)}">${escapeCeoHtml(m.name)} (${escapeCeoHtml(m.email)})</option>`
+      `<option value="${m._id}" data-savings="${Number(m.savings || 0)}" data-profit="${Number(m.profit || 0)}">${escapeCeoHtml(m.name)} (${escapeCeoHtml(m.email)})</option>`
     )).join('');
 
-    if (openingSelect) {
-      openingSelect.innerHTML = `<option value="">Select member…</option>${options}`;
-    }
     if (replaceSelect) {
       replaceSelect.innerHTML = `<option value="">Select departing member…</option>${options}`;
     }
@@ -2427,125 +2423,7 @@ async function populateMigrationMemberSelects() {
       societyExitSelect.innerHTML = `<option value="">Select departing member…</option>${options}`;
     }
   } catch (error) {
-    console.error('Unable to populate migration member selects:', error);
-  }
-}
-
-async function loadMigrationOverview() {
-  const statsEl = document.getElementById('migrationOverviewStats');
-  if (!statsEl) return;
-  try {
-    const response = await fetch('/api/admin/members/migration-overview');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load overview.');
-    const t = data.totals || {};
-    statsEl.innerHTML = `
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Savings</span><strong class="metric-value">${formatMoney(Number(t.totalSavings || 0), 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Society Profit</span><strong class="metric-value">${formatMoney(Number(t.totalProfit || 0), 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Savings</span><strong class="metric-value">${formatMoney(Number(t.totalOpeningSavings || 0), 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Opening Profit</span><strong class="metric-value">${formatMoney(Number(t.totalOpeningProfit || 0), 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending Registrations</span><strong class="metric-value">${t.pendingRegistrationCount || 0}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting Payment</span><strong class="metric-value">${t.pendingBuyInCount || 0}</strong></div></div>
-    `;
-  } catch (error) {
-    statsEl.innerHTML = `<p class="message">${escapeCeoHtml(error.message)}</p>`;
-  }
-}
-
-async function loadPendingMemberRegistrations() {
-  const body = document.getElementById('pendingMemberRegistrationsBody');
-  const msg = document.getElementById('pendingMemberRegistrationMessage');
-  if (!body) return;
-  try {
-    const response = await fetch('/api/admin/members/pending-registrations');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load pending registrations.');
-    const members = data.members || [];
-    body.innerHTML = members.length
-      ? members.map((m) => {
-        const baseline = m.registrationBaseline || {};
-        const pastTotal = Number(baseline.pastYearDeposits?.totalAmount || 0);
-        const projects = Number(baseline.totalProjectValuation || 0);
-        const suggested = Number(baseline.suggestedEntryAmount || 0);
-        return `
-        <tr>
-          <td>${escapeCeoHtml(m.name || '')}<br><span class="text-secondary">${escapeCeoHtml(m.email || '')}</span>
-            <br><span class="text-secondary">Past-year deposits ${formatMoney(pastTotal, 2)} · Projects ${formatMoney(projects, 2)} · Suggested ${formatMoney(suggested, 2)}</span>
-          </td>
-          <td>${formatMoney(Number(m.shareEntryAmount || m.requiredEntryAmount || 0), 2)}</td>
-          <td>${m.membershipSubmittedAt ? new Date(m.membershipSubmittedAt).toLocaleString() : '—'}</td>
-          <td>${escapeCeoHtml(m.statusLabel || m.status || 'Pending')}</td>
-          <td class="inline-actions">
-            <button type="button" class="primary-btn" data-approve-registration="${m.id}">Approve</button>
-            <button type="button" class="secondary-btn" data-reject-registration="${m.id}">Reject</button>
-          </td>
-        </tr>
-      `;
-      }).join('')
-      : '<tr><td colspan="5">No pending member registrations.</td></tr>';
-
-    body.querySelectorAll('[data-approve-registration]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        if (!window.confirm('Approve this member registration? Cashier will then be able to confirm payment.')) return;
-        if (msg) {
-          msg.textContent = '';
-          msg.classList.remove('success', 'error');
-        }
-        try {
-          const res = await fetch(`/api/admin/members/${encodeURIComponent(btn.dataset.approveRegistration)}/approve-registration`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          });
-          const payload = await res.json();
-          if (!res.ok) throw new Error(payload.error || 'Unable to approve.');
-          if (msg) {
-            msg.classList.add('success');
-            msg.textContent = payload.message || 'Registration approved.';
-          }
-          await loadPendingMemberRegistrations();
-          await loadMigrationOverview();
-        } catch (error) {
-          if (msg) {
-            msg.classList.add('error');
-            msg.textContent = error.message;
-          }
-        }
-      });
-    });
-
-    body.querySelectorAll('[data-reject-registration]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const reason = window.prompt('Rejection reason (optional):', '') || '';
-        if (!window.confirm('Reject this member registration? The account will be blocked.')) return;
-        if (msg) {
-          msg.textContent = '';
-          msg.classList.remove('success', 'error');
-        }
-        try {
-          const res = await fetch(`/api/admin/members/${encodeURIComponent(btn.dataset.rejectRegistration)}/reject-registration`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason }),
-          });
-          const payload = await res.json();
-          if (!res.ok) throw new Error(payload.error || 'Unable to reject.');
-          if (msg) {
-            msg.classList.add('success');
-            msg.textContent = payload.message || 'Registration rejected.';
-          }
-          await loadPendingMemberRegistrations();
-          await loadMigrationOverview();
-        } catch (error) {
-          if (msg) {
-            msg.classList.add('error');
-            msg.textContent = error.message;
-          }
-        }
-      });
-    });
-  } catch (error) {
-    body.innerHTML = `<tr><td colspan="5">${escapeCeoHtml(error.message)}</td></tr>`;
+    console.error('Unable to populate member operation selects:', error);
   }
 }
 
@@ -2681,23 +2559,12 @@ async function loadOpenMemberExitRequests() {
   }
 }
 
-async function initMemberMigrationUi() {
-  await populateMigrationMemberSelects();
-  await loadMigrationOverview();
-  await loadPendingMemberRegistrations();
+async function initMemberOperationsUi() {
+  await populateMemberOperationSelects();
   await loadOpenMemberExitRequests();
 
-  if (memberMigrationUiBound) return;
-  memberMigrationUiBound = true;
-
-  document.getElementById('openingBalanceMemberSelect')?.addEventListener('change', (event) => {
-    const option = event.target.selectedOptions?.[0];
-    if (!option) return;
-    const openS = document.getElementById('openingSavingsInput');
-    const openP = document.getElementById('openingProfitInput');
-    if (openS) openS.value = Number(option.dataset.openS || 0).toFixed(2);
-    if (openP) openP.value = Number(option.dataset.openP || 0).toFixed(2);
-  });
+  if (memberOperationsUiBound) return;
+  memberOperationsUiBound = true;
 
   document.getElementById('replaceDepartingSelect')?.addEventListener('change', (event) => {
     void loadReplacementValuation(event.target.value);
@@ -2705,34 +2572,6 @@ async function initMemberMigrationUi() {
 
   document.getElementById('societyExitMemberSelect')?.addEventListener('change', (event) => {
     void loadSocietyFundExitValuation(event.target.value);
-  });
-
-  document.getElementById('openingBalanceForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const msg = document.getElementById('openingBalanceMessage');
-    if (msg) msg.textContent = '';
-    const formData = new FormData(event.target);
-    const memberId = formData.get('memberId');
-    try {
-      const response = await fetch(`/api/admin/members/${memberId}/opening-balance`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          openingSavings: formData.get('openingSavings'),
-          openingProfit: formData.get('openingProfit'),
-          notes: formData.get('notes'),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to save opening balances.');
-      if (msg) msg.textContent = 'Opening balances saved. Dashboards now include this historical amount.';
-      await populateMigrationMemberSelects();
-      await loadMigrationOverview();
-      await fetchSummary();
-      await fetchMembers();
-    } catch (error) {
-      if (msg) msg.textContent = error.message;
-    }
   });
 
   document.getElementById('memberReplaceForm')?.addEventListener('submit', async (event) => {
@@ -2760,8 +2599,7 @@ async function initMemberMigrationUi() {
       }
       event.target.reset();
       document.getElementById('replaceValuationBox').innerHTML = '<p class="table-subtitle">Select a departing member to load the calculated entry valuation.</p>';
-      await populateMigrationMemberSelects();
-      await loadMigrationOverview();
+      await populateMemberOperationSelects();
       await loadCeoStaffDirectory();
       await fetchSummary();
       await fetchMembers();
@@ -2800,8 +2638,7 @@ async function initMemberMigrationUi() {
       }
       event.target.reset();
       document.getElementById('societyExitValuationBox').innerHTML = '<p class="table-subtitle">Select a member to preview settlement and redistribution.</p>';
-      await populateMigrationMemberSelects();
-      await loadMigrationOverview();
+      await populateMemberOperationSelects();
       await loadOpenMemberExitRequests();
       await loadCeoStaffDirectory();
       await fetchSummary();
@@ -2980,15 +2817,6 @@ async function fetchSummary() {
   }
   if (totalProfit) {
     totalProfit.textContent = `${formatMoney(Number(data.totalProfit || 0), 2)}`;
-  }
-
-  const savingsFootnote = document.querySelector('[data-admin-dashboard-type="savings"] .kpi-footnote');
-  if (savingsFootnote && (data.totalOpeningSavings || data.totalOpeningProfit)) {
-    savingsFootnote.textContent = `Incl. opening ${formatMoney(Number(data.totalOpeningSavings || 0), 0)} + digital`;
-  }
-  const profitFootnote = document.querySelector('[data-admin-dashboard-type="profit"] .kpi-footnote');
-  if (profitFootnote && data.totalOpeningProfit) {
-    profitFootnote.textContent = `Incl. opening ${formatMoney(Number(data.totalOpeningProfit || 0), 0)}`;
   }
 
   const kpiActiveMembers = document.getElementById('kpiActiveMembers');
