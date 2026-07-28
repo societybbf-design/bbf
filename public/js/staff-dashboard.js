@@ -2250,39 +2250,45 @@ async function loadFundingModule() {
         ? openBorrowings.map((b) => {
           const outstanding = Math.max(0, Number(b.amount || 0) - Number(b.amountSettled || 0));
           const lenderName = b.lenderName || b.lender?.name || 'lender';
+          const borrowerName = b.borrowerName || b.borrower?.name || '—';
+          const projectLabel = b.investment?.investmentCode || b.note || '—';
+          const borrowingId = String(b._id || b.id || '');
           return `
-            <tr>
-              <td>${escapeHtml(new Date(b.createdAt).toLocaleString())}</td>
-              <td>${escapeHtml(b.borrowerName || b.borrower?.name || '—')}</td>
+            <tr data-borrowing-row="${escapeHtml(borrowingId)}">
+              <td>${escapeHtml(projectLabel)}</td>
+              <td>${escapeHtml(borrowerName)}</td>
               <td>${escapeHtml(lenderName)}</td>
               <td>${money(b.amount)}</td>
               <td>${money(outstanding)}</td>
+              <td>${escapeHtml(new Date(b.createdAt).toLocaleString())}</td>
               <td>
                 <button type="button" class="primary-btn"
-                  data-settle-borrowing="${b._id}"
+                  data-settle-borrowing="${escapeHtml(borrowingId)}"
                   data-outstanding="${outstanding}"
                   data-lender-name="${escapeHtml(lenderName)}"
-                  ${outstanding <= 0 ? 'disabled' : ''}>
+                  data-borrower-name="${escapeHtml(borrowerName)}"
+                  ${!borrowingId || outstanding <= 0 ? 'disabled' : ''}>
                   Settle &amp; refund lender
                 </button>
               </td>
             </tr>
           `;
         }).join('')
-        : '<tr><td colspan="6">No open borrowings.</td></tr>';
+        : '<tr><td colspan="7">No open borrowings.</td></tr>';
     }
 
     document.querySelectorAll('[data-repay-contribution]').forEach((btn) => {
       btn.onclick = async () => {
         const msg = document.getElementById('cashierUnpaidMessage');
-        if (!window.confirm('Record repayment for this unpaid share? Credits bank ledger and marks settled.')) return;
+        const amountHint = btn.dataset.due ? ` (${money(btn.dataset.due)})` : '';
+        if (!window.confirm(`Record repayment for this unpaid share${amountHint}? Credits bank ledger and marks settled.`)) return;
         try {
           const res = await fetch(`/api/admin/funding/unpaid-contributions/${btn.dataset.repayContribution}/repay`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: '{}',
           });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || 'Unable to repay.');
           if (msg) {
             msg.classList.add('success');
@@ -2311,7 +2317,7 @@ async function loadFundingModule() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ amount: due || undefined }),
           });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || 'Unable to cover from reserve.');
           if (msg) {
             msg.classList.add('success');
@@ -2329,48 +2335,104 @@ async function loadFundingModule() {
       };
     });
 
-    document.querySelectorAll('[data-repay-borrowing], [data-settle-borrowing]').forEach((btn) => {
-      btn.onclick = async () => {
-        const id = btn.dataset.settleBorrowing || btn.dataset.repayBorrowing;
-        const lenderName = btn.dataset.lenderName || 'the original lender';
-        const outstanding = Number(btn.dataset.outstanding || 0);
-        const msg = document.getElementById('cashierSettleMessage') || document.getElementById('cashierUnpaidMessage');
-        const confirmText = outstanding > 0
-          ? `Settle repayment of ${money(outstanding)}? This credits the bank ledger and refunds ${lenderName}'s advance balance.`
-          : `Settle this borrowing? Repayment credits the bank ledger and refunds ${lenderName}'s advance balance.`;
-        if (!window.confirm(confirmText)) return;
-        btn.disabled = true;
-        try {
-          const res = await fetch(`/api/admin/funding/borrowings/${id}/repay`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Unable to settle.');
-          if (msg) {
-            msg.classList.add('success');
-            const refunded = data.lender?.refundedAmount ?? data.settledAmount;
-            const lenderLabel = data.lender?.name || lenderName;
-            msg.textContent = data.fullySettled
-              ? `Fully settled ${money(data.settledAmount)}. Refunded ${money(refunded)} to ${lenderLabel}'s advance (now ${money(data.lender?.advanceBalance)}).`
-              : `Partial settlement ${money(data.settledAmount)}. Refunded ${money(refunded)} to ${lenderLabel}'s advance. Outstanding ${money(data.outstandingAfter)}.`;
-          }
-          invalidateStaffViewCache(['funding']);
-          await loadFundingModule();
-        } catch (error) {
-          btn.disabled = false;
-          if (msg) {
-            msg.classList.remove('success');
-            msg.textContent = error.message;
-          }
-        }
-      };
-    });
+    // Settle buttons use delegated handler bound once in bindFundingSettleActions().
   } catch (error) {
     if (advanceBody) advanceBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+    const settleMsg = document.getElementById('cashierSettleMessage');
+    if (settleMsg) {
+      settleMsg.classList.remove('success');
+      settleMsg.textContent = error.message;
+    }
   }
 }
+
+async function settleBorrowingRepayment(button) {
+  const id = String(button?.dataset?.settleBorrowing || button?.dataset?.repayBorrowing || '').trim();
+  if (!id) {
+    throw new Error('Borrowing id is missing. Refresh the page and try again.');
+  }
+
+  const lenderName = button.dataset.lenderName || 'the original lender';
+  const borrowerName = button.dataset.borrowerName || 'the borrower';
+  const outstanding = Number(button.dataset.outstanding || 0);
+  const msg = document.getElementById('cashierSettleMessage') || document.getElementById('cashierUnpaidMessage');
+
+  if (msg) {
+    msg.classList.remove('success', 'error');
+    msg.textContent = `Settling repayment${outstanding > 0 ? ` of ${money(outstanding)}` : ''}…`;
+  }
+
+  button.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/funding/borrowings/${encodeURIComponent(id)}/repay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount: outstanding > 0 ? outstanding : undefined,
+        notes: `Settled by cashier — refund to ${lenderName}`,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Unable to settle borrowing.');
+
+    const refunded = data.lender?.refundedAmount ?? data.settledAmount;
+    const deducted = data.borrower?.deductedAmount ?? data.settledAmount;
+    const lenderLabel = data.lender?.name || lenderName;
+    const borrowerLabel = data.borrower?.name || borrowerName;
+    const successText = data.fullySettled
+      ? `Settled ${money(data.settledAmount)}. Deducted ${money(deducted)} from ${borrowerLabel}'s savings, credited the bank ledger, and refunded ${money(refunded)} to ${lenderLabel}'s advance (now ${money(data.lender?.advanceBalance)}).`
+      : `Partial settlement ${money(data.settledAmount)}. Deducted ${money(deducted)} from ${borrowerLabel}, refunded ${money(refunded)} to ${lenderLabel}. Outstanding ${money(data.outstandingAfter)}.`;
+
+    if (msg) {
+      msg.classList.remove('error');
+      msg.classList.add('success');
+      msg.textContent = successText;
+    }
+
+    // Remove the row immediately for responsive UI, then reload module data.
+    const row = button.closest('[data-borrowing-row]');
+    if (data.fullySettled && row) {
+      row.remove();
+      const body = document.getElementById('cashierBorrowingsBody');
+      if (body && !body.querySelector('[data-borrowing-row]')) {
+        body.innerHTML = '<tr><td colspan="7">No open borrowings.</td></tr>';
+      }
+    }
+
+    invalidateStaffViewCache(['funding', 'ledger', 'deposits', 'home']);
+    await loadFundingModule();
+    return data;
+  } catch (error) {
+    button.disabled = false;
+    if (msg) {
+      msg.classList.remove('success');
+      msg.classList.add('error');
+      msg.textContent = error.message || String(error);
+    } else {
+      window.alert(error.message || String(error));
+    }
+    throw error;
+  }
+}
+
+function bindFundingSettleActions() {
+  const root = document.getElementById('moduleFunding') || document.getElementById('cashierBorrowingsBody');
+  if (!root || root.dataset.settleBound === '1') return;
+  root.dataset.settleBound = '1';
+
+  root.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-settle-borrowing], [data-repay-borrowing]');
+    if (!btn || btn.disabled) return;
+    event.preventDefault();
+    try {
+      await settleBorrowingRepayment(btn);
+    } catch (_) {
+      // Error already shown in settleBorrowingRepayment
+    }
+  });
+}
+
+window.settleBorrowingRepayment = settleBorrowingRepayment;
 
 async function loadEmergencyReserveModule() {
   const sharesBody = document.getElementById('cashierReserveSharesBody');
@@ -4388,6 +4450,7 @@ function bindProfitPoolForms() {
 }
 
 function bindModuleForms() {
+  bindFundingSettleActions();
   document.getElementById('cashierSendDuesRemindersBtn')?.addEventListener('click', async () => {
     const msg = document.getElementById('cashierDuesReminderMessage');
     const button = document.getElementById('cashierSendDuesRemindersBtn');

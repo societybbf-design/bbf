@@ -210,7 +210,10 @@ async function createInternalBorrowing({
 
 /**
  * Record repayment from a borrowing member.
- * Credits bank ledger and restores lender advanceBalance; settles the debt.
+ * - Deducts the repaid amount from the borrower's savings (source of repayment)
+ * - Credits the society bank/book ledger
+ * - Restores the exact amount to the original lender's advance balance
+ * - Settles (or partially settles) the borrowing record
  */
 async function settleInternalBorrowing(borrowingId, {
   amount = null,
@@ -244,6 +247,17 @@ async function settleInternalBorrowing(borrowingId, {
   if (!lender || !borrower) {
     throw httpError('Lender or borrower account missing.', 404);
   }
+
+  const borrowerSavingsBefore = money(borrower.savings);
+  if (borrowerSavingsBefore + 0.001 < payAmount) {
+    throw httpError(
+      `${borrower.name} has only ${formatMoney(borrowerSavingsBefore, 2)} in savings, but ${formatMoney(payAmount, 2)} is needed to settle. Record a deposit for the borrower first, then settle.`
+    );
+  }
+
+  // Deduct repayment from the borrower
+  borrower.savings = money(borrowerSavingsBefore - payAmount);
+  await borrower.save();
 
   const deposit = await Deposit.create({
     member: borrower._id,
@@ -341,10 +355,17 @@ async function settleInternalBorrowing(borrowingId, {
       advanceBalanceBefore: lenderAdvanceBefore,
       refundedAmount: payAmount,
     },
-    borrower: { id: borrower._id, name: borrower.name },
+    borrower: {
+      id: borrower._id,
+      name: borrower.name,
+      savings: borrower.savings,
+      savingsBefore: borrowerSavingsBefore,
+      deductedAmount: payAmount,
+    },
     settledAmount: payAmount,
     outstandingAfter: Math.max(0, remaining),
     fullySettled: borrowing.status === 'settled',
+    bookBalance: bankLedger?.ledger?.bookBalance ?? null,
   };
 }
 
