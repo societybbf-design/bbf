@@ -677,6 +677,9 @@ async function buildApprovalTracking(investment, memberByIdCache = null) {
       name: approval?.memberName || member?.name || 'Member',
       email: member?.email || '',
       approvedAt: approval?.approvedAt || null,
+      isProxied: Boolean(approval?.proxiedBy),
+      proxiedByName: approval?.proxiedByName || '',
+      proxyReason: approval?.proxyReason || '',
     };
     if (approvedIds.has(id)) approvedMembers.push(row);
     else pendingMembers.push(row);
@@ -757,7 +760,7 @@ async function listPendingMemberInvestmentRequests(memberId) {
   });
 }
 
-async function approveInvestmentByMember(investmentId, memberId) {
+async function approveInvestmentByMember(investmentId, memberId, { proxy = null } = {}) {
   const member = await User.findOne({
     _id: memberId,
     role: 'member',
@@ -803,6 +806,12 @@ async function approveInvestmentByMember(investmentId, memberId) {
     member: member._id,
     memberName: member.name,
     approvedAt: new Date(),
+    ...(proxy ? {
+      proxiedBy: proxy.proxiedBy,
+      proxiedByName: proxy.proxiedByName,
+      proxiedByRole: proxy.proxiedByRole,
+      proxyReason: proxy.proxyReason,
+    } : {}),
   });
 
   const trackingBeforeSave = await buildApprovalTracking(investment);

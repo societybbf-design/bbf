@@ -15,6 +15,26 @@ const ExitApprovalSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  proxiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  proxiedByName: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  proxiedByRole: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  proxyReason: {
+    type: String,
+    trim: true,
+    default: '',
+  },
 }, { _id: false });
 
 const RedistributionShareSchema = new mongoose.Schema({

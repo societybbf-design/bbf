@@ -42,6 +42,7 @@ const TAB_TITLE_KEYS = {
   users: ['um.allAccounts', 'um.directoryNote'],
   recovery: ['um.otpRecovery', 'um.otpNote'],
   audits: ['um.securityAudit', 'um.auditNote'],
+  approvals: ['Member Approvals', 'Track member votes and record proxy approvals for absent members. CEO and Cashier steps are not changed.'],
   security: ['um.mySecurity', 'um.changePasswordTitle'],
 };
 
@@ -102,7 +103,142 @@ function showTab(tab) {
   if (tab === 'create') void ensureCreateForm();
   if (tab === 'recovery') loadRecoveryOptions();
   if (tab === 'audits') loadAudits();
+  if (tab === 'approvals') loadMemberApprovalTracking();
   if (tab === 'overview') loadStats();
+}
+
+function canProxyMemberApprovals() {
+  if (!developerSessionUser) return false;
+  if (developerSessionUser.role === 'developer') return true;
+  return (developerSessionUser.permissions || []).includes('can_proxy_member_approvals');
+}
+
+function workflowTypeLabel(type) {
+  return type === 'investment' ? 'Project' : 'Member exit';
+}
+
+function statusLabelForWorkflow(status) {
+  const map = {
+    pending_member_approval: 'Awaiting member votes',
+    pending_departing_approval: 'Awaiting departing member',
+    pending_cashier_payment: 'With Cashier (payment)',
+  };
+  return map[status] || status || '—';
+}
+
+function renderApprovalMemberRows(approved = [], pending = [], { canProxy = false, workflowType = '', entityId = '' } = {}) {
+  const approvedHtml = approved.length
+    ? `<div class="u-mb-1"><strong>Approved (${approved.length})</strong><ul class="um-approval-list">${approved.map((row) => `
+      <li>
+        ${escapeHtml(row.memberName || 'Member')}
+        <span class="table-subtitle">${escapeHtml(row.memberEmail || '')}</span>
+        ${row.isProxied ? `<span class="kpi-footnote"> · Proxy by ${escapeHtml(row.proxiedByName || 'UM')} (${escapeHtml(row.proxyReason || '')})</span>` : ''}
+      </li>`).join('')}</ul></div>`
+    : '';
+
+  const pendingHtml = pending.length
+    ? `<div><strong>Pending (${pending.length})</strong><ul class="um-approval-list">${pending.map((row) => `
+      <li class="um-approval-pending-row">
+        <span>
+          ${escapeHtml(row.memberName || 'Member')}
+          <span class="table-subtitle">${escapeHtml(row.memberEmail || '')} · ${escapeHtml(row.stepLabel || row.step || '')}</span>
+        </span>
+        ${canProxy ? `<button type="button" class="secondary-btn um-proxy-btn"
+          data-proxy-workflow="${escapeHtml(workflowType)}"
+          data-proxy-entity="${escapeHtml(entityId)}"
+          data-proxy-member="${escapeHtml(row.memberId)}"
+          data-proxy-label="${escapeHtml(row.memberName || 'Member')}">Approve on behalf</button>` : ''}
+      </li>`).join('')}</ul></div>`
+    : '<p class="table-subtitle">No pending member votes.</p>';
+
+  return `${approvedHtml}${pendingHtml}`;
+}
+
+async function loadMemberApprovalTracking() {
+  const summaryEl = document.getElementById('umApprovalSummary');
+  const listEl = document.getElementById('umApprovalTrackingList');
+  const msgEl = document.getElementById('umApprovalMessage');
+  if (!listEl) return;
+  if (msgEl) msgEl.textContent = '';
+
+  try {
+    const data = await api('/api/developer/member-approvals/pending');
+    const summary = data.summary || {};
+    const items = data.items || [];
+    const canProxy = canProxyMemberApprovals();
+
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Open workflows</span><strong class="metric-value">${summary.openWorkflows || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending member votes</span><strong class="metric-value">${summary.pendingVotes || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${summary.investmentCount || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Exit requests</span><strong class="metric-value">${summary.exitCount || 0}</strong></div></div>
+      `;
+    }
+
+    if (!items.length) {
+      listEl.innerHTML = '<p class="table-subtitle">No workflows are waiting for member-level approval.</p>';
+      return;
+    }
+
+    listEl.innerHTML = items.map((item) => `
+      <article class="panel-card u-mb-1 um-approval-card" data-workflow-id="${escapeHtml(item.entityId)}">
+        <div class="um-approval-card-header">
+          <div>
+            <p class="um-modal-eyebrow">${escapeHtml(workflowTypeLabel(item.workflowType))}</p>
+            <h3>${escapeHtml(item.label || 'Workflow')}</h3>
+            <p class="table-subtitle">${escapeHtml(statusLabelForWorkflow(item.status))} · Started ${escapeHtml(formatDate(item.createdAt))}</p>
+          </div>
+        </div>
+        ${renderApprovalMemberRows(item.approvedApprovals || [], item.pendingApprovals || [], {
+          canProxy,
+          workflowType: item.workflowType,
+          entityId: item.entityId,
+        })}
+      </article>
+    `).join('');
+
+    if (!canProxy) {
+      listEl.insertAdjacentHTML('beforeend', '<p class="table-subtitle u-mt-1">You can view tracking here. Only User Management admins with proxy permission can approve on behalf of absent members.</p>');
+    }
+
+    listEl.querySelectorAll('.um-proxy-btn').forEach((btn) => {
+      btn.addEventListener('click', () => openProxyApprovalModal({
+        workflowType: btn.dataset.proxyWorkflow,
+        entityId: btn.dataset.proxyEntity,
+        memberId: btn.dataset.proxyMember,
+        memberLabel: btn.dataset.proxyLabel,
+        workflowLabel: btn.closest('.um-approval-card')?.querySelector('h3')?.textContent || 'Workflow',
+      }));
+    });
+  } catch (error) {
+    listEl.innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function openProxyApprovalModal({ workflowType, entityId, memberId, memberLabel, workflowLabel }) {
+  const modal = document.getElementById('umProxyApprovalModal');
+  const subtitle = document.getElementById('umProxyApprovalSubtitle');
+  const form = document.getElementById('umProxyApprovalForm');
+  if (!modal || !form) return;
+
+  document.getElementById('umProxyWorkflowType').value = workflowType || '';
+  document.getElementById('umProxyEntityId').value = entityId || '';
+  document.getElementById('umProxyMemberId').value = memberId || '';
+  if (subtitle) {
+    subtitle.textContent = `Record approval for ${memberLabel || 'member'} on ${workflowLabel || 'workflow'}.`;
+  }
+  const msg = document.getElementById('umProxyFormMessage');
+  if (msg) msg.textContent = '';
+  form.reset();
+  document.getElementById('umProxyWorkflowType').value = workflowType || '';
+  document.getElementById('umProxyEntityId').value = entityId || '';
+  document.getElementById('umProxyMemberId').value = memberId || '';
+  modal.classList.remove('hidden');
+}
+
+function closeProxyApprovalModal() {
+  document.getElementById('umProxyApprovalModal')?.classList.add('hidden');
 }
 
 function renderUmPermissions(selectedKeys = []) {
@@ -540,6 +676,44 @@ function bindUi() {
 
   document.getElementById('closeDevUserModal')?.addEventListener('click', () => {
     document.getElementById('devUserModal')?.classList.add('hidden');
+  });
+
+  document.getElementById('closeUmProxyModal')?.addEventListener('click', closeProxyApprovalModal);
+  document.getElementById('umProxyApprovalModal')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'umProxyApprovalModal') closeProxyApprovalModal();
+  });
+
+  document.getElementById('umProxyApprovalForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('umProxyFormMessage');
+    if (msg) msg.textContent = '';
+    const formData = new FormData(event.target);
+    const workflowType = formData.get('workflowType');
+    const entityId = formData.get('entityId');
+    const memberId = formData.get('memberId');
+    const payload = {
+      memberId,
+      reason: formData.get('reason'),
+      confirmPassword: formData.get('confirmPassword'),
+    };
+
+    const path = workflowType === 'investment'
+      ? `/api/developer/member-approvals/investments/${encodeURIComponent(entityId)}/proxy`
+      : `/api/developer/member-approvals/exits/${encodeURIComponent(entityId)}/proxy`;
+
+    try {
+      const result = await api(path, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (msg) msg.textContent = result.message || 'Proxy approval recorded.';
+      closeProxyApprovalModal();
+      const banner = document.getElementById('umApprovalMessage');
+      if (banner) banner.textContent = result.message || 'Proxy approval recorded.';
+      await loadMemberApprovalTracking();
+    } catch (error) {
+      if (msg) msg.textContent = error.message;
+    }
   });
 
   document.getElementById('otpResetForm')?.addEventListener('submit', async (event) => {
