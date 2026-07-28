@@ -147,6 +147,12 @@ function assertCanLogin(user) {
   if (user.status === 'inactive') {
     return { ok: false, status: 403, error: 'Your account is inactive. Please contact User Management.' };
   }
+  if (user.status === 'pending' || user.status === 'submitted') {
+    return { ok: false, status: 403, error: 'Your registration is pending CEO approval. Please wait for approval.' };
+  }
+  if (user.status === 'approved') {
+    return { ok: false, status: 403, error: 'Your registration is approved. Please complete share/entry payment with the Cashier to activate your account.' };
+  }
   if (user.status === 'blocked') {
     return { ok: false, status: 403, error: 'Your account is blocked. Please contact User Management.' };
   }
@@ -503,6 +509,7 @@ async function createManagedUser({
   password,
   role,
   permissions,
+  shareEntryAmount,
   entryAmountPaid,
 }, actor, ip) {
   if (!name || !email || !password || !role) {
@@ -546,7 +553,7 @@ async function createManagedUser({
     savings: 0,
     profit: 0,
     advanceBalance: 0,
-    status: 'active',
+    status: role === 'member' ? 'pending' : 'active',
   });
 
   let buyInResult = null;
@@ -554,7 +561,8 @@ async function createManagedUser({
     try {
       const { prepareMemberForBuyIn } = require('./memberMigrationService');
       buyInResult = await prepareMemberForBuyIn(user, {
-        entryAmountPaid,
+        shareEntryAmount: shareEntryAmount ?? entryAmountPaid,
+        entryAmountPaid: shareEntryAmount ?? entryAmountPaid,
         recordedBy: actor?.name || actor?.email || 'User Management',
       });
     } catch (buyInError) {
@@ -574,6 +582,8 @@ async function createManagedUser({
       role,
       pendingEntryBuyIn: Boolean(buyInResult && !buyInResult.activated),
       requiredEntryAmount: buyInResult?.valuation?.entryAmount,
+      shareEntryAmount: buyInResult?.valuation?.entryAmount,
+      membershipStatus: buyInResult?.member?.status || user.status,
     },
     ip: ip || '',
   });
@@ -686,7 +696,11 @@ function sanitizeUserForDeveloper(user) {
     profit: obj.profit,
     advanceBalance: obj.advanceBalance || 0,
     pendingEntryBuyIn: Boolean(obj.pendingEntryBuyIn),
+    shareEntryAmount: Number(obj.shareEntryAmount || obj.requiredEntryAmount || 0),
     requiredEntryAmount: Number(obj.requiredEntryAmount || 0),
+    membershipSubmittedAt: obj.membershipSubmittedAt || null,
+    ceoApprovedAt: obj.ceoApprovedAt || null,
+    ceoApprovedBy: obj.ceoApprovedBy || '',
     entryBuyInPaidAt: obj.entryBuyInPaidAt || null,
     phone: obj.phone || '',
     failedLoginAttempts: obj.failedLoginAttempts || 0,

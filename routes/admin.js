@@ -28,6 +28,9 @@ const {
   replaceMember,
   exitMemberViaSocietyFund,
   getMigrationOverview,
+  listPendingMemberRegistrations,
+  approveMemberRegistration,
+  rejectMemberRegistration,
 } = require('../services/memberMigrationService');
 const { userHasPermission, isFullAccessRole } = require('../services/rbac');
 
@@ -71,6 +74,38 @@ router.get('/members/migration-overview', manageMigration, async (req, res) => {
     return res.json(overview);
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load migration overview.' });
+  }
+});
+
+router.get('/members/pending-registrations', manageMigration, async (req, res) => {
+  try {
+    const members = await listPendingMemberRegistrations();
+    return res.json({ members });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load pending registrations.' });
+  }
+});
+
+router.post('/members/:id/approve-registration', manageMigration, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await approveMemberRegistration(req.params.id, {
+      approvedBy: req.session?.user?.name || 'CEO',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to approve member registration.' });
+  }
+});
+
+router.post('/members/:id/reject-registration', manageMigration, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await rejectMemberRegistration(req.params.id, {
+      rejectedBy: req.session?.user?.name || 'CEO',
+      reason: req.body?.reason || '',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to reject member registration.' });
   }
 });
 

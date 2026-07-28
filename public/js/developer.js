@@ -130,31 +130,36 @@ function applyUmRoleDefaults() {
 async function updateMemberBuyInUi(role) {
   const block = document.getElementById('devMemberBuyInBlock');
   const box = document.getElementById('devEntryValuationBox');
-  const input = document.getElementById('devEntryAmountPaid');
+  const input = document.getElementById('devShareEntryAmount');
   if (!block || !box) return;
 
   if (role !== 'member') {
     block.classList.add('hidden');
-    if (input) input.value = '';
+    if (input) {
+      input.value = '';
+      input.required = false;
+    }
     return;
   }
 
   block.classList.remove('hidden');
-  box.innerHTML = `<p class="table-subtitle">${t('um.loadingValuation', 'Loading current share valuation…')}</p>`;
+  if (input) input.required = true;
+  box.innerHTML = `<p class="table-subtitle">${t('um.loadingValuation', 'Loading suggested share valuation…')}</p>`;
   try {
     const data = await api('/api/developer/entry-valuation');
     const v = data.valuation || {};
     const amount = Number(v.entryAmount || 0);
     box.innerHTML = `
-      <p><strong>${t('um.currentShareValuation', 'Current share valuation')}: ${formatMoney(amount, 2)}</strong></p>
+      <p><strong>${t('um.suggestedShareValuation', 'Suggested equal-share (reference only)')}: ${formatMoney(amount, 2)}</strong></p>
       <p class="table-subtitle">${escapeHtml(v.formula || '')}</p>
       <p class="table-subtitle">Active members: ${v.activeCount || 0} · Fund: Savings ${formatMoney(Number(v.totalSavings || 0), 2)} + Profit ${formatMoney(Number(v.totalProfit || 0), 2)} + Advance ${formatMoney(Number(v.totalAdvance || 0), 2)} = ${formatMoney(Number(v.totalFund || 0), 2)}</p>
+      <p class="table-subtitle">${t('um.manualShareRequired', 'Enter the share/entry fee manually below. Workflow: Submit → CEO approve → Cashier payment confirm → Active.')}</p>
     `;
-    if (input) {
+    if (input && !input.value) {
       input.placeholder = amount > 0
-        ? t('um.exactActivate', 'Exact {amount} to activate now, or leave blank').replace('{amount}', formatMoney(amount, 2))
-        : t('um.noBuyInRequired', 'No buy-in required — activates immediately');
-      input.dataset.requiredAmount = String(amount);
+        ? t('um.suggestedPlaceholder', 'Suggested {amount} — enter manually').replace('{amount}', formatMoney(amount, 2))
+        : t('um.enterShareManually', 'Enter share / entry fee (৳0 allowed for first member)');
+      input.dataset.suggestedAmount = String(amount);
     }
   } catch (error) {
     box.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
@@ -195,7 +200,7 @@ async function ensureCreateForm() {
       }
       const formData = new FormData(form);
       const role = formData.get('role');
-      const entryRaw = formData.get('entryAmountPaid');
+      const shareRaw = formData.get('shareEntryAmount');
       const payload = {
         name: formData.get('name'),
         email: formData.get('email'),
@@ -203,8 +208,15 @@ async function ensureCreateForm() {
         role,
         permissions: getUmSelectedPermissions(),
       };
-      if (role === 'member' && entryRaw !== null && String(entryRaw).trim() !== '') {
-        payload.entryAmountPaid = entryRaw;
+      if (role === 'member') {
+        if (shareRaw === null || String(shareRaw).trim() === '') {
+          if (messageEl) {
+            messageEl.textContent = t('um.shareRequired', 'Share / entry fee amount is required for members.');
+            messageEl.classList.add('error');
+          }
+          return;
+        }
+        payload.shareEntryAmount = shareRaw;
       }
       try {
         const result = await api('/api/developer/users', {
@@ -212,11 +224,7 @@ async function ensureCreateForm() {
           body: JSON.stringify(payload),
         });
         if (messageEl) {
-          const required = result.valuation?.entryAmount;
-          const suffix = result.activated === false && required != null
-            ? ` Pending exact buy-in of ${formatMoney(Number(required), 2)}.`
-            : '';
-          messageEl.textContent = (result.message || t('um.accountCreated', 'Account created.')) + suffix;
+          messageEl.textContent = result.message || t('um.accountCreatedPending', 'Member submitted as Pending for CEO approval.');
           messageEl.classList.add('success');
         }
         form.reset();
@@ -318,8 +326,11 @@ function lockBadge(user) {
   if (user.status === 'deleted') {
     return `<span class="status-pill">Deleted ${formatDate(user.deletedAt)}</span>`;
   }
-  if (user.pendingEntryBuyIn) {
-    return `<span class="status-pill">${t('um.pendingBuyIn', 'Buy-in {amount}').replace('{amount}', formatMoney(Number(user.requiredEntryAmount || 0), 2))}</span>`;
+  if (user.status === 'pending' || user.status === 'submitted') {
+    return `<span class="status-pill">${t('um.statusPendingCeo', 'Pending CEO · share {amount}').replace('{amount}', formatMoney(Number(user.shareEntryAmount || user.requiredEntryAmount || 0), 2))}</span>`;
+  }
+  if (user.status === 'approved' || user.pendingEntryBuyIn) {
+    return `<span class="status-pill">${t('um.statusAwaitingPayment', 'Awaiting payment · {amount}').replace('{amount}', formatMoney(Number(user.requiredEntryAmount || user.shareEntryAmount || 0), 2))}</span>`;
   }
   if (user.isTemporarilyLocked) return `<span class="status-pill">${t('um.locked24h', 'Locked 24h')}</span>`;
   if (user.hasPendingOtp) return `<span class="status-pill">${t('um.otpPending', 'OTP pending')}</span>`;

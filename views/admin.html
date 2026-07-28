@@ -1835,6 +1835,31 @@
         </section>
 
         <section class="panel-card">
+          <h2>Pending Member Registrations (CEO Approval)</h2>
+          <p class="table-subtitle">
+            New members submitted from User Management appear here as <strong>Pending / Submitted</strong>.
+            Approve to unlock payment confirmation for Cashier. Account becomes <strong>Active</strong> only after successful payment.
+          </p>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Share / entry fee</th>
+                  <th>Submitted</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="pendingMemberRegistrationsBody">
+                <tr><td colspan="5">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="pendingMemberRegistrationMessage" class="message"></p>
+        </section>
+
+        <section class="panel-card">
           <h2 data-i18n="admin.sections.openingBalanceMigration">Opening Balance / Historical Migration</h2>
           <p class="table-subtitle">Set pre-digital savings and profit for existing members so dashboards start with accurate balances. Historical opening deposits are ledgered separately and combined with new digital transactions.</p>
           <div id="migrationOverviewStats" class="metrics-grid u-mb-1"></div>
