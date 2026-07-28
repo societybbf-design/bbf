@@ -1221,7 +1221,7 @@ async function loadDepositsModule(options = {}) {
     }
 
     const [, responses] = await Promise.all([
-      ensureMembersOptions(['cashierDepositMember', 'cashierAdvanceMember', 'cashierBorrowLender']),
+      ensureMembersOptions(['cashierDepositMember', 'cashierAdvanceMember']),
       Promise.all(fetches),
     ]);
     const depRes = responses[0];
@@ -1363,6 +1363,36 @@ async function loadDepositsModule(options = {}) {
 
 let unpaidContributionsCache = [];
 
+function contributionDueAmount(contribution) {
+  if (!contribution) return 0;
+  if (contribution.unpaidAmount != null && contribution.unpaidAmount !== '') {
+    return Number(contribution.unpaidAmount || 0);
+  }
+  const expected = Number(contribution.expectedAmount || 0);
+  const covered = Number(contribution.paidFromSavings || 0)
+    + Number(contribution.paidFromAdvance || 0)
+    + Number(contribution.borrowedAmount || 0);
+  return Math.max(0, Number((expected - covered).toFixed(2)));
+}
+
+function populateBorrowLenderSelect(members = []) {
+  const lenderSelect = document.getElementById('cashierBorrowLender');
+  if (!lenderSelect) return;
+  const previous = lenderSelect.value;
+  const withAdvance = (members || []).filter((m) => Number(m.advanceBalance) > 0);
+  lenderSelect.disabled = false;
+  if (!withAdvance.length) {
+    lenderSelect.innerHTML = '<option value="">No members with advance balance</option>';
+    return;
+  }
+  lenderSelect.innerHTML = `<option value="">Select lender…</option>${withAdvance.map((m) => `
+    <option value="${m.id}">${escapeHtml(m.name)} (advance ${money(m.advanceBalance)})</option>
+  `).join('')}`;
+  if (previous && withAdvance.some((m) => String(m.id) === String(previous))) {
+    lenderSelect.value = previous;
+  }
+}
+
 async function loadFundingModule() {
   const advanceBody = document.getElementById('cashierAdvanceBody');
   const unpaidBody = document.getElementById('cashierUnpaidBody');
@@ -1372,7 +1402,7 @@ async function loadFundingModule() {
 
   try {
     const [, advRes, unpaidRes, borrowRes] = await Promise.all([
-      ensureMembersOptions(['cashierAdvanceMember', 'cashierBorrowLender']),
+      ensureMembersOptions(['cashierAdvanceMember']),
       fetch('/api/admin/funding/advances'),
       fetch('/api/admin/funding/unpaid-contributions'),
       fetch('/api/admin/funding/borrowings?status=open'),
@@ -1399,46 +1429,65 @@ async function loadFundingModule() {
         : '<tr><td colspan="4">No members.</td></tr>';
     }
 
-    if (lenderSelect) {
-      const withAdvance = members.filter((m) => Number(m.advanceBalance) > 0);
-      lenderSelect.innerHTML = `<option value="">Select lender…</option>${withAdvance.map((m) => `
-        <option value="${m.id}">${escapeHtml(m.name)} (advance ${money(m.advanceBalance)})</option>
-      `).join('')}`;
-    }
+    populateBorrowLenderSelect(members);
+    if (lenderSelect) lenderSelect.disabled = false;
 
     unpaidContributionsCache = unpaid.contributions || [];
     if (unpaidBody) {
       unpaidBody.innerHTML = unpaidContributionsCache.length
-        ? unpaidContributionsCache.map((c) => `
+        ? unpaidContributionsCache.map((c) => {
+          const due = contributionDueAmount(c);
+          const canDirectRepay = due > 0;
+          const borrowId = c.borrowing?._id || c.borrowing;
+          return `
           <tr>
             <td>${escapeHtml(c.investment?.investmentCode || '—')}</td>
             <td>${escapeHtml(c.memberName || c.member?.name || '—')}</td>
-            <td>${money(c.unpaidAmount || c.borrowedAmount)}</td>
+            <td>${money(due || c.borrowedAmount)}</td>
             <td>${escapeHtml(c.status)}</td>
             <td>
-              ${c.status === 'unpaid' && Number(c.unpaidAmount) > 0 ? `
+              ${canDirectRepay ? `
                 <button type="button" class="secondary-btn" data-repay-contribution="${c._id}">Record repayment</button>
-              ` : c.borrowing ? `
-                <button type="button" class="secondary-btn" data-repay-borrowing="${c.borrowing._id || c.borrowing}">Settle borrow</button>
-              ` : '—'}
+              ` : ''}
+              ${borrowId ? `
+                <button type="button" class="secondary-btn" data-repay-borrowing="${borrowId}">Settle borrow</button>
+              ` : (!canDirectRepay ? '—' : '')}
             </td>
           </tr>
-        `).join('')
+        `;
+        }).join('')
         : '<tr><td colspan="5">No unpaid shares.</td></tr>';
     }
 
     if (contribSelect) {
-      const unpaidOnly = unpaidContributionsCache.filter((c) => c.status === 'unpaid' && Number(c.unpaidAmount) > 0);
-      contribSelect.innerHTML = `<option value="">Select unpaid share…</option>${unpaidOnly.map((c) => `
-        <option value="${c._id}" data-amount="${c.unpaidAmount}" data-investment="${c.investment?._id || c.investment}" data-borrower="${c.member?._id || c.member}">
-          ${escapeHtml(c.memberName || c.member?.name)} · ${escapeHtml(c.investment?.investmentCode || '')} · due ${money(c.unpaidAmount)}
-        </option>
-      `).join('')}`;
+      // Flexible: any share with remaining unpaid due, even after partial/past payments or prior borrows.
+      const borrowable = unpaidContributionsCache.filter((c) => contributionDueAmount(c) > 0);
+      const previous = contribSelect.value;
+      contribSelect.innerHTML = `<option value="">Select unpaid share…</option>${borrowable.map((c) => {
+        const due = contributionDueAmount(c);
+        const historyParts = [];
+        if (Number(c.paidFromSavings) > 0) historyParts.push(`savings ${money(c.paidFromSavings)}`);
+        if (Number(c.paidFromAdvance) > 0) historyParts.push(`advance ${money(c.paidFromAdvance)}`);
+        if (Number(c.borrowedAmount) > 0) historyParts.push(`borrowed ${money(c.borrowedAmount)}`);
+        const history = historyParts.length ? ` · paid ${historyParts.join(', ')}` : '';
+        return `
+        <option value="${c._id}"
+          data-amount="${due}"
+          data-investment="${c.investment?._id || c.investment || ''}"
+          data-borrower="${c.member?._id || c.member || ''}"
+          data-contribution="${c._id}">
+          ${escapeHtml(c.memberName || c.member?.name || 'Member')} · ${escapeHtml(c.investment?.investmentCode || '')} · due ${money(due)}${escapeHtml(history)}
+        </option>`;
+      }).join('')}`;
+      if (previous && borrowable.some((c) => String(c._id) === String(previous))) {
+        contribSelect.value = previous;
+      }
       contribSelect.onchange = () => {
         const opt = contribSelect.selectedOptions[0];
         const amountInput = document.getElementById('cashierBorrowAmount');
         if (opt && amountInput) amountInput.value = opt.dataset.amount || '';
       };
+      if (contribSelect.value) contribSelect.onchange();
     }
 
     const openBorrowings = borrowings.borrowings || [];
@@ -1447,16 +1496,21 @@ async function loadFundingModule() {
       borrowingsBody.innerHTML = openBorrowings.length
         ? openBorrowings.map((b) => {
           const outstanding = Math.max(0, Number(b.amount || 0) - Number(b.amountSettled || 0));
+          const lenderName = b.lenderName || b.lender?.name || 'lender';
           return `
             <tr>
               <td>${escapeHtml(new Date(b.createdAt).toLocaleString())}</td>
               <td>${escapeHtml(b.borrowerName || b.borrower?.name || '—')}</td>
-              <td>${escapeHtml(b.lenderName || b.lender?.name || '—')}</td>
+              <td>${escapeHtml(lenderName)}</td>
               <td>${money(b.amount)}</td>
               <td>${money(outstanding)}</td>
               <td>
-                <button type="button" class="primary-btn" data-settle-borrowing="${b._id}" data-outstanding="${outstanding}">
-                  Settle full
+                <button type="button" class="primary-btn"
+                  data-settle-borrowing="${b._id}"
+                  data-outstanding="${outstanding}"
+                  data-lender-name="${escapeHtml(lenderName)}"
+                  ${outstanding <= 0 ? 'disabled' : ''}>
+                  Settle &amp; refund lender
                 </button>
               </td>
             </tr>
@@ -1481,6 +1535,7 @@ async function loadFundingModule() {
             msg.classList.add('success');
             msg.textContent = 'Contribution repayment recorded. Bank ledger credited.';
           }
+          invalidateStaffViewCache(['funding']);
           await loadFundingModule();
         } catch (error) {
           if (msg) {
@@ -1494,8 +1549,14 @@ async function loadFundingModule() {
     document.querySelectorAll('[data-repay-borrowing], [data-settle-borrowing]').forEach((btn) => {
       btn.onclick = async () => {
         const id = btn.dataset.settleBorrowing || btn.dataset.repayBorrowing;
+        const lenderName = btn.dataset.lenderName || 'the original lender';
+        const outstanding = Number(btn.dataset.outstanding || 0);
         const msg = document.getElementById('cashierSettleMessage') || document.getElementById('cashierUnpaidMessage');
-        if (!window.confirm('Settle this borrowing? Repayment credits the bank ledger and restores the lender advance balance.')) return;
+        const confirmText = outstanding > 0
+          ? `Settle repayment of ${money(outstanding)}? This credits the bank ledger and refunds ${lenderName}'s advance balance.`
+          : `Settle this borrowing? Repayment credits the bank ledger and refunds ${lenderName}'s advance balance.`;
+        if (!window.confirm(confirmText)) return;
+        btn.disabled = true;
         try {
           const res = await fetch(`/api/admin/funding/borrowings/${id}/repay`, {
             method: 'POST',
@@ -1506,10 +1567,16 @@ async function loadFundingModule() {
           if (!res.ok) throw new Error(data.error || 'Unable to settle.');
           if (msg) {
             msg.classList.add('success');
-            msg.textContent = `Settled ${money(data.settledAmount)}. Lender advance restored. Bank ledger credited.`;
+            const refunded = data.lender?.refundedAmount ?? data.settledAmount;
+            const lenderLabel = data.lender?.name || lenderName;
+            msg.textContent = data.fullySettled
+              ? `Fully settled ${money(data.settledAmount)}. Refunded ${money(refunded)} to ${lenderLabel}'s advance (now ${money(data.lender?.advanceBalance)}).`
+              : `Partial settlement ${money(data.settledAmount)}. Refunded ${money(refunded)} to ${lenderLabel}'s advance. Outstanding ${money(data.outstandingAfter)}.`;
           }
+          invalidateStaffViewCache(['funding']);
           await loadFundingModule();
         } catch (error) {
+          btn.disabled = false;
           if (msg) {
             msg.classList.remove('success');
             msg.textContent = error.message;
@@ -3532,12 +3599,26 @@ function bindModuleForms() {
     const formData = new FormData(event.target);
     const contribSelect = document.getElementById('cashierBorrowContribution');
     const opt = contribSelect?.selectedOptions?.[0];
-    if (!opt) return;
+    if (!opt?.value) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.textContent = 'Select an unpaid contribution share.';
+      }
+      return;
+    }
+    if (!formData.get('lenderId')) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.textContent = 'Select a lender with advance balance.';
+      }
+      return;
+    }
     try {
       const response = await fetch('/api/admin/funding/borrowings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          contributionId: opt.dataset.contribution || opt.value,
           investmentId: opt.dataset.investment,
           borrowerId: opt.dataset.borrower,
           lenderId: formData.get('lenderId'),
@@ -3549,9 +3630,10 @@ function bindModuleForms() {
       if (!response.ok) throw new Error(data.error || 'Unable to create borrowing.');
       if (msg) {
         msg.classList.add('success');
-        msg.textContent = `Borrowed ${money(data.borrowing?.amount)} from ${data.lender?.name} for ${data.borrower?.name}.`;
+        msg.textContent = `Borrowed ${money(data.borrowing?.amount)} from ${data.lender?.name} for ${data.borrower?.name}. Lender advance now ${money(data.lender?.advanceBalance)}.`;
       }
       event.target.reset();
+      invalidateStaffViewCache(['funding']);
       await loadFundingModule();
     } catch (error) {
       if (msg) {

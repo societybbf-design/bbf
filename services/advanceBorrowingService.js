@@ -4,7 +4,7 @@ const Deposit = require('../models/Deposit');
 const InternalBorrowing = require('../models/InternalBorrowing');
 const InvestmentContribution = require('../models/InvestmentContribution');
 const Investment = require('../models/Investment');
-const { tryCredit } = require('./bankLedgerService');
+const { creditInbound, tryCredit } = require('./bankLedgerService');
 
 function money(value) {
   return Number((Number(value) || 0).toFixed(2));
@@ -14,6 +14,29 @@ function httpError(message, status = 400) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+/** Remaining amount still due on a contribution (supports partial / past payments). */
+function contributionRemainingDue(contribution) {
+  if (!contribution) return 0;
+  if (contribution.unpaidAmount != null && contribution.unpaidAmount !== '') {
+    return money(contribution.unpaidAmount);
+  }
+  const expected = money(contribution.expectedAmount);
+  const covered = money(
+    Number(contribution.paidFromSavings || 0)
+    + Number(contribution.paidFromAdvance || 0)
+    + Number(contribution.borrowedAmount || 0)
+  );
+  return money(Math.max(0, expected - covered));
+}
+
+function contributionIsBorrowable(contribution) {
+  if (!contribution) return false;
+  if (contribution.status === 'settled' && contributionRemainingDue(contribution) <= 0.001) {
+    return false;
+  }
+  return contributionRemainingDue(contribution) > 0.001;
 }
 
 async function getActiveMembers() {
@@ -94,6 +117,7 @@ async function createInternalBorrowing({
   amount,
   note = '',
   createdBy = 'Cashier',
+  contributionId = null,
 } = {}) {
   const normalized = money(amount);
   if (!(normalized > 0)) {
@@ -118,7 +142,18 @@ async function createInternalBorrowing({
   }
 
   let contribution = null;
-  if (investmentId) {
+  if (contributionId) {
+    contribution = await InvestmentContribution.findById(contributionId);
+    if (!contribution) {
+      throw httpError('Contribution not found.', 404);
+    }
+    if (String(contribution.member) !== String(borrowerId)) {
+      throw httpError('Contribution does not belong to the selected borrower.');
+    }
+    if (investmentId && String(contribution.investment) !== String(investmentId)) {
+      throw httpError('Contribution does not match the selected investment.');
+    }
+  } else if (investmentId) {
     contribution = await InvestmentContribution.findOne({
       investment: investmentId,
       member: borrowerId,
@@ -126,10 +161,13 @@ async function createInternalBorrowing({
     if (!contribution) {
       throw httpError('No contribution record found for this borrower on the investment.');
     }
-    if (!['unpaid', 'covered_by_borrow'].includes(contribution.status)) {
-      throw httpError('This contribution is already paid or settled.');
+  }
+
+  if (contribution) {
+    if (!contributionIsBorrowable(contribution)) {
+      throw httpError('This contribution has no remaining unpaid balance to cover.');
     }
-    const stillDue = money(contribution.unpaidAmount || contribution.expectedAmount);
+    const stillDue = contributionRemainingDue(contribution);
     if (normalized > stillDue + 0.001) {
       throw httpError(`Borrow amount exceeds unpaid due of ${formatMoney(stillDue, 2)}.`);
     }
@@ -139,7 +177,7 @@ async function createInternalBorrowing({
   await lender.save();
 
   const borrowing = await InternalBorrowing.create({
-    investment: investmentId || null,
+    investment: contribution?.investment || investmentId || null,
     contribution: contribution?._id || null,
     lender: lender._id,
     lenderName: lender.name,
@@ -153,8 +191,10 @@ async function createInternalBorrowing({
   });
 
   if (contribution) {
+    const priorDue = contributionRemainingDue(contribution);
     contribution.borrowedAmount = money(Number(contribution.borrowedAmount || 0) + normalized);
-    contribution.unpaidAmount = money(Math.max(0, Number(contribution.unpaidAmount || 0) - normalized));
+    contribution.unpaidAmount = money(Math.max(0, priorDue - normalized));
+    // Keep borrowable while unpaid remains, even after prior partial payments / borrows.
     contribution.status = contribution.unpaidAmount > 0.001 ? 'unpaid' : 'covered_by_borrow';
     contribution.borrowing = borrowing._id;
     await contribution.save();
@@ -214,17 +254,34 @@ async function settleInternalBorrowing(borrowingId, {
     recordedBy,
   });
 
-  // Cash-in: society bank ledger increases
-  const bankLedger = await tryCredit({
-    type: 'deposit',
-    amount: payAmount,
-    referenceType: 'InternalBorrowing',
-    referenceId: borrowing._id,
-    note: `Borrow repayment from ${borrower.name} → ${lender.name}`,
-    createdBy: recordedBy,
-  });
+  // Cash-in: society bank ledger increases (allow without opening so settlement is not skipped)
+  let bankLedger = null;
+  try {
+    bankLedger = await creditInbound({
+      type: 'deposit',
+      amount: payAmount,
+      referenceType: 'InternalBorrowing',
+      referenceId: borrowing._id,
+      note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
+      createdBy: recordedBy,
+    });
+  } catch (error) {
+    // Fall back to soft credit so lender refund still proceeds if ledger is mid-setup.
+    bankLedger = await tryCredit({
+      type: 'deposit',
+      amount: payAmount,
+      referenceType: 'InternalBorrowing',
+      referenceId: borrowing._id,
+      note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
+      createdBy: recordedBy,
+    });
+    if (!bankLedger) {
+      console.warn('[advanceBorrowing] bank ledger credit skipped during settle:', error.message);
+    }
+  }
 
-  // Restore lender surplus
+  // Refund / restore original lender advance balance
+  const lenderAdvanceBefore = money(lender.advanceBalance);
   lender.advanceBalance = money(Number(lender.advanceBalance || 0) + payAmount);
   await lender.save();
 
@@ -242,8 +299,20 @@ async function settleInternalBorrowing(borrowingId, {
   if (borrowing.contribution) {
     const contribution = await InvestmentContribution.findById(borrowing.contribution);
     if (contribution && borrowing.status === 'settled') {
-      contribution.status = 'settled';
-      contribution.unpaidAmount = 0;
+      const openOthers = await InternalBorrowing.countDocuments({
+        contribution: contribution._id,
+        status: { $in: ['open', 'partial'] },
+        _id: { $ne: borrowing._id },
+      });
+      const stillUnpaid = contributionRemainingDue(contribution) > 0.001;
+      if (!openOthers && !stillUnpaid) {
+        contribution.status = 'settled';
+        contribution.unpaidAmount = 0;
+      } else if (stillUnpaid) {
+        contribution.status = 'unpaid';
+      } else {
+        contribution.status = 'covered_by_borrow';
+      }
       await contribution.save();
     }
   }
@@ -265,10 +334,17 @@ async function settleInternalBorrowing(borrowingId, {
     borrowing,
     deposit,
     bankLedger,
-    lender: { id: lender._id, name: lender.name, advanceBalance: lender.advanceBalance },
+    lender: {
+      id: lender._id,
+      name: lender.name,
+      advanceBalance: lender.advanceBalance,
+      advanceBalanceBefore: lenderAdvanceBefore,
+      refundedAmount: payAmount,
+    },
     borrower: { id: borrower._id, name: borrower.name },
     settledAmount: payAmount,
     outstandingAfter: Math.max(0, remaining),
+    fullySettled: borrowing.status === 'settled',
   };
 }
 
@@ -286,16 +362,17 @@ async function repayUnpaidContribution(contributionId, {
   if (!contribution) {
     throw httpError('Contribution not found.', 404);
   }
-  if (!['unpaid', 'covered_by_borrow'].includes(contribution.status) && !(contribution.unpaidAmount > 0)) {
+  const remainingDue = contributionRemainingDue(contribution);
+  if (!contributionIsBorrowable(contribution) && !(remainingDue > 0)) {
     throw httpError('Contribution has no unpaid balance.');
   }
 
-  // If covered by borrow, repay via borrowing settlement instead
-  if (contribution.borrowing && contribution.status === 'covered_by_borrow') {
+  // If covered by borrow with no remaining unpaid share, repay via borrowing settlement instead
+  if (contribution.borrowing && contribution.status === 'covered_by_borrow' && remainingDue <= 0.001) {
     return settleInternalBorrowing(contribution.borrowing, { amount, recordedBy, notes });
   }
 
-  const due = money(contribution.unpaidAmount || 0);
+  const due = remainingDue;
   const payAmount = amount === null || amount === undefined || amount === ''
     ? due
     : money(amount);
@@ -342,9 +419,33 @@ async function repayUnpaidContribution(contributionId, {
 }
 
 async function listUnpaidContributions({ investmentId } = {}) {
+  // Include any share with remaining unpaid amount (partial / past payments allowed),
+  // plus covered-by-borrow rows that still need settlement tracking.
   const filter = {
-    status: { $in: ['unpaid', 'covered_by_borrow'] },
-    $or: [{ unpaidAmount: { $gt: 0 } }, { borrowedAmount: { $gt: 0 }, status: 'covered_by_borrow' }],
+    $or: [
+      { unpaidAmount: { $gt: 0 } },
+      { status: 'covered_by_borrow', borrowedAmount: { $gt: 0 } },
+      {
+        status: 'unpaid',
+        $expr: {
+          $gt: [
+            {
+              $subtract: [
+                '$expectedAmount',
+                {
+                  $add: [
+                    { $ifNull: ['$paidFromSavings', 0] },
+                    { $ifNull: ['$paidFromAdvance', 0] },
+                    { $ifNull: ['$borrowedAmount', 0] },
+                  ],
+                },
+              ],
+            },
+            0,
+          ],
+        },
+      },
+    ],
   };
   if (investmentId) filter.investment = investmentId;
 
@@ -369,6 +470,8 @@ async function listMemberAdvanceBalances() {
 
 module.exports = {
   money,
+  contributionRemainingDue,
+  contributionIsBorrowable,
   saveAdvanceDeposit,
   listInternalBorrowings,
   createInternalBorrowing,
