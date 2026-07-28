@@ -877,6 +877,312 @@ function resolvePayoutReceiver(investment, overrides = {}) {
   };
 }
 
+async function getCashierPaymentFundingSnapshot(investment) {
+  const societyFundingAmount = Number(Number(
+    investment.societyAmount > 0 ? investment.societyAmount : investment.amount
+  ).toFixed(2));
+
+  const [{ getLedger }, { ensureFund, money: reserveMoney }, { listMemberAdvanceBalances }] = await Promise.all([
+    Promise.resolve(require('./bankLedgerService')),
+    Promise.resolve(require('./emergencyReserveService')),
+    Promise.resolve(require('./advanceBorrowingService')),
+  ]);
+
+  let bookBalance = 0;
+  let openingSet = false;
+  try {
+    const ledger = await getLedger({ entryLimit: 1 });
+    bookBalance = Number(Number(ledger.bookBalance || 0).toFixed(2));
+    openingSet = Boolean(ledger.openingSet);
+  } catch (_) {
+    bookBalance = 0;
+    openingSet = false;
+  }
+
+  const fund = await ensureFund();
+  const reserveBalance = reserveMoney(fund.balance);
+  const advances = (await listMemberAdvanceBalances())
+    .filter((m) => Number(m.advanceBalance || 0) > 0.001)
+    .sort((a, b) => Number(b.advanceBalance || 0) - Number(a.advanceBalance || 0));
+
+  const shortfall = Number(Math.max(0, societyFundingAmount - bookBalance).toFixed(2));
+  const totalAdvanceAvailable = Number(
+    advances.reduce((sum, m) => sum + Number(m.advanceBalance || 0), 0).toFixed(2)
+  );
+
+  return {
+    investmentId: investment._id,
+    investmentCode: investment.investmentCode || '',
+    status: investment.status,
+    requiredAmount: societyFundingAmount,
+    bookBalance,
+    openingSet,
+    shortfall,
+    hasShortfall: shortfall > 0.001,
+    canComplete: openingSet && shortfall <= 0.001,
+    reserveBalance,
+    totalAdvanceAvailable,
+    advanceMembers: advances,
+    coverOptions: {
+      canUseReserve: reserveBalance > 0.001,
+      canUseAdvance: totalAdvanceAvailable > 0.001,
+      maxCoverable: Number(Math.min(shortfall, reserveBalance + totalAdvanceAvailable).toFixed(2)),
+    },
+  };
+}
+
+/**
+ * Pre-flight check before Complete Payment — used by the shortfall modal.
+ */
+async function previewCashierPayment(investmentId) {
+  const investment = await Investment.findById(investmentId)
+    .populate('investor', 'name email role')
+    .populate('projectManager', 'name email role')
+    .populate('member', 'name email role');
+
+  if (!investment) {
+    const error = new Error('Investment not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (investment.status !== 'pending_cashier_payment') {
+    const error = new Error('Investment is not awaiting cashier payment.');
+    error.status = 400;
+    throw error;
+  }
+
+  const funding = await getCashierPaymentFundingSnapshot(investment);
+  const receiver = resolvePayoutReceiver(investment);
+
+  return {
+    ...funding,
+    payoutReceiver: receiver,
+    investment: {
+      _id: investment._id,
+      investmentCode: investment.investmentCode,
+      investmentType: investment.investmentType,
+      amount: investment.amount,
+      societyAmount: investment.societyAmount,
+      externalAmount: investment.externalAmount,
+      status: investment.status,
+    },
+    message: funding.canComplete
+      ? `Book balance ${formatMoney(funding.bookBalance, 2)} covers the required ${formatMoney(funding.requiredAmount, 2)}. Ready to complete payment.`
+      : !funding.openingSet
+        ? 'Bank ledger opening balance is not set. Set it before completing payment, or cover the shortfall from advance / reserve after opening is set.'
+        : `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it from member advance (internal borrow) or Emergency / Reserve Fund before completing payment.`,
+  };
+}
+
+/**
+ * Cover book-balance shortfall by releasing a member's advance into the society bank book.
+ * Debits lender advance, credits book ledger, and records an open internal borrow
+ * (society project funding) for audit / later repayment to the lender's advance.
+ */
+async function coverCashierPaymentShortfallFromAdvance({
+  investmentId,
+  lenderId,
+  amount,
+  createdBy = 'Cashier',
+  note = '',
+} = {}) {
+  const investment = await Investment.findById(investmentId);
+  if (!investment) {
+    const error = new Error('Investment not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (investment.status !== 'pending_cashier_payment') {
+    const error = new Error('Investment is not awaiting cashier payment.');
+    error.status = 400;
+    throw error;
+  }
+
+  const snapshot = await getCashierPaymentFundingSnapshot(investment);
+  if (!snapshot.openingSet) {
+    const error = new Error('Set the bank ledger opening balance before covering a payment shortfall.');
+    error.status = 409;
+    throw error;
+  }
+  if (!(snapshot.shortfall > 0.001)) {
+    const error = new Error('There is no book-balance shortfall to cover.');
+    error.status = 400;
+    throw error;
+  }
+
+  const payAmount = amount == null || amount === ''
+    ? snapshot.shortfall
+    : Number(Number(amount).toFixed(2));
+  if (!(payAmount > 0)) {
+    const error = new Error('Cover amount must be greater than zero.');
+    error.status = 400;
+    throw error;
+  }
+  if (payAmount > snapshot.shortfall + 0.001) {
+    const error = new Error(
+      `Cover amount exceeds shortfall of ${formatMoney(snapshot.shortfall, 2)}.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const lender = await User.findOne({ _id: lenderId, role: 'member', status: 'active' });
+  if (!lender) {
+    const error = new Error('Lender member not found or inactive.');
+    error.status = 404;
+    throw error;
+  }
+  const advanceAvail = Number(Number(lender.advanceBalance || 0).toFixed(2));
+  if (payAmount > advanceAvail + 0.001) {
+    const error = new Error(
+      `Lender advance balance insufficient. Available: ${formatMoney(advanceAvail, 2)}.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  // Pick a society-side borrower marker: use an active member other than lender when possible,
+  // otherwise the lender themselves with an explicit society-funding note (audit-only borrow).
+  const borrower = await User.findOne({
+    role: 'member',
+    status: 'active',
+    _id: { $ne: lender._id },
+  }).sort({ createdAt: 1 }) || lender;
+
+  lender.advanceBalance = Number((advanceAvail - payAmount).toFixed(2));
+  await lender.save();
+
+  const InternalBorrowing = require('../models/InternalBorrowing');
+  const borrowing = await InternalBorrowing.create({
+    investment: investment._id,
+    contribution: null,
+    lender: lender._id,
+    lenderName: lender.name,
+    borrower: borrower._id,
+    borrowerName: borrower._id.equals(lender._id)
+      ? 'Society (project funding)'
+      : `${borrower.name} / Society project funding`,
+    amount: payAmount,
+    amountSettled: 0,
+    status: 'open',
+    note: note?.trim()
+      || `Internal borrow from ${lender.name} advance to cover book shortfall for ${investment.investmentCode || 'project'}`,
+    createdBy: String(createdBy || 'Cashier').trim(),
+  });
+
+  const { creditInbound } = require('./bankLedgerService');
+  const bankLedger = await creditInbound({
+    type: 'deposit',
+    amount: payAmount,
+    referenceType: 'InternalBorrowing',
+    referenceId: borrowing._id,
+    note: `Advance released to book for project payment shortfall · ${investment.investmentCode || ''} · lender ${lender.name}`,
+    createdBy,
+    paymentChannel: 'cash',
+  });
+
+  const funding = await getCashierPaymentFundingSnapshot(investment);
+  return {
+    borrowing,
+    bankLedger,
+    bookBalance: bankLedger?.ledger?.bookBalance ?? funding.bookBalance,
+    amountCovered: payAmount,
+    funding,
+    message: `Covered ${formatMoney(payAmount, 2)} from ${lender.name}'s advance. Book balance now ${formatMoney(funding.bookBalance, 2)}. Shortfall remaining: ${formatMoney(funding.shortfall, 2)}.`,
+  };
+}
+
+/**
+ * Cover book-balance shortfall by moving cash from Emergency / Reserve Fund back into the book.
+ */
+async function coverCashierPaymentShortfallFromReserve({
+  investmentId,
+  amount,
+  createdBy = 'Cashier',
+  note = '',
+} = {}) {
+  const investment = await Investment.findById(investmentId);
+  if (!investment) {
+    const error = new Error('Investment not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (investment.status !== 'pending_cashier_payment') {
+    const error = new Error('Investment is not awaiting cashier payment.');
+    error.status = 400;
+    throw error;
+  }
+
+  const snapshot = await getCashierPaymentFundingSnapshot(investment);
+  if (!snapshot.openingSet) {
+    const error = new Error('Set the bank ledger opening balance before covering a payment shortfall.');
+    error.status = 409;
+    throw error;
+  }
+  if (!(snapshot.shortfall > 0.001)) {
+    const error = new Error('There is no book-balance shortfall to cover.');
+    error.status = 400;
+    throw error;
+  }
+
+  const payAmount = amount == null || amount === ''
+    ? Math.min(snapshot.shortfall, snapshot.reserveBalance)
+    : Number(Number(amount).toFixed(2));
+  if (!(payAmount > 0)) {
+    const error = new Error('Cover amount must be greater than zero.');
+    error.status = 400;
+    throw error;
+  }
+  if (payAmount > snapshot.shortfall + 0.001) {
+    const error = new Error(
+      `Cover amount exceeds shortfall of ${formatMoney(snapshot.shortfall, 2)}.`
+    );
+    error.status = 400;
+    throw error;
+  }
+  if (payAmount > snapshot.reserveBalance + 0.001) {
+    const error = new Error(
+      `Emergency reserve has only ${formatMoney(snapshot.reserveBalance, 2)} available.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const { debitReserve } = require('./emergencyReserveService');
+  const { creditInbound } = require('./bankLedgerService');
+
+  const reserveResult = await debitReserve(payAmount, {
+    type: 'project_cover',
+    note: note?.trim()
+      || `Released to book for cashier payment shortfall · ${investment.investmentCode || ''}`,
+    createdBy,
+    referenceType: 'Investment',
+    referenceId: investment._id,
+  });
+
+  const bankLedger = await creditInbound({
+    type: 'reserve_disbursement',
+    amount: payAmount,
+    referenceType: 'EmergencyReserveFund',
+    referenceId: reserveResult.fund?._id || null,
+    note: `Emergency/Reserve → book for project payment · ${investment.investmentCode || ''}`,
+    createdBy,
+  });
+
+  const funding = await getCashierPaymentFundingSnapshot(investment);
+  return {
+    reserve: {
+      balance: reserveResult.balance,
+      entry: reserveResult.entry,
+    },
+    bankLedger,
+    bookBalance: bankLedger?.ledger?.bookBalance ?? funding.bookBalance,
+    amountCovered: payAmount,
+    funding,
+    message: `Covered ${formatMoney(payAmount, 2)} from Emergency / Reserve Fund. Book balance now ${formatMoney(funding.bookBalance, 2)}. Shortfall remaining: ${formatMoney(funding.shortfall, 2)}.`,
+  };
+}
+
 async function completeCashierPayment(investmentId, {
   cashierName = 'Cashier',
   note = '',
@@ -904,6 +1210,24 @@ async function completeCashierPayment(investmentId, {
     throw error;
   }
 
+  const fundingCheck = await getCashierPaymentFundingSnapshot(investment);
+  if (!fundingCheck.openingSet) {
+    const error = new Error('Set the bank ledger opening balance before completing payment.');
+    error.status = 409;
+    error.code = 'OPENING_BALANCE_REQUIRED';
+    error.funding = fundingCheck;
+    throw error;
+  }
+  if (fundingCheck.hasShortfall) {
+    const error = new Error(
+      `Insufficient book balance for this project payment. Required ${formatMoney(fundingCheck.requiredAmount, 2)}; book ${formatMoney(fundingCheck.bookBalance, 2)}; shortfall ${formatMoney(fundingCheck.shortfall, 2)}. Cover from member advance or Emergency/Reserve Fund first.`
+    );
+    error.status = 409;
+    error.code = 'INSUFFICIENT_BOOK_BALANCE';
+    error.funding = fundingCheck;
+    throw error;
+  }
+
   const receiver = resolvePayoutReceiver(investment, {
     payoutReceiverRole,
     payoutReceiverName,
@@ -913,9 +1237,7 @@ async function completeCashierPayment(investmentId, {
     payoutBankName,
   });
 
-  const societyFundingAmount = Number(Number(
-    investment.societyAmount > 0 ? investment.societyAmount : investment.amount
-  ).toFixed(2));
+  const societyFundingAmount = fundingCheck.requiredAmount;
 
   const savingsUpdate = await fundInvestmentFromMembers(investment._id, societyFundingAmount);
   investment.status = 'active';
@@ -930,10 +1252,10 @@ async function completeCashierPayment(investmentId, {
   investment.payoutBankName = receiver.bankName;
 
   let bankLedger = null;
-  try {
-    const { tryDebit } = require('./bankLedgerService');
-    if (societyFundingAmount > 0) {
-      bankLedger = await tryDebit({
+  if (societyFundingAmount > 0) {
+    const { debit } = require('./bankLedgerService');
+    try {
+      bankLedger = await debit({
         type: 'project_payout',
         amount: societyFundingAmount,
         referenceType: 'Investment',
@@ -944,9 +1266,17 @@ async function completeCashierPayment(investmentId, {
       if (bankLedger?.entry?._id) {
         investment.bankLedgerEntryId = bankLedger.entry._id;
       }
+    } catch (error) {
+      // Roll back activation if cash debit fails after member funding.
+      investment.status = 'pending_cashier_payment';
+      investment.cashierProcessedAt = null;
+      investment.cashierProcessedBy = '';
+      await investment.save();
+      error.status = error.status || 409;
+      error.code = error.code || 'INSUFFICIENT_BOOK_BALANCE';
+      error.funding = await getCashierPaymentFundingSnapshot(investment);
+      throw error;
     }
-  } catch (error) {
-    console.warn('[completeCashierPayment] bank ledger debit failed:', error.message);
   }
 
   await investment.save();
@@ -1260,6 +1590,10 @@ module.exports = {
   buildApprovalTracking,
   buildApprovalTrackingBatch,
   completeCashierPayment,
+  previewCashierPayment,
+  coverCashierPaymentShortfallFromAdvance,
+  coverCashierPaymentShortfallFromReserve,
+  getCashierPaymentFundingSnapshot,
   getInvestmentApprovalDetails,
   getInvestmentDisplayStatus,
   listCashierPaymentQueue,

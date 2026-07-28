@@ -254,6 +254,30 @@
           return;
         }
 
+        const isInvestmentCashierComplete = action.key === 'complete'
+          && String(action.path || '').includes('/api/admin/investments/')
+          && String(action.path || '').includes('/cashier-complete');
+
+        if (isInvestmentCashierComplete && typeof window.beginCashierCompletePayment === 'function') {
+          const investmentId = String(action.path).split('/')[4];
+          btn.disabled = true;
+          setMessage(container, t('approvals.working', 'Checking book balance…'));
+          try {
+            const queueMsg = document.getElementById('cashierQueueMessage');
+            await window.beginCashierCompletePayment(investmentId, { messageEl: queueMsg || null });
+            setMessage(container, t('approvals.actionSuccess', 'Action completed.'));
+            if (typeof options.onActionComplete === 'function') {
+              await options.onActionComplete(action, item);
+            } else {
+              await loadAndRender(container.id || container.getAttribute('id'), options);
+            }
+          } catch (error) {
+            setMessage(container, error.message || t('approvals.actionFailed', 'Unable to complete this approval action.'), true);
+            btn.disabled = false;
+          }
+          return;
+        }
+
         const confirmLabel = action.key === 'reject'
           ? t('approvals.confirmReject', 'Reject this request?')
           : t('approvals.confirmAccept', 'Accept this request?');
