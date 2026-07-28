@@ -33,10 +33,22 @@ test('CEO full-access bypass does not grant proxy member approvals', () => {
   assert.equal(userHasPermission({ role: 'developer', permissions: [] }, 'can_proxy_member_approvals'), true);
 });
 
-test('Cashier defaults include disbursement only (no approve permission)', () => {
+test('Cashier defaults include disbursement and Profit & Loss', () => {
   const cashier = getDefaultPermissions('cashier');
   assert.equal(cashier.includes('can_disburse_loans'), true);
+  assert.equal(cashier.includes('can_manage_profit'), true);
   assert.equal(cashier.includes('can_manage_loans'), false);
+});
+
+test('publicUserPayload grants Profit & Loss to cashier even with stale permissions', () => {
+  const cashierPayload = publicUserPayload({
+    _id: '3',
+    email: 'cashier2@example.com',
+    role: 'cashier',
+    name: 'Cashier Two',
+    permissions: ['can_manage_deposits'],
+  });
+  assert.equal(cashierPayload.permissions.includes('can_manage_profit'), true);
 });
 
 test('Project manager no longer reviews loans by default', () => {
@@ -64,4 +76,5 @@ test('publicUserPayload strips disbursement from CEO and grants it to cashier', 
     permissions: ['can_manage_deposits'],
   });
   assert.equal(cashierPayload.permissions.includes('can_disburse_loans'), true);
+  assert.equal(cashierPayload.permissions.includes('can_manage_profit'), true);
 });

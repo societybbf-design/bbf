@@ -168,6 +168,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
     'can_manage_withdrawals',
     'can_manage_refunds',
     'can_disburse_loans',
+    'can_manage_profit',
     'can_view_reports',
     'can_manage_chat',
     'can_manage_members',
@@ -280,6 +281,10 @@ function publicUserPayload(userDoc) {
   // Keep cashier loan-disbursement capability even if stored permissions predates the new key.
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_disburse_loans')) {
     permissions = [...permissions, 'can_disburse_loans'];
+  }
+  // Ensure cashiers retain Profit & Loss management even if stored permissions predate the grant.
+  if (normalizeRole(role) === 'cashier' && !permissions.includes('can_manage_profit')) {
+    permissions = [...permissions, 'can_manage_profit'];
   }
   // Never expose cashier-exclusive perms on non-cashier session payloads.
   if (normalizeRole(role) !== 'cashier') {

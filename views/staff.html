@@ -361,43 +361,267 @@
           <p id="cashierExitQueueMessage" class="message"></p>
         </div>
 
-        <!-- PROFIT POOL -->
+        <!-- PROFIT & LOSS (full Cashier access, matching CEO capabilities) -->
         <div class="panel-card hidden" data-staff-view="profit" id="profitPoolPanel">
           <div class="panel-card-header">
-            <h2 data-i18n="staffUi.profitDividends">Profit &amp; Dividends</h2>
-            <p class="text-secondary">Log monthly project profits and distribute equally to all active members. Credits/debits the bank ledger and generates a PDF report.</p>
+            <h2 data-i18n="nav.profitLoss">Profit &amp; Loss</h2>
+            <p class="text-secondary">Record investment profits and losses, distribute general profit, run automatic dividends, and manage the monthly profit pool — matching CEO Profit &amp; Loss capabilities.</p>
           </div>
+
           <div class="stats-grid">
             <div class="stat-card"><h3 id="profitPoolBalance">0.00</h3><p>Pool balance</p></div>
             <div class="stat-card"><h3 id="profitPoolBookBalance">—</h3><p>Live bank book balance</p></div>
           </div>
-          <form id="monthlyProfitForm" class="add-member-form">
-            <div class="form-row-2">
-              <div class="form-group">
-                <label data-i18n="staffUi.monthlyProfitAmount">Monthly profit / dividend amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
+
+          <section class="panel-card u-mt-1" id="staff-profit-investment">
+            <h3 data-i18n="admin.sections.recordInvestmentProfit">Record Investment Profit</h3>
+            <p class="table-subtitle">Enter an Investment ID to auto-load details, then record sale proceeds and distribute profit equally to members.</p>
+            <form id="staffInvestmentProfitForm" class="add-member-form investment-profit-form">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Investment ID
+                    <input type="text" name="investmentCode" class="profit-code-input" placeholder="INV-2026-0001" required />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Investor Name (auto-filled)
+                    <input type="text" name="investorName" class="profit-name-input" readonly placeholder="Auto-filled" />
+                  </label>
+                </div>
               </div>
-              <div class="form-group">
-                <label data-i18n="staffUi.sourceOptional">Source (optional)<input type="text" name="source" placeholder="Project or month label" /></label>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Date of Birth (auto-filled)
+                    <input type="text" name="dateOfBirth" class="profit-dob-input" readonly placeholder="Auto-filled" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Location (auto-filled)
+                    <input type="text" name="location" class="profit-location-input" readonly placeholder="Auto-filled" />
+                  </label>
+                </div>
               </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Investment Amount (auto-filled)
+                    <input type="text" name="investmentAmount" class="profit-amount-input" readonly placeholder="Auto-filled" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Sale / Return Amount (৳)
+                    <input type="number" name="saleAmount" class="profit-sale-input" min="0" step="0.01" placeholder="1500.00" />
+                  </label>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Profit Amount (৳)
+                    <input type="number" name="profitAmount" class="profit-profit-input" min="0.01" step="0.01" placeholder="Auto or manual" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Notes
+                    <input type="text" name="notes" placeholder="Sold after 12 months" />
+                  </label>
+                </div>
+              </div>
+              <input type="hidden" name="distributionType" value="equal" />
+              <p class="table-subtitle profit-lookup-status">Enter an Investment ID to load details.</p>
+              <button type="submit" class="primary-btn">Record &amp; Distribute Profit</button>
+              <p class="message profit-form-message"></p>
+            </form>
+          </section>
+
+          <section class="panel-card u-mt-1" id="staff-profit-investment-loss">
+            <h3 data-i18n="admin.sections.recordInvestmentLoss">Record Investment Loss</h3>
+            <p class="table-subtitle">If sale proceeds are below the invested amount, record the loss here. All members share the loss equally.</p>
+            <form id="staffInvestmentLossForm" class="add-member-form investment-loss-form">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Investment ID
+                    <input type="text" name="investmentCode" class="loss-code-input" placeholder="INV-2026-0001" required />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Investor Name (auto-filled)
+                    <input type="text" name="investorName" class="loss-name-input" readonly placeholder="Auto-filled" />
+                  </label>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Investment Amount (auto-filled)
+                    <input type="text" name="investmentAmount" class="loss-amount-invested-input" readonly placeholder="Auto-filled" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Sale / Return Amount (৳)
+                    <input type="number" name="saleAmount" class="loss-sale-input" min="0" step="0.01" placeholder="800.00" required />
+                  </label>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Loss Amount (৳)
+                    <input type="number" name="lossAmount" class="loss-amount-input" min="0.01" step="0.01" placeholder="Auto-calculated" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Notes
+                    <input type="text" name="notes" placeholder="Sold below cost" />
+                  </label>
+                </div>
+              </div>
+              <p class="table-subtitle loss-lookup-status">Enter an Investment ID and a sale amount lower than the investment.</p>
+              <button type="submit" class="primary-btn">Record &amp; Share Loss</button>
+              <p class="message loss-form-message"></p>
+            </form>
+          </section>
+
+          <section class="panel-card table-card-wide u-mt-1">
+            <h3 data-i18n="admin.sections.investmentProfitLossHistory">Investment Profit &amp; Loss History</h3>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Investment ID</th>
+                    <th>Invested</th>
+                    <th>Sale</th>
+                    <th>Profit / Loss</th>
+                    <th>Outcome</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="staffInvestmentProfitHistoryList">
+                  <tr><td colspan="7">Loading profit records...</td></tr>
+                </tbody>
+              </table>
             </div>
-            <div class="form-group">
-              <label>Note<input type="text" name="note" placeholder="Optional note" /></label>
-            </div>
-            <button type="submit" class="primary-btn" data-i18n="staffUi.logMonthlyProfit">Log monthly profit</button>
-          </form>
-          <form id="distributeProfitForm" class="add-member-form u-mt-1">
-            <div class="form-row-2">
+          </section>
+
+          <section class="panel-card u-mt-1" id="staff-profit-distribute">
+            <h3 data-i18n="admin.sections.generalProfitDistribution">General Profit Distribution</h3>
+            <p class="table-subtitle">Distribute a general profit amount equally to all active member accounts.</p>
+            <form id="staffProfitDistributionForm" class="add-member-form">
               <div class="form-group">
-                <label data-i18n="staffUi.distributeAmount">Distribute amount (blank = full pool)<input type="number" name="amount" min="0.01" step="0.01" placeholder="Full pool" /></label>
+                <label>Total Profit Amount (৳)
+                  <input type="number" name="totalAmount" min="0.01" step="0.01" placeholder="500.00" required />
+                </label>
+              </div>
+              <input type="hidden" name="distributionType" value="equal" />
+              <div class="form-group">
+                <label>Notes
+                  <input type="text" name="notes" placeholder="July 2026 profit distribution" />
+                </label>
+              </div>
+              <button type="submit" class="primary-btn">Distribute Profit</button>
+              <p id="staffProfitDistributionMessage" class="message"></p>
+            </form>
+          </section>
+
+          <section class="panel-card u-mt-1">
+            <h3 data-i18n="admin.sections.automaticDividend">Automatic Dividend (Savings + Profit)</h3>
+            <p class="table-subtitle">Calculate and distribute dividends weighted by each member's savings and profit balances.</p>
+            <form id="staffDividendPreviewForm" class="add-member-form">
+              <div class="form-group">
+                <label>Dividend Pool Amount (৳)
+                  <input type="number" name="totalAmount" id="staffDividendPoolAmount" min="0.01" step="0.01" placeholder="1000.00" required />
+                </label>
+              </div>
+              <button type="button" class="secondary-btn" id="staffPreviewDividendBtn">Preview Calculation</button>
+              <button type="submit" class="primary-btn">Distribute Dividend</button>
+              <p id="staffDividendMessage" class="message"></p>
+            </form>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Savings</th>
+                    <th>Profit</th>
+                    <th>Weight</th>
+                    <th>Dividend Share</th>
+                  </tr>
+                </thead>
+                <tbody id="staffDividendPreviewBody">
+                  <tr><td colspan="5">Enter a pool amount and click Preview Calculation.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel-card table-card-wide u-mt-1">
+            <h3 data-i18n="admin.sections.memberProfitStatus">Member Profit Status</h3>
+            <p class="table-subtitle" id="staffLastProfitDistribution">Last distribution: Not yet distributed</p>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Email</th>
+                    <th>Savings</th>
+                    <th>Current Profit</th>
+                  </tr>
+                </thead>
+                <tbody id="staffProfitMemberStatusList">
+                  <tr><td colspan="4">Loading members...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel-card table-card-wide u-mt-1">
+            <h3 data-i18n="admin.sections.generalProfitHistory">General Profit History</h3>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Total Amount</th>
+                    <th>Type</th>
+                    <th>Members</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="staffProfitHistoryList">
+                  <tr><td colspan="5">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel-card u-mt-1">
+            <h3 data-i18n="staffUi.profitDividends">Monthly Profit Pool</h3>
+            <p class="text-secondary" data-i18n="staffUi.profitPoolHelp">Log monthly project profits and distribute equally to all active members. Credits/debits the bank ledger and generates a PDF report.</p>
+            <form id="monthlyProfitForm" class="add-member-form">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label data-i18n="staffUi.monthlyProfitAmount">Monthly profit / dividend amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
+                </div>
+                <div class="form-group">
+                  <label data-i18n="staffUi.sourceOptional">Source (optional)<input type="text" name="source" placeholder="Project or month label" /></label>
+                </div>
               </div>
               <div class="form-group">
-                <label>Note<input type="text" name="note" placeholder="Equal distribution to members" /></label>
+                <label>Note<input type="text" name="note" placeholder="Optional note" /></label>
               </div>
-            </div>
-            <button type="submit" class="primary-btn" data-i18n="staffUi.distributeEqually">Distribute equally to members</button>
-          </form>
-          <p id="profitPoolMessage" class="message"></p>
-          <div id="profitPoolRecent" class="u-mt-1"></div>
+              <button type="submit" class="primary-btn" data-i18n="staffUi.logMonthlyProfit">Log monthly profit</button>
+            </form>
+            <form id="distributeProfitForm" class="add-member-form u-mt-1">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label data-i18n="staffUi.distributeAmount">Distribute amount (blank = full pool)<input type="number" name="amount" min="0.01" step="0.01" placeholder="Full pool" /></label>
+                </div>
+                <div class="form-group">
+                  <label>Note<input type="text" name="note" placeholder="Equal distribution to members" /></label>
+                </div>
+              </div>
+              <button type="submit" class="primary-btn" data-i18n="staffUi.distributeEqually">Distribute equally to members</button>
+            </form>
+            <p id="profitPoolMessage" class="message"></p>
+            <div id="profitPoolRecent" class="u-mt-1"></div>
+          </section>
         </div>
 
         <!-- ADVANCES & INTERNAL BORROWING -->
