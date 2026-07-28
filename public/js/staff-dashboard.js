@@ -660,7 +660,7 @@ function renderLedger(data) {
         <tr>
           <td>${escapeHtml(new Date(entry.createdAt).toLocaleString())}</td>
           <td>${escapeHtml(entry.type)}</td>
-          <td>${escapeHtml(entry.direction)}</td>
+          <td class="${entry.direction === 'debit' ? 'message error' : 'message success'}">${escapeHtml(entry.direction)}</td>
           <td>${money(entry.amount)}</td>
           <td>${money(entry.balanceAfter)}</td>
           <td>${escapeHtml(entry.note || '—')}</td>
@@ -4072,6 +4072,55 @@ function bindLedgerForms() {
         msg.classList.remove('success');
         msg.textContent = error.message;
       }
+    }
+  });
+
+  document.getElementById('ledgerManualExpenseForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('ledgerExpenseMessage') || document.getElementById('ledgerMessage');
+    const form = event.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    if (submitBtn) submitBtn.disabled = true;
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = 'Recording expense debit…';
+    }
+    try {
+      const response = await fetch('/api/admin/bank-ledger/expense', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expenseType: formData.get('expenseType'),
+          amount: formData.get('amount'),
+          recipient: formData.get('recipient'),
+          note: formData.get('note'),
+          paymentChannel: formData.get('paymentChannel') || 'cash',
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to record expense cash-out.');
+
+      if (msg) {
+        msg.classList.remove('error');
+        msg.classList.add('success');
+        msg.textContent = data.message
+          || `Expense debit recorded. Book balance now ${money(data.bookBalance)}.`;
+      }
+      form.reset();
+      const typeSelect = document.getElementById('ledgerExpenseType');
+      if (typeSelect) typeSelect.value = 'operational_expense';
+      invalidateStaffViewCache(['ledger', 'home', 'audit', 'deposits']);
+      await loadBankLedger();
+      if (data.bookBalance != null) applyLiveBookBalance(data.bookBalance);
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.classList.add('error');
+        msg.textContent = error.message || String(error);
+      }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 

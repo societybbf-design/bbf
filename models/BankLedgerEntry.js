@@ -13,8 +13,21 @@ const ENTRY_TYPES = [
   'loan_repayment',
   'reserve_allocation',
   'reserve_disbursement',
+  'operational_expense',
+  'office_cost',
+  'utility',
+  'miscellaneous',
+  'cash_out',
   'adjustment',
 ];
+
+const MANUAL_EXPENSE_TYPES = Object.freeze({
+  operational_expense: 'Operational Expense',
+  office_cost: 'Office Cost',
+  utility: 'Utility',
+  cash_out: 'Direct Cash Out',
+  miscellaneous: 'Miscellaneous',
+});
 
 const BankLedgerEntrySchema = new mongoose.Schema({
   type: {
@@ -76,5 +89,6 @@ const BankLedgerEntrySchema = new mongoose.Schema({
 });
 
 BankLedgerEntrySchema.statics.ENTRY_TYPES = ENTRY_TYPES;
+BankLedgerEntrySchema.statics.MANUAL_EXPENSE_TYPES = MANUAL_EXPENSE_TYPES;
 
 module.exports = mongoose.model('BankLedgerEntry', BankLedgerEntrySchema);

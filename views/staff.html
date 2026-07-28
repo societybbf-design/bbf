@@ -318,6 +318,55 @@
               </div>
             </div>
           </form>
+
+          <section class="panel-card u-mt-1 ledger-admin-only" id="ledgerManualExpenseSection">
+            <h3>Record Manual Expense / Cash Out</h3>
+            <p class="table-subtitle">Debit operational costs from the central book balance. Entries appear instantly in Recent ledger entries.</p>
+            <form id="ledgerManualExpenseForm" class="add-member-form">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Expense / cost type
+                    <select name="expenseType" id="ledgerExpenseType" required>
+                      <option value="operational_expense">Operational Expense</option>
+                      <option value="office_cost">Office Cost</option>
+                      <option value="utility">Utility</option>
+                      <option value="cash_out">Direct Cash Out</option>
+                      <option value="miscellaneous">Miscellaneous</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Amount (debit)
+                    <input type="number" name="amount" id="ledgerExpenseAmount" min="0.01" step="0.01" required placeholder="0.00" />
+                  </label>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Recipient / paid to
+                    <input type="text" name="recipient" id="ledgerExpenseRecipient" required placeholder="Name or entity" />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>Payment channel
+                    <select name="paymentChannel" id="ledgerExpenseChannel">
+                      <option value="cash">Cash</option>
+                      <option value="bank">Bank Transfer</option>
+                      <option value="mfs">Mobile Financial Services</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Description / note
+                  <input type="text" name="note" id="ledgerExpenseNote" required placeholder="What was this money spent on?" />
+                </label>
+              </div>
+              <button type="submit" class="primary-btn">Record expense debit</button>
+              <p id="ledgerExpenseMessage" class="message"></p>
+            </form>
+          </section>
+
           <p id="ledgerMessage" class="message"></p>
           <h3 class="u-mt-1" data-i18n="staffUi.recentLedgerEntries">Recent ledger entries</h3>
           <div class="table-wrapper">

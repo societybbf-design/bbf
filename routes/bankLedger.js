@@ -6,6 +6,8 @@ const {
   reconcile,
   getDailySummary,
   getEntryById,
+  listManualExpenseTypes,
+  recordManualExpense,
 } = require('../services/bankLedgerService');
 const { recordAdminActivity } = require('../services/activityLogService');
 const { clientIp } = require('../services/securityService');
@@ -103,6 +105,43 @@ router.post('/reconcile', manageDeposits, requirePasswordConfirmation, async (re
     return res.json(result);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to reconcile bank balance.' });
+  }
+});
+
+router.get('/expense-types', manageDeposits, async (req, res) => {
+  try {
+    return res.json({ types: listManualExpenseTypes() });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load expense types.' });
+  }
+});
+
+router.post('/expense', manageDeposits, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await recordManualExpense({
+      expenseType: req.body?.expenseType || req.body?.type,
+      amount: req.body?.amount,
+      recipient: req.body?.recipient || req.body?.paidTo || '',
+      note: req.body?.note || req.body?.description || '',
+      paymentChannel: req.body?.paymentChannel || req.body?.paymentMethod || 'cash',
+      paymentReference: req.body?.paymentReference || '',
+      createdBy: req.session?.user?.name || 'Cashier',
+    });
+    await recordAdminActivity({
+      action: 'ledger_manual_expense',
+      actor: req.session?.user || null,
+      details: {
+        expenseType: result.expenseType,
+        amount: result.amount,
+        recipient: result.recipient,
+        bookBalance: result.bookBalance,
+        entryId: result.entry?._id,
+      },
+      ip: clientIp(req),
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to record expense cash-out.' });
   }
 });
 
