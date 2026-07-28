@@ -3,6 +3,7 @@ const {
   queryAuditTransactions,
   AUDIT_CATEGORIES,
 } = require('../services/transactionAuditService');
+const { generateAuditTrailPdf } = require('../services/documentPdfService');
 const { resolveRequestLanguage } = require('../services/i18nService');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
@@ -27,7 +28,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/export.pdf', async (req, res) => {
+async function exportAuditPdf(req, res) {
   try {
     const result = await queryAuditTransactions({
       from: req.query.from,
@@ -48,8 +49,14 @@ router.get('/export.pdf', async (req, res) => {
     );
     return res.send(pdfBuffer);
   } catch (error) {
+    console.error('transaction audit PDF export failed:', error);
     return res.status(error.status || 500).json({ error: error.message || 'Unable to export audit trail PDF.' });
   }
-});
+}
+
+// Primary path used by Cashier UI
+router.get('/export.pdf', exportAuditPdf);
+// Compatibility alias (some clients/openers hit export_pdf)
+router.get('/export_pdf', exportAuditPdf);
 
 module.exports = router;
