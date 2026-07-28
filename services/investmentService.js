@@ -19,6 +19,84 @@ function splitAmountEqually(amount, memberCount) {
   });
 }
 
+/**
+ * Pure equal-share audit for project payment pre-check.
+ * Example: ৳50,000 across 5 members → ৳10,000 each.
+ * A member with only ৳5,000 available has shareDeficit ৳5,000.
+ *
+ * @param {number} requiredAmount Society project amount to fund
+ * @param {Array<{id?:*, name?:string, email?:string, savings?:number, advanceBalance?:number}>} memberBalances
+ */
+function calculateEqualShareMemberAudit(requiredAmount, memberBalances = []) {
+  const projectAmount = Number((Number(requiredAmount) || 0).toFixed(2));
+  const members = Array.isArray(memberBalances) ? memberBalances : [];
+  const memberCount = members.length;
+
+  if (!(projectAmount > 0) || memberCount < 1) {
+    return {
+      projectAmount,
+      memberCount,
+      equalShareBase: 0,
+      members: [],
+      shortMembers: [],
+      hasMemberShortfall: false,
+      totalShareDeficit: 0,
+      totalAvailable: 0,
+      totalExpected: 0,
+    };
+  }
+
+  const equalShares = splitAmountEqually(projectAmount, memberCount);
+  const equalShareBase = equalShares[0] || 0;
+
+  const rows = members.map((member, index) => {
+    const expectedShare = Number(equalShares[index] || 0);
+    const savings = Number((Number(member.savings || 0)).toFixed(2));
+    const advanceBalance = Number((Number(member.advanceBalance || 0)).toFixed(2));
+    const available = Number((savings + advanceBalance).toFixed(2));
+    // Exact deficit for this member's equal share (never negative).
+    const shareDeficit = Number(Math.max(0, expectedShare - available).toFixed(2));
+    const isShort = shareDeficit > 0.001;
+
+    return {
+      id: member.id || member._id || null,
+      name: member.name || '',
+      email: member.email || '',
+      expectedShare,
+      savings,
+      advanceBalance,
+      available,
+      shareDeficit,
+      isShort,
+      // Cover amount for payment share gap is exactly the share deficit.
+      coverSuggested: shareDeficit,
+    };
+  });
+
+  const shortMembers = rows.filter((row) => row.isShort);
+  const totalShareDeficit = Number(
+    shortMembers.reduce((sum, row) => sum + Number(row.shareDeficit || 0), 0).toFixed(2)
+  );
+  const totalAvailable = Number(
+    rows.reduce((sum, row) => sum + Number(row.available || 0), 0).toFixed(2)
+  );
+  const totalExpected = Number(
+    rows.reduce((sum, row) => sum + Number(row.expectedShare || 0), 0).toFixed(2)
+  );
+
+  return {
+    projectAmount,
+    memberCount,
+    equalShareBase,
+    members: rows,
+    shortMembers,
+    hasMemberShortfall: totalShareDeficit > 0.001,
+    totalShareDeficit,
+    totalAvailable,
+    totalExpected,
+  };
+}
+
 function calculateInvestmentPerformance({ amount, withdrawals = 0, profit = 0, allocation = '' }) {
   const normalizedAmount = Number(amount) || 0;
   const normalizedWithdrawals = Number(withdrawals) || 0;
@@ -878,27 +956,28 @@ function resolvePayoutReceiver(investment, overrides = {}) {
 }
 
 /**
- * Dry-run: can each active member cover their equal project share from
- * savings + advance, and are current-month contribution dues settled?
+ * Dry-run backend audit: split project amount equally across active members and
+ * compute each member's exact share deficit (savings + advance vs equal share).
+ * Monthly contribution dues are attached as context only — they do not alone
+ * block direct completion; equal-share deficit does.
  */
 async function previewMemberShareFunding(requiredAmount) {
-  const normalizedAmount = Number((Number(requiredAmount) || 0).toFixed(2));
-  const members = await User.find({ role: 'member', status: 'active' }).sort({ createdAt: 1 });
-  if (!members.length) {
-    return {
-      yearMonth: null,
-      memberCount: 0,
-      members: [],
-      shortMembers: [],
-      hasMemberShortfall: false,
-      hasMonthlyGaps: false,
-      hasMemberProblems: false,
-      totalShareDeficit: 0,
-      totalMonthlyUnpaid: 0,
-    };
-  }
+  const members = await User.find({ role: 'member', status: 'active' })
+    .select('name email savings advanceBalance')
+    .sort({ createdAt: 1 })
+    .lean();
 
-  const equalShares = splitAmountEqually(normalizedAmount, members.length);
+  const audit = calculateEqualShareMemberAudit(
+    requiredAmount,
+    members.map((member) => ({
+      id: member._id,
+      name: member.name,
+      email: member.email,
+      savings: member.savings,
+      advanceBalance: member.advanceBalance,
+    }))
+  );
+
   const {
     yearMonthFromDate,
     listUnpaidMonthlyDues,
@@ -914,49 +993,39 @@ async function previewMemberShareFunding(requiredAmount) {
     unpaidDues.map((row) => [String(row.memberId?._id || row.memberId), row])
   );
 
-  const rows = members.map((member, index) => {
-    const expectedShare = equalShares[index];
-    const savings = Number(Number(member.savings || 0).toFixed(2));
-    const advanceBalance = Number(Number(member.advanceBalance || 0).toFixed(2));
-    const available = Number((savings + advanceBalance).toFixed(2));
-    const shareDeficit = Number(Math.max(0, expectedShare - available).toFixed(2));
-    const monthly = unpaidByMember.get(String(member._id));
+  const enriched = audit.members.map((row) => {
+    const monthly = unpaidByMember.get(String(row.id));
     const monthlyUnpaid = monthly ? Number(Number(monthly.unpaidAmount || 0).toFixed(2)) : 0;
-    const needsCover = shareDeficit > 0.001 || monthlyUnpaid > 0.001;
     return {
-      id: member._id,
-      name: member.name || '',
-      email: member.email || '',
-      expectedShare,
-      savings,
-      advanceBalance,
-      available,
-      shareDeficit,
+      ...row,
       monthlyUnpaid,
       monthlyStatus: monthly ? monthly.status : (monthlyUnpaid > 0 ? 'unpaid' : 'ok'),
-      needsCover,
-      coverSuggested: Number(Math.max(shareDeficit, monthlyUnpaid).toFixed(2)),
+      // Payment cover targets the equal-share deficit only.
+      needsCover: row.isShort,
+      coverSuggested: row.shareDeficit,
     };
   });
 
-  const shortMembers = rows.filter((row) => row.needsCover);
-  const totalShareDeficit = Number(
-    shortMembers.reduce((sum, row) => sum + Number(row.shareDeficit || 0), 0).toFixed(2)
-  );
+  const shortMembers = enriched.filter((row) => row.needsCover);
   const totalMonthlyUnpaid = Number(
-    shortMembers.reduce((sum, row) => sum + Number(row.monthlyUnpaid || 0), 0).toFixed(2)
+    enriched.reduce((sum, row) => sum + Number(row.monthlyUnpaid || 0), 0).toFixed(2)
   );
 
   return {
     yearMonth,
-    memberCount: members.length,
-    members: rows,
+    projectAmount: audit.projectAmount,
+    equalShareBase: audit.equalShareBase,
+    memberCount: audit.memberCount,
+    members: enriched,
     shortMembers,
-    hasMemberShortfall: totalShareDeficit > 0.001,
+    hasMemberShortfall: audit.hasMemberShortfall,
     hasMonthlyGaps: totalMonthlyUnpaid > 0.001,
-    hasMemberProblems: shortMembers.length > 0,
-    totalShareDeficit,
+    // Modal / hard-block gate: equal-share deficit only (matches cashier payment rule).
+    hasMemberProblems: audit.hasMemberShortfall,
+    totalShareDeficit: audit.totalShareDeficit,
     totalMonthlyUnpaid,
+    totalAvailable: audit.totalAvailable,
+    totalExpected: audit.totalExpected,
   };
 }
 
@@ -994,13 +1063,15 @@ async function getCashierPaymentFundingSnapshot(investment) {
   );
   const memberFunding = await previewMemberShareFunding(societyFundingAmount);
   const bookReady = openingSet && shortfall <= 0.001;
-  const canCompleteDirectly = bookReady && !memberFunding.hasMemberProblems;
+  // Direct complete only when book is ready AND every member can cover their equal share.
+  const canCompleteDirectly = bookReady && !memberFunding.hasMemberShortfall;
 
   return {
     investmentId: investment._id,
     investmentCode: investment.investmentCode || '',
     status: investment.status,
     requiredAmount: societyFundingAmount,
+    equalShareBase: memberFunding.equalShareBase,
     bookBalance,
     openingSet,
     shortfall,
@@ -1009,7 +1080,8 @@ async function getCashierPaymentFundingSnapshot(investment) {
     canCompleteDirectly,
     needsPopup: !canCompleteDirectly,
     memberFunding,
-    hasMemberProblems: memberFunding.hasMemberProblems,
+    hasMemberProblems: memberFunding.hasMemberShortfall,
+    hasMemberShortfall: memberFunding.hasMemberShortfall,
     reserveBalance,
     totalAdvanceAvailable,
     advanceMembers: advances,
@@ -1018,7 +1090,7 @@ async function getCashierPaymentFundingSnapshot(investment) {
       canUseAdvance: totalAdvanceAvailable > 0.001,
       maxCoverable: Number(
         Math.min(
-          Math.max(shortfall, memberFunding.totalShareDeficit, memberFunding.totalMonthlyUnpaid),
+          Math.max(shortfall, memberFunding.totalShareDeficit),
           reserveBalance + totalAdvanceAvailable
         ).toFixed(2)
       ),
@@ -1057,11 +1129,11 @@ async function previewCashierPayment(investmentId) {
 
   let message;
   if (funding.canCompleteDirectly) {
-    message = `All member accounts are balanced and book balance covers ${formatMoney(funding.requiredAmount, 2)}. Payment can complete directly.`;
+    message = `Equal share ${formatMoney(funding.equalShareBase || 0, 2)} × ${funding.memberFunding?.memberCount || 0} members is fully covered. Payment can complete directly.`;
   } else if (!funding.openingSet) {
     message = 'Bank ledger opening balance is not set. Set it before completing payment.';
-  } else if (funding.hasMemberProblems) {
-    message = `Member account gap(s) for ${shortLabel || 'one or more members'}. Cover from another member's advance or Emergency / Reserve Fund, then complete payment.`;
+  } else if (funding.hasMemberShortfall) {
+    message = `Equal-share deficit for ${shortLabel || 'one or more members'} (total ${formatMoney(funding.memberFunding?.totalShareDeficit || 0, 2)}). Cover from another member's advance or Emergency / Reserve Fund, then complete payment.`;
   } else if (funding.hasShortfall) {
     message = `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it from member advance (internal borrow) or Emergency / Reserve Fund before completing payment.`;
   } else {
@@ -1526,14 +1598,16 @@ async function completeCashierPayment(investmentId, {
     error.funding = fundingCheck;
     throw error;
   }
-  if (fundingCheck.hasMemberProblems) {
-    const names = (fundingCheck.memberFunding?.shortMembers || [])
-      .map((row) => row.name)
-      .filter(Boolean)
+  if (fundingCheck.hasMemberShortfall) {
+    const shortRows = fundingCheck.memberFunding?.shortMembers || [];
+    const detail = shortRows
       .slice(0, 5)
-      .join(', ');
+      .map((row) => `${row.name}: short ${formatMoney(row.shareDeficit, 2)} (needs ${formatMoney(row.expectedShare, 2)}, has ${formatMoney(row.available, 2)})`)
+      .join('; ');
     const error = new Error(
-      `One or more members cannot cover their share yet${names ? ` (${names})` : ''}. Cover the gap from advance or Emergency/Reserve Fund first.`
+      `Equal-share deficit of ${formatMoney(fundingCheck.memberFunding?.totalShareDeficit || 0, 2)}`
+      + (detail ? ` — ${detail}` : '')
+      + '. Cover from advance or Emergency/Reserve Fund first.'
     );
     error.status = 409;
     error.code = 'MEMBER_SHARE_SHORTFALL';
@@ -1908,6 +1982,8 @@ module.exports = {
   coverCashierPaymentShortfallFromReserve,
   getCashierPaymentFundingSnapshot,
   previewMemberShareFunding,
+  calculateEqualShareMemberAudit,
+  splitAmountEqually,
   getInvestmentApprovalDetails,
   getInvestmentDisplayStatus,
   listCashierPaymentQueue,

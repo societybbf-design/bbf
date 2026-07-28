@@ -16,8 +16,9 @@ test('Complete payment completes directly when canCompleteDirectly is true', () 
 });
 
 test('payment popup opens only when member/book problems need attention', () => {
-  assert.match(staffJs, /Accounts that are short/);
+  assert.match(staffJs, /Equal-share audit — accounts that are short/);
   assert.match(staffJs, /hasMemberProblems/);
+  assert.match(staffJs, /Exact deficit/);
   assert.match(staffJs, /borrowerId/);
   assert.match(staffJs, /coverMode/);
 });

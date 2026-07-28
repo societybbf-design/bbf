@@ -1011,16 +1011,20 @@ function renderCashierPaymentShortfallModal(funding) {
 
   const shortMembersTable = shortMembers.length ? `
     <div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
-      <h3>Accounts that are short</h3>
-      <p class="table-subtitle">Cover each gap from another member's advance or Emergency / Reserve Fund.</p>
+      <h3>Equal-share audit — accounts that are short</h3>
+      <p class="table-subtitle">
+        Project ${money(funding.requiredAmount)} ÷ ${Number(funding.memberFunding?.memberCount || shortMembers.length)} members
+        = <strong>${money(funding.equalShareBase || funding.memberFunding?.equalShareBase || 0)}</strong> each.
+        Deficit = equal share − (savings + advance).
+      </p>
       <div class="table-responsive">
         <table class="data-table">
           <thead>
             <tr>
               <th>Member</th>
-              <th>Share needed</th>
+              <th>Equal share</th>
               <th>Available</th>
-              <th>Share short</th>
+              <th>Exact deficit</th>
               <th>Month unpaid</th>
             </tr>
           </thead>
@@ -1030,13 +1034,14 @@ function renderCashierPaymentShortfallModal(funding) {
                 <td>${escapeHtml(m.name || '')}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
                 <td>${money(m.expectedShare)}</td>
                 <td>${money(m.available)} <span class="text-secondary">(sav ${money(m.savings)} + adv ${money(m.advanceBalance)})</span></td>
-                <td class="message error">${money(m.shareDeficit)}</td>
+                <td class="message error"><strong>${money(m.shareDeficit)}</strong></td>
                 <td class="${Number(m.monthlyUnpaid || 0) > 0 ? 'message error' : ''}">${money(m.monthlyUnpaid)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       </div>
+      <p class="table-subtitle">Total equal-share deficit: <strong>${money(funding.memberFunding?.totalShareDeficit || 0)}</strong></p>
     </div>
   ` : '';
 
@@ -1058,6 +1063,8 @@ function renderCashierPaymentShortfallModal(funding) {
     <div class="panel-card u-mb-1">
       <p><strong>Project:</strong> ${escapeHtml(funding.investmentCode || funding.investment?.investmentCode || '—')}</p>
       <p><strong>Required (society):</strong> ${money(funding.requiredAmount)}</p>
+      <p><strong>Equal share per member:</strong> ${money(funding.equalShareBase || funding.memberFunding?.equalShareBase || 0)}
+        <span class="text-secondary">(${Number(funding.memberFunding?.memberCount || 0)} active members)</span></p>
       <p><strong>Current book balance:</strong> ${money(funding.bookBalance)}</p>
       <p><strong>Book shortfall:</strong> <span class="${funding.hasShortfall ? 'message error' : 'message success'}">${money(funding.shortfall)}</span></p>
       <p><strong>Emergency / Reserve Fund:</strong> ${money(funding.reserveBalance)}</p>
@@ -1425,14 +1432,13 @@ async function beginCashierCompletePayment(investmentId, { messageEl = null, onD
       const payload = await executeCashierCompletePayment(id, { messageEl });
       return finish({ completed: true, payload });
     } catch (error) {
-      if (error.funding && error.funding.needsPopup) {
+      if (error.funding && (error.funding.needsPopup || error.funding.hasMemberProblems || error.funding.hasShortfall)) {
         await openCashierPaymentShortfallModal(id, {
           onDone,
           preloaded: error.funding,
         });
         return null;
       }
-      if (typeof onDone === 'function') finish({ completed: false, error: error.message });
       throw error;
     }
   }
