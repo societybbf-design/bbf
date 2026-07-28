@@ -110,16 +110,189 @@
     return 'ghost-btn';
   }
 
-  function detailsHtml(item) {
+  function formatMoneyLocal(value) {
+    if (value == null || value === '') return '';
+    if (global.formatMoney) {
+      try {
+        return global.formatMoney(Number(value), 2);
+      } catch (_) {
+        // fall through
+      }
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    return `৳${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  function humanizeKey(key) {
+    return String(key || '')
+      .replace(/_/g, ' ')
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^./, (c) => c.toUpperCase());
+  }
+
+  function pushDetailRow(rows, label, value) {
+    if (value == null || value === '') return;
+    if (typeof value === 'boolean') {
+      rows.push([label, value ? 'Yes' : 'No']);
+      return;
+    }
+    if (typeof value === 'object') return;
+    rows.push([label, String(value)]);
+  }
+
+  function extractInvestmentDetails(data) {
     const rows = [];
-    if (item.status) rows.push(['Status', item.status.replace(/_/g, ' ')]);
-    if (item.amountLabel) rows.push(['Amount', item.amountLabel]);
-    if (item.createdAt) rows.push(['Created', formatWhen(item.createdAt)]);
-    if (item.type) rows.push(['Type', item.type.replace(/_/g, ' ')]);
+    const investment = data?.investment || data || {};
+    const tracking = data?.approvalTracking || investment.approvalTracking || null;
+
+    pushDetailRow(rows, 'Project code', investment.investmentCode);
+    pushDetailRow(rows, 'Type', investment.investmentType);
+    pushDetailRow(rows, 'Status', String(investment.status || data?.status || '').replace(/_/g, ' '));
+    if (investment.amount != null) pushDetailRow(rows, 'Total amount', formatMoneyLocal(investment.amount));
+    if (investment.societyAmount != null) pushDetailRow(rows, 'Society share', formatMoneyLocal(investment.societyAmount));
+    if (investment.externalAmount != null && Number(investment.externalAmount) > 0) {
+      pushDetailRow(rows, 'External share', formatMoneyLocal(investment.externalAmount));
+    }
+    if (investment.societyOwnershipPct != null) {
+      pushDetailRow(rows, 'Ownership', `Society ${investment.societyOwnershipPct}% / Investor ${investment.investorOwnershipPct || 0}%`);
+    }
+    pushDetailRow(rows, 'Return mode', investment.returnMode === 'monthly' ? 'Monthly return' : (investment.returnMode || ''));
+    pushDetailRow(rows, 'Location', investment.location);
+    pushDetailRow(rows, 'Sector', investment.sector);
+    pushDetailRow(rows, 'Partner', investment.partner);
+
+    const investor = investment.investor;
+    if (investor && typeof investor === 'object') {
+      pushDetailRow(rows, 'Investor', [investor.name, investor.email].filter(Boolean).join(' · '));
+    } else {
+      pushDetailRow(rows, 'Investor', investment.investorName);
+    }
+
+    const pm = investment.projectManager;
+    if (pm && typeof pm === 'object') {
+      pushDetailRow(rows, 'Project manager', [pm.name, pm.email].filter(Boolean).join(' · '));
+    }
+
+    if (tracking) {
+      pushDetailRow(
+        rows,
+        'Member approvals',
+        `${tracking.approvedCount || 0} / ${tracking.totalMembers || tracking.requiredApprovals || 0}`
+      );
+      if (Array.isArray(tracking.pendingMembers) && tracking.pendingMembers.length) {
+        pushDetailRow(
+          rows,
+          'Awaiting',
+          tracking.pendingMembers.map((m) => m.name || m.email || 'Member').join(', ')
+        );
+      }
+      if (Array.isArray(tracking.approvedMembers) && tracking.approvedMembers.length) {
+        pushDetailRow(
+          rows,
+          'Approved by',
+          tracking.approvedMembers.map((m) => m.name || m.memberName || m.email || 'Member').join(', ')
+        );
+      }
+    }
+
+    if (investment.createdAt) pushDetailRow(rows, 'Created', formatWhen(investment.createdAt));
+    return rows;
+  }
+
+  function extractLoanDetails(data) {
+    const rows = [];
+    const loan = data?.loan || data || {};
+    pushDetailRow(rows, 'Member', loan.member?.name || loan.memberName);
+    pushDetailRow(rows, 'Email', loan.member?.email || loan.email);
+    pushDetailRow(rows, 'Loan type', loan.loanType);
+    if (loan.amount != null) pushDetailRow(rows, 'Amount', formatMoneyLocal(loan.amount));
+    pushDetailRow(rows, 'Purpose', loan.purpose);
+    pushDetailRow(rows, 'Status', String(loan.status || '').replace(/_/g, ' '));
+    pushDetailRow(rows, 'Payment method', loan.paymentMethod);
+    if (loan.createdAt) pushDetailRow(rows, 'Created', formatWhen(loan.createdAt));
+    return rows;
+  }
+
+  function extractGenericDetails(data, depth = 0) {
+    const rows = [];
+    if (!data || typeof data !== 'object' || depth > 1) return rows;
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (value == null || value === '') return;
+      if (['_id', 'id', '__v', 'password'].includes(key)) return;
+      if (Array.isArray(value)) {
+        if (!value.length) return;
+        if (typeof value[0] !== 'object') {
+          pushDetailRow(rows, humanizeKey(key), value.join(', '));
+        } else if (value.length <= 8) {
+          const summary = value
+            .map((row) => row?.name || row?.memberName || row?.email || row?.investmentCode || '')
+            .filter(Boolean)
+            .join(', ');
+          if (summary) pushDetailRow(rows, humanizeKey(key), summary);
+        }
+        return;
+      }
+      if (typeof value === 'object') {
+        if (value.name || value.email) {
+          pushDetailRow(rows, humanizeKey(key), [value.name, value.email].filter(Boolean).join(' · '));
+        }
+        return;
+      }
+      if (/(amount|balance|fee|price|settlement)/i.test(key) && Number.isFinite(Number(value))) {
+        pushDetailRow(rows, humanizeKey(key), formatMoneyLocal(value));
+        return;
+      }
+      if (/(date|At)$/i.test(key) || key === 'createdAt' || key === 'updatedAt') {
+        pushDetailRow(rows, humanizeKey(key), formatWhen(value) || String(value));
+        return;
+      }
+      pushDetailRow(rows, humanizeKey(key), value);
+    });
+    return rows;
+  }
+
+  function rowsFromApiPayload(data, item) {
+    if (!data || typeof data !== 'object') return [];
+    if (item?.type?.includes('investment') || data.investment || data.approvalTracking) {
+      return extractInvestmentDetails(data);
+    }
+    if (item?.type?.includes('loan') || data.loan || data.loanType) {
+      return extractLoanDetails(data);
+    }
+    return extractGenericDetails(data);
+  }
+
+  function mergeDetailRows(...groups) {
+    const seen = new Set();
+    const merged = [];
+    groups.flat().forEach(([label, value]) => {
+      const key = String(label).toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push([label, value]);
+    });
+    return merged;
+  }
+
+  function detailsHtml(item, apiPayload = null) {
+    const baseRows = [];
+    if (item.status) baseRows.push(['Status', item.status.replace(/_/g, ' ')]);
+    if (item.amountLabel) baseRows.push(['Amount', item.amountLabel]);
+    if (item.createdAt) baseRows.push(['Created', formatWhen(item.createdAt)]);
+    if (item.type) baseRows.push(['Type', item.type.replace(/_/g, ' ')]);
     Object.entries(item.details || {}).forEach(([key, value]) => {
       if (value == null || value === '') return;
-      rows.push([key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()), String(value)]);
+      if (typeof value === 'object') return;
+      baseRows.push([humanizeKey(key), String(value)]);
     });
+
+    const apiRows = rowsFromApiPayload(apiPayload, item);
+    const rows = mergeDetailRows(baseRows, apiRows);
+
     if (!rows.length) {
       return `<p class="approvals-inbox-meta">${escapeHtml(t('approvals.noExtraDetails', 'No additional details.'))}</p>`;
     }
@@ -237,7 +410,8 @@
           if (details) {
             const opening = details.classList.contains('hidden');
             details.classList.toggle('hidden', !opening);
-            if (opening) details.innerHTML = detailsHtml(item);
+            if (!opening) return;
+            details.innerHTML = `<p class="approvals-inbox-meta">${escapeHtml(t('common.loading', 'Loading…'))}</p>`;
           }
           if (action.path && action.method === 'GET') {
             try {
@@ -245,11 +419,22 @@
               const data = await response.json().catch(() => ({}));
               if (response.ok && details) {
                 details.classList.remove('hidden');
-                details.innerHTML = `${detailsHtml(item)}<pre style="white-space:pre-wrap;margin:.75rem 0 0;font-size:.82rem">${escapeHtml(JSON.stringify(data, null, 2).slice(0, 1800))}</pre>`;
+                details.innerHTML = detailsHtml(item, data);
+              } else if (details) {
+                details.classList.remove('hidden');
+                details.innerHTML = detailsHtml(item);
+                if (!response.ok && data.error) {
+                  details.innerHTML += `<p class="message error" style="margin-top:.5rem">${escapeHtml(data.error)}</p>`;
+                }
               }
             } catch {
-              // details panel already shows local fields
+              if (details) {
+                details.classList.remove('hidden');
+                details.innerHTML = detailsHtml(item);
+              }
             }
+          } else if (details) {
+            details.innerHTML = detailsHtml(item);
           }
           return;
         }
