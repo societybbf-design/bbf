@@ -3,6 +3,9 @@ const Investment = require('../models/Investment');
 const {
   approveInvestmentByMember,
   completeCashierPayment,
+  previewCashierPayment,
+  coverCashierPaymentShortfallFromAdvance,
+  coverCashierPaymentShortfallFromReserve,
   createSocietyInvestment,
   deleteInvestment,
   getGroupedSocietyInvestments,
@@ -185,6 +188,52 @@ router.post('/:id/liquidate', requirePermission('can_manage_investments', 'can_m
   }
 });
 
+router.get('/:id/cashier-payment-check', requirePermission('can_manage_deposits', 'can_manage_investments'), async (req, res) => {
+  try {
+    const result = await previewCashierPayment(req.params.id);
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to check payment funding.' });
+  }
+});
+
+router.post('/:id/cashier-cover-advance', requirePermission('can_manage_deposits', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await coverCashierPaymentShortfallFromAdvance({
+      investmentId: req.params.id,
+      lenderId: req.body?.lenderId || req.body?.memberId,
+      amount: req.body?.amount,
+      note: req.body?.note || '',
+      createdBy: req.session?.user?.name || 'Cashier',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to cover shortfall from advance.',
+      code: error.code || null,
+      funding: error.funding || null,
+    });
+  }
+});
+
+router.post('/:id/cashier-cover-reserve', requirePermission('can_manage_deposits', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await coverCashierPaymentShortfallFromReserve({
+      investmentId: req.params.id,
+      amount: req.body?.amount,
+      note: req.body?.note || '',
+      createdBy: req.session?.user?.name || 'Cashier',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to cover shortfall from reserve.',
+      code: error.code || null,
+      funding: error.funding || null,
+    });
+  }
+});
+
 router.post('/:id/cashier-complete', requirePermission('can_manage_deposits', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await completeCashierPayment(req.params.id, {
@@ -199,7 +248,11 @@ router.post('/:id/cashier-complete', requirePermission('can_manage_deposits', 'c
     });
     return res.json(result);
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to complete cashier payment.' });
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to complete cashier payment.',
+      code: error.code || null,
+      funding: error.funding || null,
+    });
   }
 });
 

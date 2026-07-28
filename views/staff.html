@@ -1319,6 +1319,28 @@
     </div>
   </div>
 
+  <div id="cashierPaymentShortfallModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="cashierPaymentShortfallTitle">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <div>
+          <h2 id="cashierPaymentShortfallTitle">Book balance shortfall</h2>
+          <p class="table-subtitle" id="cashierPaymentShortfallSubtitle">Cover the gap from advance or Emergency / Reserve Fund, then complete payment.</p>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="modal-close" id="cashierPaymentShortfallClose" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <div id="cashierPaymentShortfallContent" class="member-profile-content">
+        <p class="text-secondary">Checking funding…</p>
+      </div>
+      <p id="cashierPaymentShortfallMessage" class="message"></p>
+      <div class="inline-actions u-mt-1" style="justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;">
+        <button type="button" class="secondary-btn" id="cashierPaymentShortfallCancel">Cancel</button>
+        <button type="button" class="primary-btn" id="cashierPaymentShortfallComplete" disabled>Complete payment</button>
+      </div>
+    </div>
+  </div>
+
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="/static/js/i18n.js"></script>
   <script src="/static/js/pdf-language.js"></script>
