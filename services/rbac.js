@@ -131,6 +131,11 @@ const PERMISSIONS = Object.freeze([
     label: 'Manage platform security',
     description: 'Absolute account control, lockouts, OTP recovery, and email updates (User Management).',
   },
+  {
+    key: 'can_proxy_member_approvals',
+    label: 'Proxy member approvals',
+    description: 'Record society member votes on behalf of absent members from User Management (does not affect CEO or Cashier steps).',
+  },
 ]);
 
 const PERMISSION_KEYS = Object.freeze(PERMISSIONS.map((p) => p.key));
@@ -138,13 +143,16 @@ const PERMISSION_KEYS = Object.freeze(PERMISSIONS.map((p) => p.key));
 /** Permissions that must never be auto-granted via CEO/developer full-access bypass. */
 const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_disburse_loans']);
 
+/** User Management–only permissions (developer role or explicit grant — not CEO full-access bypass). */
+const UM_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_manage_security', 'can_proxy_member_approvals']);
+
 const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
   developer: PERMISSION_KEYS.filter((key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)),
   ceo: PERMISSION_KEYS.filter(
-    (key) => key !== 'can_manage_security' && !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
+    (key) => !UM_EXCLUSIVE_PERMISSIONS.includes(key) && !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
   ),
   admin: PERMISSION_KEYS.filter(
-    (key) => key !== 'can_manage_security' && !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
+    (key) => !UM_EXCLUSIVE_PERMISSIONS.includes(key) && !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
   ),
   project_manager: [
     'can_manage_members',
@@ -225,12 +233,23 @@ function isCashierExclusivePermission(permissionKey) {
   return CASHIER_EXCLUSIVE_PERMISSIONS.includes(permissionKey);
 }
 
+function isUmExclusivePermission(permissionKey) {
+  return UM_EXCLUSIVE_PERMISSIONS.includes(permissionKey);
+}
+
 function userHasPermission(user, permissionKey) {
   if (!user) return false;
 
   // Loan payout/repayment is Cashier-only — never granted by CEO/developer full-access bypass.
   if (isCashierExclusivePermission(permissionKey)) {
     return normalizeRole(user.role) === 'cashier';
+  }
+
+  // User Management–only actions — developer role or explicit permission grant.
+  if (isUmExclusivePermission(permissionKey)) {
+    if (isDeveloperRole(user.role)) return true;
+    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+    return perms.includes(permissionKey);
   }
 
   if (isAbsoluteControlRole(user.role) || isFullAccessRole(user.role)) return true;
@@ -266,6 +285,11 @@ function publicUserPayload(userDoc) {
   if (normalizeRole(role) !== 'cashier') {
     permissions = permissions.filter((key) => !isCashierExclusivePermission(key));
   }
+  // UM-exclusive perms only when explicitly granted (developer role handled above).
+  if (!isDeveloperRole(role)) {
+    const explicit = new Set(sanitizePermissions(userDoc.permissions || []));
+    permissions = permissions.filter((key) => !isUmExclusivePermission(key) || explicit.has(key));
+  }
 
   return {
     id: userDoc._id,
@@ -287,6 +311,7 @@ module.exports = {
   PERMISSIONS,
   PERMISSION_KEYS,
   CASHIER_EXCLUSIVE_PERMISSIONS,
+  UM_EXCLUSIVE_PERMISSIONS,
   DEFAULT_PERMISSIONS_BY_ROLE,
   DASHBOARD_PATHS,
   normalizeRole,
@@ -297,6 +322,7 @@ module.exports = {
   getDefaultPermissions,
   sanitizePermissions,
   isCashierExclusivePermission,
+  isUmExclusivePermission,
   userHasPermission,
   userHasAnyPermission,
   dashboardPathForRole,

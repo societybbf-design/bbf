@@ -20,6 +20,17 @@ test('CEO retains loan review but not disbursement defaults', () => {
   const ceo = getDefaultPermissions('ceo');
   assert.equal(ceo.includes('can_manage_loans'), true);
   assert.equal(ceo.includes('can_disburse_loans'), false);
+  assert.equal(ceo.includes('can_proxy_member_approvals'), false);
+});
+
+test('Developer defaults include proxy member approvals', () => {
+  const developer = getDefaultPermissions('developer');
+  assert.equal(developer.includes('can_proxy_member_approvals'), true);
+});
+
+test('CEO full-access bypass does not grant proxy member approvals', () => {
+  assert.equal(userHasPermission({ role: 'ceo', permissions: [] }, 'can_proxy_member_approvals'), false);
+  assert.equal(userHasPermission({ role: 'developer', permissions: [] }, 'can_proxy_member_approvals'), true);
 });
 
 test('Cashier defaults include disbursement only (no approve permission)', () => {

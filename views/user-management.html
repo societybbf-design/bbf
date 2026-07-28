@@ -47,6 +47,10 @@
         <span class="nav-icon-wrap"><span class="nav-icon">📋</span></span>
         <span class="nav-label" data-i18n="um.securityAudit">Security Audit</span>
       </a>
+      <a href="#" class="nav-item" data-dev-tab="approvals">
+        <span class="nav-icon-wrap"><span class="nav-icon">✅</span></span>
+        <span class="nav-label">Member Approvals</span>
+      </a>
       <a href="#" class="nav-item" data-dev-tab="security">
         <span class="nav-icon-wrap"><span class="nav-icon">🔒</span></span>
         <span class="nav-label" data-i18n="um.mySecurity">My Security</span>
@@ -268,6 +272,18 @@
           </section>
         </section>
 
+        <section class="content-section hidden" data-dev-panel="approvals">
+          <section class="panel-card">
+            <h2>Member approval tracking</h2>
+            <p class="table-subtitle">Track which society members have approved pending projects or exit requests, and who is still outstanding. Proxy approval is for absent members only — CEO review and Cashier payment steps are unchanged.</p>
+            <div class="stats-grid u-mb-1" id="umApprovalSummary"></div>
+            <div id="umApprovalTrackingList">
+              <p class="table-subtitle">Loading pending approvals…</p>
+            </div>
+            <p id="umApprovalMessage" class="message"></p>
+          </section>
+        </section>
+
         <section class="content-section hidden" data-dev-panel="security">
           <section class="panel-card">
             <h2 data-i18n="um.changePasswordTitle">Change my password</h2>
@@ -291,6 +307,38 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <div id="umProxyApprovalModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="umProxyApprovalTitle">
+    <div class="modal-content">
+      <div class="modal-header um-modal-header">
+        <div class="um-modal-identity">
+          <p class="um-modal-eyebrow">Proxy member approval</p>
+          <h2 id="umProxyApprovalTitle">Approve on behalf of member</h2>
+          <p class="um-modal-email" id="umProxyApprovalSubtitle"></p>
+        </div>
+        <button type="button" class="modal-close" id="closeUmProxyModal" aria-label="Close">×</button>
+      </div>
+      <form id="umProxyApprovalForm" class="add-member-form">
+        <input type="hidden" name="workflowType" id="umProxyWorkflowType" />
+        <input type="hidden" name="entityId" id="umProxyEntityId" />
+        <input type="hidden" name="memberId" id="umProxyMemberId" />
+        <div class="form-group">
+          <label>
+            Reason (required)
+            <textarea name="reason" id="umProxyReason" rows="3" placeholder="e.g. Member unavailable due to illness" required minlength="3"></textarea>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            Your password (confirmation)
+            <input type="password" name="confirmPassword" autocomplete="current-password" required />
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Record proxy approval</button>
+        <p id="umProxyFormMessage" class="message"></p>
+      </form>
+    </div>
   </div>
 
   <div id="devUserModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="devUserModalTitle">

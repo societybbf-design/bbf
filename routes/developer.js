@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { requireAuth, requireDeveloper } = require('../middleware/auth');
+const { requireAuth, requireDeveloper, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const {
   listUsersForDeveloper,
   getDeveloperDashboardStats,
@@ -22,8 +22,15 @@ const {
   DEFAULT_PERMISSIONS_BY_ROLE,
 } = require('../services/rbac');
 const User = require('../models/User');
+const {
+  listPendingMemberApprovalQueues,
+  proxyApproveInvestment,
+  proxyApproveExit,
+} = require('../services/memberApprovalProxyService');
 
 router.use(requireAuth, requireDeveloper);
+
+const proxyMemberApprovals = requirePermission('can_proxy_member_approvals');
 
 router.get('/meta', (req, res) => {
   return res.json({
@@ -181,6 +188,43 @@ router.get('/audits', async (req, res) => {
     return res.json({ audits });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load audits.' });
+  }
+});
+
+router.get('/member-approvals/pending', async (req, res) => {
+  try {
+    const data = await listPendingMemberApprovalQueues();
+    return res.json(data);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load pending member approvals.' });
+  }
+});
+
+router.post('/member-approvals/investments/:id/proxy', proxyMemberApprovals, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await proxyApproveInvestment(
+      req.params.id,
+      req.body?.memberId,
+      req.session.user,
+      { reason: req.body?.reason, ip: clientIp(req) }
+    );
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to record proxy approval.' });
+  }
+});
+
+router.post('/member-approvals/exits/:id/proxy', proxyMemberApprovals, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await proxyApproveExit(
+      req.params.id,
+      req.body?.memberId,
+      req.session.user,
+      { reason: req.body?.reason, ip: clientIp(req) }
+    );
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to record proxy approval.' });
   }
 });
 

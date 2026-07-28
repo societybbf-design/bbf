@@ -97,17 +97,45 @@ function buildRedistributionPlan(remainingMembers, breakdown) {
   return plan;
 }
 
-function buildApprovalTracking(exitRequest) {
-  const eligible = (exitRequest.eligibleMembers || []).map((id) => String(id));
+function buildApprovalTracking(exitRequest, memberById = null) {
+  const eligible = (exitRequest.eligibleMembers || []).map((id) => String(id?._id || id));
   const approvedIds = new Set(
     (exitRequest.memberApprovals || []).map((row) => String(row.member?._id || row.member))
   );
+
+  const approvedMembers = [];
+  const pendingMembers = [];
+
+  for (const id of eligible) {
+    const member = memberById?.get?.(id);
+    const approval = (exitRequest.memberApprovals || []).find(
+      (row) => String(row.member?._id || row.member) === id
+    );
+    const row = {
+      id,
+      name: approval?.memberName || member?.name || 'Member',
+      email: member?.email || '',
+      approvedAt: approval?.approvedAt || null,
+      isProxied: Boolean(approval?.proxiedBy),
+      proxiedByName: approval?.proxiedByName || '',
+      proxyReason: approval?.proxyReason || '',
+    };
+    if (approvedIds.has(id)) approvedMembers.push(row);
+    else pendingMembers.push(row);
+  }
+
   return {
     departingApproved: Boolean(exitRequest.departingApproval?.approvedAt),
     departingApprovedAt: exitRequest.departingApproval?.approvedAt || null,
+    departingProxied: Boolean(exitRequest.departingApproval?.proxiedBy),
+    departingProxiedByName: exitRequest.departingApproval?.proxiedByName || '',
+    departingProxyReason: exitRequest.departingApproval?.proxyReason || '',
     approvedCount: approvedIds.size,
     totalMembers: eligible.length,
-    pendingMemberIds: eligible.filter((id) => !approvedIds.has(id)),
+    pendingCount: pendingMembers.length,
+    pendingMemberIds: pendingMembers.map((row) => row.id),
+    approvedMembers,
+    pendingMembers,
     allMembersApproved: eligible.length > 0 && eligible.every((id) => approvedIds.has(id)),
   };
 }
@@ -297,7 +325,7 @@ async function listPendingExitRequestsForMember(memberId) {
   return relevant.map(serializeExitRequest);
 }
 
-async function approveExitByDepartingMember(exitRequestId, memberId) {
+async function approveExitByDepartingMember(exitRequestId, memberId, { proxy = null } = {}) {
   const exitRequest = await MemberExitRequest.findById(exitRequestId);
   if (!exitRequest) {
     throw httpError('Exit request not found.', 404);
@@ -318,6 +346,12 @@ async function approveExitByDepartingMember(exitRequestId, memberId) {
     member: member._id,
     memberName: member.name,
     approvedAt: new Date(),
+    ...(proxy ? {
+      proxiedBy: proxy.proxiedBy,
+      proxiedByName: proxy.proxiedByName,
+      proxiedByRole: proxy.proxiedByRole,
+      proxyReason: proxy.proxyReason,
+    } : {}),
   };
   exitRequest.status = 'pending_member_approval';
   await exitRequest.save();
@@ -377,7 +411,7 @@ async function rejectExitByDepartingMember(exitRequestId, memberId, reason = '')
   };
 }
 
-async function approveExitByMember(exitRequestId, memberId) {
+async function approveExitByMember(exitRequestId, memberId, { proxy = null } = {}) {
   const exitRequest = await MemberExitRequest.findById(exitRequestId);
   if (!exitRequest) {
     throw httpError('Exit request not found.', 404);
@@ -411,6 +445,12 @@ async function approveExitByMember(exitRequestId, memberId) {
     member: member._id,
     memberName: member.name,
     approvedAt: new Date(),
+    ...(proxy ? {
+      proxiedBy: proxy.proxiedBy,
+      proxiedByName: proxy.proxiedByName,
+      proxiedByRole: proxy.proxiedByRole,
+      proxyReason: proxy.proxyReason,
+    } : {}),
   });
 
   const tracking = buildApprovalTracking(exitRequest);
