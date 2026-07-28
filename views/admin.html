@@ -57,10 +57,6 @@
         <span class="nav-icon-wrap"><span class="nav-icon">💰</span></span>
         <span class="nav-label" data-i18n="nav.deposits">Deposits</span>
       </a>
-      <a href="#investments" class="nav-item" data-page="investments" data-requires-permission="can_manage_investments">
-        <span class="nav-icon-wrap"><span class="nav-icon">📈</span></span>
-        <span class="nav-label" data-i18n="nav.investments">Investments</span>
-      </a>
       <a href="#projects" class="nav-item" data-page="projects" data-requires-permission="can_manage_investments">
         <span class="nav-icon-wrap"><span class="nav-icon">🏗️</span></span>
         <span class="nav-label" data-i18n="nav.projects">Project Management</span>
@@ -813,10 +809,11 @@
         </section>
       </section>
 
-      <section class="page-section" data-page-section="investments">
+      <section class="page-section" data-page-section="projects">
         <div class="page-actions">
-          <button id="openInvestmentModalBtn" class="primary-btn" type="button" data-i18n="admin.buttons.newInvestment">+ New Investment</button>
+          <button id="scrollToCreateProjectBtn" class="primary-btn" type="button" data-i18n="admin.buttons.newProject">+ New Project</button>
           <button id="openIouModalBtn" class="secondary-btn" type="button" data-i18n="admin.buttons.addInvestmentIou">+ Add Investment IOU</button>
+          <button id="refreshProjectsModuleBtn" class="secondary-btn" type="button" data-i18n="admin.buttons.refreshProjects">Refresh</button>
         </div>
 
         <div class="metrics-grid">
@@ -859,138 +856,6 @@
           </div>
         </div>
 
-        <section class="panel-card table-card-wide" id="pending-investment-approvals-panel">
-          <h2 data-i18n="admin.sections.approvalWorkflowQueue">Approval Workflow Queue</h2>
-          <p class="table-subtitle">Track member approvals and cashier payment status for each proposed investment.</p>
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th data-i18n="table.investmentId">Investment ID</th>
-                  <th data-i18n="table.investor">Investor</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.approved">Approved</th>
-                  <th data-i18n="table.pending">Pending</th>
-                  <th data-i18n="table.tracking">Tracking</th>
-                </tr>
-              </thead>
-              <tbody id="pendingInvestmentApprovalsList">
-                <tr><td colspan="8">Loading pending investments...</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div id="investmentApprovalDetailPanel" class="panel-card u-mt-1"></div>
-        </section>
-
-        <section class="panel-card table-card-wide investment-panel-running">
-          <h2 data-i18n="admin.sections.runningInvestments">Running Investments</h2>
-          <p class="table-subtitle">Active society investments with type, investor account, and assigned project manager.</p>
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th data-i18n="table.investmentId">Investment ID</th>
-                  <th data-i18n="table.investor">Investor</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.projectManager">Project Manager</th>
-                  <th data-i18n="table.location">Location</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.date">Date</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.actions">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="societyActiveInvestmentList">
-                <tr><td colspan="9">Loading running investments...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel-card table-card-wide" id="investor-portfolio-panel">
-          <div class="page-actions u-mb-075">
-            <div>
-              <h2 class="u-mb-0" data-i18n="admin.sections.investorPortfolio">Investor Portfolio</h2>
-              <p class="table-subtitle u-mt-035 u-mb-0">View every investment for a selected investor, grouped by investment type.</p>
-            </div>
-          </div>
-          <div class="form-row-2 u-mb-1">
-            <div class="form-group">
-              <label data-i18n="admin.forms.selectInvestor">
-                Select Investor
-                <select id="portfolioInvestorSelect">
-                  <option value="">Choose an investor…</option>
-                </select>
-              </label>
-            </div>
-            <div class="form-group u-flex-end">
-              <button type="button" class="secondary-btn" id="refreshPortfolioBtn" data-i18n="admin.buttons.refreshPortfolio">Refresh Portfolio</button>
-            </div>
-          </div>
-          <div id="investorPortfolioSummary" class="metrics-grid u-mb-1"></div>
-          <div id="investorPortfolioByType"></div>
-          <p id="investorPortfolioMessage" class="message"></p>
-        </section>
-
-        <section class="panel-card table-card-wide investment-panel-sold">
-          <h2 data-i18n="admin.sections.soldInvestments">Sold Investments</h2>
-          <p class="table-subtitle">Investments that have already been sold — profit or loss appears here.</p>
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th data-i18n="table.investmentId">Investment ID</th>
-                  <th data-i18n="table.investor">Investor</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.invested">Invested</th>
-                  <th data-i18n="table.saleAmount">Sale Amount</th>
-                  <th data-i18n="table.profitLoss">Profit / Loss</th>
-                  <th data-i18n="table.outcome">Outcome</th>
-                  <th data-i18n="table.soldDate">Sold Date</th>
-                  <th data-i18n="table.receipt">Receipt</th>
-                </tr>
-              </thead>
-              <tbody id="societySoldInvestmentList">
-                <tr><td colspan="9">Loading sold investments...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel-card table-card-wide">
-          <h2 data-i18n="admin.sections.investmentIous">Investment IOUs</h2>
-          <p class="table-subtitle">Record investment commitments before funds are allocated from the society pool.</p>
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th data-i18n="table.iouId">IOU ID</th>
-                  <th data-i18n="table.name">Name</th>
-                  <th data-i18n="table.dateOfBirth">Date of Birth</th>
-                  <th data-i18n="table.location">Location</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.date">Date</th>
-                  <th data-i18n="table.receipt">Receipt</th>
-                  <th data-i18n="table.action">Action</th>
-                </tr>
-              </thead>
-              <tbody id="investmentIouList">
-                <tr><td colspan="9">Loading IOUs...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-
-      <section class="page-section" data-page-section="projects">
-        <div class="page-actions">
-          <button id="scrollToCreateProjectBtn" class="primary-btn" type="button" data-i18n="admin.buttons.newProject">+ New Project</button>
-          <button id="refreshProjectsModuleBtn" class="secondary-btn" type="button" data-i18n="admin.buttons.refreshProjects">Refresh</button>
-        </div>
-
         <div class="metrics-grid">
           <div class="metric-card metric-card-1">
             <div class="metric-icon">🟢</div>
@@ -1028,6 +893,56 @@
             </div>
           </div>
         </div>
+
+        <section class="panel-card table-card-wide" id="pending-investment-approvals-panel">
+          <h2 data-i18n="admin.sections.approvalWorkflowQueue">Approval Workflow Queue</h2>
+          <p class="table-subtitle">Track member approvals and cashier payment status for each proposed project.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="table.investmentId">Investment ID</th>
+                  <th data-i18n="table.investor">Investor</th>
+                  <th data-i18n="table.type">Type</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.approved">Approved</th>
+                  <th data-i18n="table.pending">Pending</th>
+                  <th data-i18n="table.tracking">Tracking</th>
+                </tr>
+              </thead>
+              <tbody id="pendingInvestmentApprovalsList">
+                <tr><td colspan="8">Loading pending investments...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="investmentApprovalDetailPanel" class="panel-card u-mt-1"></div>
+        </section>
+
+        <section class="panel-card table-card-wide" id="investor-portfolio-panel">
+          <div class="page-actions u-mb-075">
+            <div>
+              <h2 class="u-mb-0" data-i18n="admin.sections.investorPortfolio">Investor Portfolio</h2>
+              <p class="table-subtitle u-mt-035 u-mb-0">View every investment for a selected investor, grouped by investment type.</p>
+            </div>
+          </div>
+          <div class="form-row-2 u-mb-1">
+            <div class="form-group">
+              <label data-i18n="admin.forms.selectInvestor">
+                Select Investor
+                <select id="portfolioInvestorSelect">
+                  <option value="">Choose an investor…</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-group u-flex-end">
+              <button type="button" class="secondary-btn" id="refreshPortfolioBtn" data-i18n="admin.buttons.refreshPortfolio">Refresh Portfolio</button>
+            </div>
+          </div>
+          <div id="investorPortfolioSummary" class="metrics-grid u-mb-1"></div>
+          <div id="investorPortfolioByType"></div>
+          <p id="investorPortfolioMessage" class="message"></p>
+        </section>
 
         <section class="panel-card card-form-wide" id="createProjectPanel">
           <h2 data-i18n="admin.sections.createProject">Create Project</h2>
@@ -1265,6 +1180,31 @@
               </thead>
               <tbody id="projectsClosedList">
                 <tr><td colspan="9">Loading closed projects...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-card table-card-wide">
+          <h2 data-i18n="admin.sections.investmentIous">Investment IOUs</h2>
+          <p class="table-subtitle">Record investment commitments before funds are allocated from the society pool.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="table.iouId">IOU ID</th>
+                  <th data-i18n="table.name">Name</th>
+                  <th data-i18n="table.dateOfBirth">Date of Birth</th>
+                  <th data-i18n="table.location">Location</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.date">Date</th>
+                  <th data-i18n="table.receipt">Receipt</th>
+                  <th data-i18n="table.action">Action</th>
+                </tr>
+              </thead>
+              <tbody id="investmentIouList">
+                <tr><td colspan="9">Loading IOUs...</td></tr>
               </tbody>
             </table>
           </div>

@@ -1165,6 +1165,10 @@ if (memberProfileModal) {
 }
 
 function navigateToPage(page, sectionId = null, { syncUrl = true } = {}) {
+  // Investments module was merged into Project Management.
+  if (page === 'investments') {
+    page = 'projects';
+  }
   if (typeof canOpenOpsPage === 'function' && !canOpenOpsPage(page)) {
     page = firstAllowedOpsPage();
   }
@@ -1216,7 +1220,6 @@ const ADMIN_PAGE_I18N_KEYS = {
   dashboard: 'dashboard',
   members: 'members',
   deposits: 'deposits',
-  investments: 'investments',
   projects: 'projects',
   profit: 'profit',
   sales: 'sales',
@@ -1267,13 +1270,9 @@ function updatePageContent(page, loanTab = null) {
       break;
     case 'payments':
       break;
-    case 'investments':
-      void loadInvestments();
-      void loadInvestmentFormOptions().then(() => loadInvestorPortfolio()).catch(() => {});
-      void loadInvestmentIous();
-      break;
     case 'projects':
       void loadProjectsModule();
+      void loadInvestmentIous();
       break;
     case 'profit':
       void loadInvestmentProfitHistory();
@@ -1487,7 +1486,7 @@ function applyOpsPermissionGate(user) {
 }
 
 function firstAllowedOpsPage() {
-  const preferred = ['deposits', 'withdrawals', 'members', 'profit', 'reports', 'messages', 'investments', 'projects', 'loans', 'settings', 'dashboard'];
+  const preferred = ['deposits', 'withdrawals', 'members', 'profit', 'reports', 'messages', 'projects', 'loans', 'settings', 'dashboard'];
   for (const page of preferred) {
     const nav = document.querySelector(`.nav-item[data-page="${page}"]:not(.hidden)`);
     if (nav) return page;
@@ -1981,8 +1980,28 @@ async function loadProjectsModule() {
     const open = [...pending, ...active];
     const closed = sold.filter((item) => ['sold', 'closed'].includes(item.status) || item.ledgerLockedAt || item.saleAmount != null);
     const monthly = monthlyData.projects || monthlyData.investments || active.filter((item) => item.returnMode === 'monthly');
+    const summary = listData.summary || {};
+
+    societyActiveInvestments = active;
+    societySoldInvestments = sold;
+    societyInvestments = listData.investments || [...active, ...sold];
 
     projectsModuleCache = { open, closed, monthly };
+
+    if (investmentTotalSavings) {
+      investmentTotalSavings.textContent = `${formatMoney(Number(summary.totalSavings || 0), 2)}`;
+    }
+    if (investmentActiveCount) {
+      investmentActiveCount.textContent = summary.activeCount ?? active.length;
+    }
+    if (investmentActiveInvested) {
+      investmentActiveInvested.textContent = `${formatMoney(Number(summary.activeInvested || 0), 2)}`;
+    }
+    if (investmentSoldCount) {
+      investmentSoldCount.textContent = summary.soldCount ?? sold.length;
+    }
+    applyInvestmentDashboardSummary(summary);
+    renderPendingInvestmentApprovals(pending);
 
     const openCount = document.getElementById('projectsOpenCount');
     const monthlyCount = document.getElementById('projectsMonthlyCount');
@@ -1999,6 +2018,8 @@ async function loadProjectsModule() {
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
       capitalEl.textContent = formatMoney(capital, 2);
     }
+
+    void loadInvestorPortfolio().catch(() => {});
 
     if (openBody) {
       openBody.innerHTML = open.length
@@ -2080,6 +2101,7 @@ function bindProjectsModule() {
   });
   document.getElementById('refreshProjectsModuleBtn')?.addEventListener('click', () => {
     void loadProjectsModule();
+    void loadInvestmentIous().catch(() => {});
   });
 
   ['projectTotalAmount', 'projectSocietyPct', 'projectInvestorPct'].forEach((id) => {
@@ -2358,6 +2380,10 @@ function resolveAdminBootPage() {
   const hashPage = (window.location.hash || '').replace(/^#/, '');
   if (hashPage === 'developer') {
     return { redirect: '/user-management' };
+  }
+  // Legacy Investments hash redirects into Project Management.
+  if (hashPage === 'investments') {
+    return { page: 'projects' };
   }
   if (handleAdminDeepLink()) {
     return { handled: true };
@@ -2936,7 +2962,7 @@ const adminDashboardPageMap = {
   deposits: 'deposits',
   savings: 'members',
   profit: 'profit',
-  investments: 'investments',
+  investments: 'projects',
 };
 
 function setActiveAdminDashboardCard(reportType) {
