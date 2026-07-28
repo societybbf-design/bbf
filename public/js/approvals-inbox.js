@@ -446,15 +446,29 @@
         if (isInvestmentCashierComplete && typeof window.beginCashierCompletePayment === 'function') {
           const investmentId = String(action.path).split('/')[4];
           btn.disabled = true;
-          setMessage(container, t('approvals.working', 'Checking book balance…'));
+          setMessage(container, t('approvals.working', 'Opening payment popup…'));
           try {
-            const queueMsg = document.getElementById('cashierQueueMessage');
-            await window.beginCashierCompletePayment(investmentId, { messageEl: queueMsg || null });
-            setMessage(container, t('approvals.actionSuccess', 'Action completed.'));
-            if (typeof options.onActionComplete === 'function') {
-              await options.onActionComplete(action, item);
+            const result = await new Promise((resolve, reject) => {
+              window.beginCashierCompletePayment(investmentId, {
+                messageEl: document.getElementById('cashierQueueMessage'),
+                onDone: (done) => resolve(done || { completed: false, cancelled: true }),
+              }).catch(reject);
+            });
+            if (result?.completed) {
+              setMessage(container, t('approvals.actionSuccess', 'Payment completed.'));
+              if (typeof options.onActionComplete === 'function') {
+                await options.onActionComplete(action, item);
+              } else {
+                await loadAndRender(container.id || container.getAttribute('id'), options);
+              }
             } else {
-              await loadAndRender(container.id || container.getAttribute('id'), options);
+              setMessage(
+                container,
+                result?.openLedger
+                  ? t('approvals.openLedgerHint', 'Set the bank opening balance in Bank Ledger, then try Complete payment again.')
+                  : t('approvals.paymentPendingFix', 'Payment popup closed. Fix any shortfall and try Complete payment again.')
+              );
+              btn.disabled = false;
             }
           } catch (error) {
             setMessage(container, error.message || t('approvals.actionFailed', 'Unable to complete this approval action.'), true);
