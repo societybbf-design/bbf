@@ -1446,55 +1446,8 @@ html:not([data-theme="light"]) .theme-toggle-btn .theme-icon-sun,
   color: var(--text-secondary, #64748b);
 }
 
-.member-loan-schedule-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  margin-bottom: 0.65rem;
-}
-
-.member-loan-schedule-header h3 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.member-loan-installment-table thead th {
-  white-space: nowrap;
-}
-
-.member-loan-status {
-  text-transform: none;
-  letter-spacing: 0.02em;
-  border-radius: 999px;
-  padding: 0.28rem 0.7rem;
-  font-size: 0.78rem;
-}
-
-.member-loan-status-paid {
-  background: rgba(22, 163, 74, 0.14);
-  color: #15803d;
-  border: 1px solid rgba(22, 163, 74, 0.28);
-}
-
-.member-loan-status-active {
-  background: rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
-  border: 1px solid rgba(37, 99, 235, 0.28);
-}
-
-.member-loan-status-pending {
-  background: rgba(217, 119, 6, 0.12);
-  color: #b45309;
-  border: 1px solid rgba(217, 119, 6, 0.28);
-}
-
-.member-loan-schedule-paid {
-  background: rgba(22, 163, 74, 0.04);
-}
-
-.member-loan-schedule-due,
-.member-loan-schedule-partial {
-  background: rgba(37, 99, 235, 0.04);
+.member-loan-tracking-note {
+  margin-top: 0.35rem;
 }
 
 @media (max-width: 900px) {

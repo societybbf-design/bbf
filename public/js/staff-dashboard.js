@@ -4134,7 +4134,6 @@ function syncCashierRepayAmountField({ force = false } = {}) {
   if (!amountInput || !summary) return;
 
   const remaining = Number(summary.availableToPay ?? summary.outstandingBalance ?? 0);
-  const suggested = Number(summary.suggestedInstallment || remaining || 0);
   const type = String(typeSelect?.value || 'partial');
   const isFull = type === 'full';
 
@@ -4149,44 +4148,11 @@ function syncCashierRepayAmountField({ force = false } = {}) {
 
   if (!force && cashierLoanRepayAmountDirty) return;
 
-  if (type === 'installment' && suggested > 0) {
-    amountInput.value = suggested.toFixed(2);
-  } else if (!amountInput.value || force) {
-    // Partial / custom: leave blank or keep a light suggestion without locking.
-    amountInput.value = suggested > 0 ? Math.min(suggested, remaining).toFixed(2) : '';
+  // Partial / custom: leave amount editable; clear only when forcing a fresh load.
+  if (force) {
+    amountInput.value = '';
   }
   cashierLoanRepayAmountDirty = false;
-}
-
-function formatLoanScheduleStatus(status) {
-  if (status === 'paid') return 'Paid';
-  if (status === 'partial') return 'Partial';
-  if (status === 'due') return 'Due now';
-  return 'Upcoming';
-}
-
-function renderCashierLoanSchedule(schedule) {
-  const body = document.getElementById('cashierLoanScheduleBody');
-  if (!body) return;
-  const rows = schedule?.rows || [];
-  if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="5">No installment schedule available.</td></tr>';
-    return;
-  }
-  body.innerHTML = rows.map((row) => {
-    const statusClass = row.status === 'paid'
-      ? 'cashier-loan-schedule-paid'
-      : (row.status === 'due' || row.status === 'partial' ? 'cashier-loan-schedule-due' : '');
-    return `
-      <tr>
-        <td>${row.period}</td>
-        <td>${row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—'}</td>
-        <td>${money(row.amount)}</td>
-        <td>${money(row.paidToward)}</td>
-        <td class="${statusClass}">${escapeHtml(formatLoanScheduleStatus(row.status))}</td>
-      </tr>
-    `;
-  }).join('');
 }
 
 function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
@@ -4194,7 +4160,7 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
   const originalEl = document.getElementById('cashierLoanDetailOriginal');
   const paidEl = document.getElementById('cashierLoanDetailPaid');
   const remainingEl = document.getElementById('cashierLoanDetailRemaining');
-  const statusEl = document.getElementById('cashierLoanDetailStatus');
+  const fundingEl = document.getElementById('cashierLoanDetailFunding');
   const metaEl = document.getElementById('cashierLoanDetailMeta');
   const hint = document.getElementById('cashierLoanRepayHint');
   const memberIdInput = document.getElementById('cashierLoanRepayMemberId');
@@ -4206,23 +4172,26 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
   const paid = Number(summary.totalRepaid || 0);
   const remaining = Number(summary.availableToPay ?? summary.outstandingBalance ?? 0);
   const name = memberMeta.name || summary.loan?.member?.name || 'Member';
+  const fundingLabel = summary.fundingSourceLabel
+    || (summary.fundingLenderName
+      ? `Internal borrow (${summary.fundingLenderName})`
+      : '—');
 
   if (originalEl) originalEl.textContent = money(original);
   if (paidEl) paidEl.textContent = money(paid);
   if (remainingEl) remainingEl.textContent = money(remaining);
-  if (statusEl) statusEl.textContent = summary.displayStatus || (summary.hasOutstandingLoan ? 'Active' : 'Completed / Paid');
+  if (fundingEl) fundingEl.textContent = fundingLabel;
   if (metaEl) {
-    const nextDue = summary.nextDueDate || summary.schedule?.nextDueDate;
-    const fundingLabel = summary.fundingSourceLabel || '';
     const borrowBits = (summary.openBorrowings || [])
       .filter((row) => Number(row.outstanding || 0) > 0)
       .map((row) => `${row.lenderName} ${money(row.outstanding)}`)
       .slice(0, 3);
     metaEl.innerHTML = `${escapeHtml(name)} · ${escapeHtml(summary.loanType || 'general')} loan`
+      + ` · ${escapeHtml(summary.displayStatus || (summary.hasOutstandingLoan ? 'Active' : 'Completed / Paid'))}`
       + (summary.disbursedAt ? ` · disbursed ${new Date(summary.disbursedAt).toLocaleDateString()}` : '')
-      + (nextDue && summary.hasOutstandingLoan ? ` · next due ${new Date(nextDue).toLocaleDateString()}` : '')
-      + (fundingLabel ? `<br><strong>Funding source:</strong> ${escapeHtml(fundingLabel)}` : '')
-      + (summary.fundingLenderName ? ` · lender(s): ${escapeHtml(summary.fundingLenderName)}` : '')
+      + (summary.fundingLenderName && fundingLabel && !String(fundingLabel).includes(summary.fundingLenderName)
+        ? ` · lender(s): ${escapeHtml(summary.fundingLenderName)}`
+        : '')
       + (Number(summary.fundingReserveOutstanding || 0) > 0
         ? ` · reserve still to replenish: ${money(summary.fundingReserveOutstanding)}`
         : '')
@@ -4232,7 +4201,6 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
   }
 
   if (memberIdInput) memberIdInput.value = memberMeta.memberId || '';
-  renderCashierLoanSchedule(summary.schedule);
 
   syncCashierRepayAmountField({ force: true });
 
@@ -4240,10 +4208,7 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
     if (!summary.hasOutstandingLoan) {
       hint.textContent = 'This loan is fully paid (Completed / Paid). No further payment needed.';
     } else {
-      hint.textContent = `Remaining due: ${money(remaining)}. Type any amount up to that (partial payments allowed).`
-        + (summary.suggestedInstallment
-          ? ` Suggested installment: ${money(summary.suggestedInstallment)}.`
-          : '')
+      hint.textContent = `Remaining due: ${money(remaining)}. Type any custom amount up to that (for example 2000 today, more later).`
         + ((summary.openBorrowings || []).some((r) => Number(r.outstanding || 0) > 0)
           || Number(summary.fundingReserveOutstanding || 0) > 0
           ? ' Recording a payment auto-refunds internal-borrow lenders and/or replenishes Emergency / Reserve Fund.'

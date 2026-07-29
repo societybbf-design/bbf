@@ -1160,9 +1160,7 @@ async function disburseLoanApplication(loanId, {
   workingLoan.outstandingBalance = amount;
   workingLoan.totalRepaid = 0;
   workingLoan.repaymentStatus = 'active';
-  if (!workingLoan.installmentMonths) {
-    workingLoan.installmentMonths = 12;
-  }
+  // Flexible open repayment: no installment schedule is generated on disbursal.
   await workingLoan.save();
 
   const member = workingLoan.member;

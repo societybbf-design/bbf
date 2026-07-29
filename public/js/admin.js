@@ -3611,7 +3611,6 @@ function buildLoanDecisionSummary(loan = {}) {
 function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}, repayments = []) {
   const hasOutstanding = Boolean(loanSummary.hasOutstandingLoan);
   const availableToPay = Number(loanSummary.availableToPay || 0);
-  const suggestedInstallment = Number(loanSummary.suggestedInstallment || 0);
   const pendingTransferLoans = loans.filter((loan) => loan.status === 'approved');
   const cashierCanPay = canDisburseLoansInSession();
 
@@ -3650,7 +3649,7 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
   const repaymentRows = repayments.length ? repayments.map((item) => `
     <tr>
       <td>${new Date(item.createdAt).toLocaleString()}</td>
-      <td>${item.repaymentType === 'full' ? 'Full' : (item.repaymentType === 'partial' ? 'Partial' : 'Installment')}</td>
+      <td>${item.repaymentType === 'full' ? 'Full' : 'Partial'}</td>
       <td>${formatMoney(Number(item.amount || 0), 2)}</td>
       <td>${formatPaymentMethodLabel(item.paymentMethod)}</td>
       <td>${formatLoanStatusBadge(item.status)}</td>
@@ -3667,22 +3666,21 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
             <strong>${formatMoney(Number(loanSummary.outstandingBalance || 0), 2)}</strong>
           </article>
           <article class="profile-finance-card profile-finance-deposits">
-            <span>Total Repaid</span>
+            <span>Total Paid So Far</span>
             <strong>${formatMoney(Number(loanSummary.totalRepaid || 0), 2)}</strong>
           </article>
           <article class="profile-finance-card profile-finance-profit">
-            <span>Available to Pay Now</span>
+            <span>Remaining Due</span>
             <strong>${formatMoney(availableToPay, 2)}</strong>
           </article>
         </div>
-        <form class="admin-loan-repayment-form add-member-form" data-member-id="${memberId}" data-max-amount="${availableToPay}" data-suggested-amount="${suggestedInstallment}">
+        <form class="admin-loan-repayment-form add-member-form" data-member-id="${memberId}" data-max-amount="${availableToPay}">
           <div class="form-grid-2">
             <div class="form-group">
               <label>
                 Payment Type
                 <select name="repaymentType" class="admin-loan-repayment-type">
                   <option value="partial" selected>Partial / custom amount</option>
-                  <option value="installment">Suggested installment</option>
                   <option value="full">Full Payment</option>
                 </select>
               </label>
@@ -3710,7 +3708,7 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
             <div class="form-group">
               <label>
                 Note
-                <input type="text" name="adminNote" placeholder="Cash received at office, July installment..." />
+                <input type="text" name="adminNote" placeholder="Cash received at office..." />
               </label>
             </div>
           </div>
@@ -4417,7 +4415,6 @@ function bindProfileLoanProcessing(container, memberId, refreshProfile) {
   const amountInput = form.querySelector('.admin-loan-repayment-amount');
   const messageEl = form.querySelector('.admin-loan-repayment-message');
   const maxAmount = Number(form.dataset.maxAmount || amountInput?.max || 0);
-  const suggested = Number(form.dataset.suggestedAmount || 0);
 
   if (typeSelect && amountInput) {
     typeSelect.addEventListener('change', () => {
@@ -4426,9 +4423,6 @@ function bindProfileLoanProcessing(container, memberId, refreshProfile) {
         amountInput.readOnly = true;
       } else {
         amountInput.readOnly = false;
-        if (typeSelect.value === 'installment' && suggested > 0) {
-          amountInput.value = Math.min(suggested, maxAmount).toFixed(2);
-        }
       }
     });
   }

@@ -25,85 +25,6 @@ function money2(value) {
   return Number(Number(value || 0).toFixed(2));
 }
 
-/**
- * Build an equal-installment schedule from disbursement date for cashier/member display.
- * Payments already applied are marked paid/partial from totalRepaid.
- */
-function buildInstallmentSchedule(loan = {}) {
-  const original = money2(loan.amount);
-  const repaid = money2(loan.totalRepaid);
-  const outstanding = getLoanOutstandingBalance(loan);
-  const months = Math.max(1, Math.min(120, Number(loan.installmentMonths) || 12));
-  if (!(original > 0)) {
-    return {
-      installmentMonths: months,
-      installmentAmount: 0,
-      paidInstallments: 0,
-      remainingInstallments: 0,
-      suggestedInstallment: 0,
-      nextDueDate: null,
-      rows: [],
-    };
-  }
-
-  const baseInstallment = money2(original / months);
-  const start = loan.disbursedAt ? new Date(loan.disbursedAt) : new Date(loan.createdAt || Date.now());
-  let paidPool = repaid;
-  const rows = [];
-  let paidInstallments = 0;
-
-  for (let i = 1; i <= months; i += 1) {
-    const dueDate = new Date(start);
-    dueDate.setMonth(dueDate.getMonth() + i);
-    const amount = i === months
-      ? money2(original - baseInstallment * (months - 1))
-      : baseInstallment;
-
-    let status = 'upcoming';
-    let paidToward = 0;
-    if (paidPool >= amount - 0.009) {
-      status = 'paid';
-      paidToward = amount;
-      paidPool = money2(paidPool - amount);
-      paidInstallments += 1;
-    } else if (paidPool > 0) {
-      status = 'partial';
-      paidToward = paidPool;
-      paidPool = 0;
-    }
-
-    rows.push({
-      period: i,
-      dueDate: dueDate.toISOString(),
-      amount,
-      paidToward,
-      remaining: money2(Math.max(0, amount - paidToward)),
-      status,
-    });
-  }
-
-  // First unpaid/partial row is the current due installment.
-  const dueRow = rows.find((row) => row.status === 'partial' || row.status === 'upcoming');
-  if (dueRow && dueRow.status === 'upcoming') {
-    dueRow.status = 'due';
-  }
-
-  const remainingInstallments = rows.filter((row) => row.status !== 'paid').length;
-  const suggestedInstallment = outstanding > 0
-    ? money2(dueRow ? Math.min(outstanding, dueRow.remaining || dueRow.amount) : outstanding)
-    : 0;
-
-  return {
-    installmentMonths: months,
-    installmentAmount: baseInstallment,
-    paidInstallments,
-    remainingInstallments,
-    suggestedInstallment,
-    nextDueDate: dueRow?.dueDate || null,
-    rows,
-  };
-}
-
 function repaymentStatusLabel(loan = {}, outstandingBalance = null) {
   const outstanding = outstandingBalance == null
     ? getLoanOutstandingBalance(loan)
@@ -178,7 +99,6 @@ async function getMemberOutstandingSummary(memberId) {
   const loan = await getActiveOutstandingLoan(memberId);
   if (!loan) {
     const lastClearedLoan = await getLastClearedLoan(memberId);
-    const schedule = lastClearedLoan ? buildInstallmentSchedule(lastClearedLoan) : null;
     return {
       hasOutstandingLoan: false,
       loan: null,
@@ -193,7 +113,6 @@ async function getMemberOutstandingSummary(memberId) {
       lastClearedLoan,
       repaymentStatus: lastClearedLoan?.repaymentStatus || 'paid_off',
       displayStatus: lastClearedLoan ? 'Completed / Paid' : 'No active loan',
-      schedule,
       fundingSource: lastClearedLoan?.fundingSource || '',
       fundingSourceLabel: lastClearedLoan ? resolveLoanFundingSourceLabel(lastClearedLoan) : '',
       fundingLenderName: lastClearedLoan?.fundingLenderName || '',
@@ -205,7 +124,6 @@ async function getMemberOutstandingSummary(memberId) {
   const outstandingBalance = getLoanOutstandingBalance(loan);
   const pendingRepaymentAmount = await getPendingRepaymentAmount(loan._id);
   const availableToPay = Math.max(0, Number((outstandingBalance - pendingRepaymentAmount).toFixed(2)));
-  const schedule = buildInstallmentSchedule(loan);
 
   const openBorrowings = await InternalBorrowing.find({
     loan: loan._id,
@@ -239,9 +157,6 @@ async function getMemberOutstandingSummary(memberId) {
     lastClearedLoan: null,
     repaymentStatus: loan.repaymentStatus || 'active',
     displayStatus: repaymentStatusLabel(loan, outstandingBalance),
-    schedule,
-    suggestedInstallment: schedule.suggestedInstallment,
-    nextDueDate: schedule.nextDueDate,
     fundingSource: loan.fundingSource || '',
     fundingSourceLabel: resolveLoanFundingSourceLabel(loan),
     fundingLenderName: loan.fundingLenderName || '',
@@ -255,7 +170,7 @@ async function getMemberOutstandingSummary(memberId) {
 async function createLoanRepaymentRequest({
   memberId,
   amount,
-  repaymentType = 'installment',
+  repaymentType = 'partial',
   paymentMethod = 'cash',
   memberNote = '',
 }) {
@@ -301,7 +216,7 @@ async function createLoanRepaymentRequest({
     throw error;
   }
 
-  const normalizedType = repaymentType === 'full' ? 'full' : 'installment';
+  const normalizedType = repaymentType === 'full' ? 'full' : 'partial';
   const finalAmount = normalizedType === 'full' ? availableToPay : normalizedAmount;
 
   if (finalAmount <= 0) {
@@ -604,12 +519,10 @@ async function recordAdminLoanRepayment({
   const availableToPay = Math.max(0, outstandingBalance - pendingRepaymentAmount);
 
   const rawType = String(repaymentType || 'partial').toLowerCase().trim();
-  let normalizedType = 'partial';
-  if (rawType === 'full') normalizedType = 'full';
-  else if (rawType === 'installment') normalizedType = 'installment';
-  else normalizedType = 'partial';
+  // Legacy 'installment' clients map to flexible partial / custom amount.
+  const normalizedType = rawType === 'full' ? 'full' : 'partial';
 
-  // Full clears the loan; partial and installment both accept the cashier's typed amount.
+  // Full clears the loan; partial accepts any cashier-typed amount up to remaining due.
   const finalAmount = normalizedType === 'full' ? availableToPay : money2(normalizedAmount);
 
   if (finalAmount <= 0 || finalAmount > availableToPay + 0.001) {
@@ -738,7 +651,6 @@ module.exports = {
   getLoanOutstandingBalance,
   getActiveOutstandingLoan,
   getMemberOutstandingSummary,
-  buildInstallmentSchedule,
   repaymentStatusLabel,
   createLoanRepaymentRequest,
   recordAdminLoanRepayment,

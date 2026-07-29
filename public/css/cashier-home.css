@@ -1193,14 +1193,10 @@ html[data-theme="dark"] .cashier-collection-ring {
   display: none;
 }
 
-.cashier-loan-schedule-due {
-  color: #b45309;
-  font-weight: 600;
-}
-
-.cashier-loan-schedule-paid {
-  color: #15803d;
-  font-weight: 600;
+.cashier-loan-funding-value {
+  font-size: 1rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 @media (max-width: 768px) {

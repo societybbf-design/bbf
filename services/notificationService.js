@@ -362,7 +362,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text('Terms and Conditions:', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(11).fillColor('#374151');
-    doc.text('1. The borrower agrees to repay the loan amount according to the cooperative society rules and repayment schedule.');
+    doc.text('1. The borrower agrees to repay the loan amount according to the cooperative society rules through flexible repayments recorded by the Cashier.');
     doc.text('2. The loan was approved within the 80% savings eligibility limit of the cooperative.');
     doc.text('3. The borrower confirms that all information and supporting documents provided are accurate.');
     doc.text('4. Failure to repay may result in deductions from savings or other actions per society bylaws.');
@@ -413,7 +413,7 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
     doc.text(`Payment Date: ${paymentDate}`);
     doc.text(`Verified By: ${repayment.reviewedBy || adminName}`);
     doc.text(`Payment Method: ${formatPaymentMethodLabel(repayment.paymentMethod)}`);
-    doc.text(`Repayment Type: ${repayment.repaymentType === 'full' ? 'Full Payment' : 'Installment'}`);
+    doc.text(`Repayment Type: ${repayment.repaymentType === 'full' ? 'Full Payment' : 'Partial / Custom'}`);
     doc.moveDown(1);
 
     usePdfLatinFont(doc).fontSize(14).fillColor('#111827');

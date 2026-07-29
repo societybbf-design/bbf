@@ -8,15 +8,24 @@ const assert = require('node:assert/strict');
 const loanRepaymentService = require('../services/loanRepaymentService');
 const loanService = require('../services/loanService');
 const repayServiceJs = fs.readFileSync(path.join(__dirname, '../services/loanRepaymentService.js'), 'utf8');
+const loanServiceJs = fs.readFileSync(path.join(__dirname, '../services/loanService.js'), 'utf8');
 const staffJs = fs.readFileSync(path.join(__dirname, '../public/js/staff-dashboard.js'), 'utf8');
 const staffHtml = fs.readFileSync(path.join(__dirname, '../views/staff.html'), 'utf8');
 const modelJs = fs.readFileSync(path.join(__dirname, '../models/LoanRepayment.js'), 'utf8');
 const routesJs = fs.readFileSync(path.join(__dirname, '../routes/loans.js'), 'utf8');
 
-test('LoanRepayment model allows partial repayment type', () => {
+test('LoanRepayment model uses flexible full/partial types', () => {
   assert.match(modelJs, /'partial'/);
-  assert.match(modelJs, /'installment'/);
   assert.match(modelJs, /'full'/);
+  assert.match(modelJs, /default: 'partial'/);
+});
+
+test('no installment schedule generation remains in repayment service', () => {
+  assert.doesNotMatch(repayServiceJs, /function buildInstallmentSchedule/);
+  assert.doesNotMatch(repayServiceJs, /buildInstallmentSchedule,/);
+  assert.doesNotMatch(repayServiceJs, /suggestedInstallment/);
+  assert.doesNotMatch(repayServiceJs, /nextDueDate/);
+  assert.doesNotMatch(loanServiceJs, /installmentMonths = 12/);
 });
 
 test('cashier repayment desk supports manual partial amount entry', () => {
@@ -24,15 +33,16 @@ test('cashier repayment desk supports manual partial amount entry', () => {
   assert.match(staffHtml, /Amount received now/);
   assert.match(staffHtml, /cashierLoanRepayAmount/);
   assert.match(staffHtml, /inputmode="decimal"/);
+  assert.doesNotMatch(staffHtml, /Suggested installment/);
   assert.match(staffJs, /normalizeCashierRepayAmount/);
   assert.match(staffJs, /cashierLoanRepayAmountDirty/);
   assert.match(staffJs, /repaymentType/);
-  assert.match(staffJs, /partial payments allowed/i);
+  assert.match(staffJs, /custom amount/i);
 });
 
 test('recordAdminLoanRepayment accepts partial typed amounts and settles funding', () => {
   assert.match(repayServiceJs, /parseLooseMoney/);
-  assert.match(repayServiceJs, /normalizedType = 'partial'/);
+  assert.match(repayServiceJs, /normalizedType = rawType === 'full' \? 'full' : 'partial'/);
   assert.match(repayServiceJs, /settleLoanFundingOnRepayment/);
   assert.match(repayServiceJs, /fundingSettlement/);
   assert.match(repayServiceJs, /advanceRefunded/);
@@ -83,4 +93,9 @@ test('getLoanOutstandingBalance prefers stored outstandingBalance', () => {
     status: 'completed',
     outstandingBalance: 0,
   }), 0);
+});
+
+test('getMemberOutstandingSummary export exists without schedule builder', () => {
+  assert.equal(typeof loanRepaymentService.getMemberOutstandingSummary, 'function');
+  assert.equal(loanRepaymentService.buildInstallmentSchedule, undefined);
 });

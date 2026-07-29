@@ -168,10 +168,10 @@ const LoanApplicationSchema = new mongoose.Schema({
     enum: ['none', 'active', 'paid_off'],
     default: 'none',
   },
-  /** Planned equal monthly installments for schedule display (default 12). */
+  /** Legacy field — installment schedules are no longer generated or used. */
   installmentMonths: {
     type: Number,
-    default: 12,
+    required: false,
     min: 1,
     max: 120,
   },
