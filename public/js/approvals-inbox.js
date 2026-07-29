@@ -525,13 +525,13 @@
                   ...(action.body || {}),
                   paymentMethod: action.body?.paymentMethod || 'bank_transfer',
                   disbursementNote: action.body?.disbursementNote || 'Disbursed from Approvals inbox',
-                  fundingSource: action.body?.fundingSource || 'bank',
+                  fundingSource: '',
                 },
                 onDone: (done) => settle(done || { completed: false, cancelled: true }),
               }).then((outcome) => {
                 // Direct disbursement finished inside beginLoanDisbursePayment.
                 if (outcome?.completed) settle(outcome);
-                // Shortfall intercept opened the modal — wait for onDone when cashier closes it.
+                // Funding modal opened — wait for onDone when cashier closes it.
               }).catch(reject);
             });
             if (result?.completed) {
@@ -544,9 +544,7 @@
             } else {
               setMessage(
                 container,
-                result?.openLedger
-                  ? t('approvals.openLedgerHint', 'Set the bank opening balance in Bank Ledger, then try Disburse again.')
-                  : t('approvals.loanPendingFix', 'Disburse popup closed. Fix any shortfall and try Disburse again.')
+                t('approvals.loanPendingFix', 'Funding popup closed. Allocate advance and/or Emergency / Reserve Fund, then Disburse again.')
               );
               btn.disabled = false;
             }

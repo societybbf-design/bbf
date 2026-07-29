@@ -334,16 +334,16 @@ router.post('/admin/:id/disburse', loanCashier, requirePasswordConfirmation, asy
       paymentMethod: req.body.paymentMethod,
       transferReference: req.body.transferReference,
       disbursementNote: req.body.disbursementNote,
-      fundingSource: req.body.fundingSource || 'bank',
+      fundingSource: req.body.fundingSource || '',
       disbursedBy: req.session?.user?.name || 'Cashier',
     });
     const loan = result?.loan || result;
     return res.json({
       loan,
-      fundingSource: result?.fundingSource || 'bank',
+      fundingSource: result?.fundingSource || loan?.fundingSource || '',
       fundingSourceLabel: result?.fundingSourceLabel || null,
       reserveBalance: result?.reserveBalance ?? null,
-      bookBalance: result?.bookBalance ?? null,
+      bookBalance: null,
     });
   } catch (error) {
     const payload = { error: error.message || 'Unable to disburse loan.' };

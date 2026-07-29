@@ -14,12 +14,14 @@ const memberJs = fs.readFileSync(path.join(__dirname, '../public/js/member.js'),
 const loanModelJs = fs.readFileSync(path.join(__dirname, '../models/LoanApplication.js'), 'utf8');
 const borrowingModelJs = fs.readFileSync(path.join(__dirname, '../models/InternalBorrowing.js'), 'utf8');
 const repayServiceJs = fs.readFileSync(path.join(__dirname, '../services/loanRepaymentService.js'), 'utf8');
+const loanServiceJs = fs.readFileSync(path.join(__dirname, '../services/loanService.js'), 'utf8');
 
-test('loan shortfall is required minus book balance floored at zero', () => {
+test('loan remaining to fund is required minus advance/reserve allocations', () => {
   const required = 22000;
-  const book = 5000;
-  const shortfall = Number(Math.max(0, required - book).toFixed(2));
-  assert.equal(shortfall, 17000);
+  const fundedAdvance = 5000;
+  const fundedReserve = 2000;
+  const remaining = Number(Math.max(0, required - fundedAdvance - fundedReserve).toFixed(2));
+  assert.equal(remaining, 15000);
 });
 
 test('loanService exports disbursement funding helpers', () => {
@@ -41,7 +43,26 @@ test('loan routes expose disburse check and cover endpoints', () => {
   assert.ok(paths.some((p) => p.includes('/admin/:id/disburse')));
 });
 
-test('staff dashboard has loan disburse shortfall modal workflow', () => {
+test('loan disburse never debits or credits society book balance', () => {
+  assert.doesNotMatch(loanServiceJs, /ledgerDebit\s*\(/);
+  assert.doesNotMatch(loanServiceJs, /debit:\s*ledgerDebit/);
+  assert.doesNotMatch(loanServiceJs, /type:\s*'loan_disbursement'/);
+  // Covers must not credit book.
+  const advanceCover = loanServiceJs.slice(
+    loanServiceJs.indexOf('async function coverLoanDisbursementFromAdvance'),
+    loanServiceJs.indexOf('async function coverLoanDisbursementFromReserve')
+  );
+  const reserveCover = loanServiceJs.slice(
+    loanServiceJs.indexOf('async function coverLoanDisbursementFromReserve'),
+    loanServiceJs.indexOf('function resolveLoanFundingSourceLabel')
+  );
+  assert.doesNotMatch(advanceCover, /creditInbound/);
+  assert.doesNotMatch(reserveCover, /creditInbound/);
+  assert.match(reserveCover, /type:\s*'loan_cover'/);
+  assert.match(loanServiceJs, /cannot be funded from society book balance/i);
+});
+
+test('staff dashboard always opens external funding modal', () => {
   assert.match(staffJs, /function beginLoanDisbursePayment/);
   assert.match(staffJs, /function openLoanDisburseShortfallModal/);
   assert.match(staffJs, /function ensureLoanDisburseShortfallModal/);
@@ -50,28 +71,30 @@ test('staff dashboard has loan disburse shortfall modal workflow', () => {
   assert.match(staffJs, /\/disburse-check/);
   assert.match(staffJs, /\/disburse-cover-advance/);
   assert.match(staffJs, /\/disburse-cover-reserve/);
-  assert.match(staffJs, /Exact shortfall/);
+  assert.match(staffJs, /Remaining to fund/);
   assert.match(staffJs, /Internal borrow \(from advance\)/);
   assert.match(staffJs, /Emergency \/ Reserve Fund/);
-  // Disburse must check balance before POST and re-check before final modal submit.
-  assert.match(staffJs, /loanFundingNeedsShortfallModal\(check\)/);
-  assert.match(staffJs, /Re-checking book balance/);
+  assert.match(staffJs, /never use society book balance/i);
+  assert.match(staffJs, /fundingModal:\s*true/);
   assert.match(staffJs, /normalizeCoverAmount/);
+  // Book-balance funding option removed from cashier card.
+  assert.doesNotMatch(staffJs, /Society book balance \(shortfall popup if needed\)/);
 });
 
-test('Approvals Disburse intercepts loan shortfall modal instead of silent error', () => {
+test('Approvals Disburse always opens funding modal instead of bare POST', () => {
   assert.match(approvalsJs, /isLoanDisburse/);
   assert.match(approvalsJs, /loan_disbursement/);
   assert.match(approvalsJs, /beginLoanDisbursePayment/);
   assert.match(approvalsJs, /\\\/loans\\\/admin\\\//);
   assert.match(approvalsJs, /disburse/);
   assert.match(approvalsJs, /Never fall through to bare executeAction/);
+  assert.match(approvalsJs, /fundingSource:\s*''/);
 });
 
-test('admin loan disburse form checks book balance before POST', () => {
-  assert.match(adminJs, /disburse-check/);
+test('admin loan disburse never posts book-funded disbursement', () => {
   assert.match(adminJs, /beginLoanDisbursePayment/);
-  assert.match(adminJs, /Insufficient book balance|Book balance is short/);
+  assert.match(adminJs, /Loans cannot use society book balance/);
+  assert.match(adminJs, /fundingSource:\s*''/);
 });
 
 test('parseLooseMoney accepts comma decimals used in cover amounts', () => {
@@ -83,51 +106,39 @@ test('parseLooseMoney accepts comma decimals used in cover amounts', () => {
   assert.ok(Number.isNaN(loanService.parseLooseMoney(null)));
 });
 
-test('loanFundingNeedsShortfallModal logic treats book short of loan as intercept', () => {
-  // Mirror the client helper for regression coverage of the bookBalance >= loanAmount rule.
+test('loanFundingNeedsShortfallModal treats incomplete external funding as intercept', () => {
   function needsModal(funding) {
     if (!funding || typeof funding !== 'object') return true;
-    if (funding.openingSet === false) return true;
     if (funding.canDisburseDirectly === false || funding.canCompleteDirectly === false) return true;
-    if (funding.hasShortfall === true || funding.needsPopup === true) return true;
-    const shortfall = Number(funding.shortfall || 0);
-    if (Number.isFinite(shortfall) && shortfall > 0.009) return true;
+    if (funding.hasShortfall === true) return true;
+    const remaining = Number(funding.remainingToFund ?? funding.shortfall ?? NaN);
+    if (Number.isFinite(remaining) && remaining > 0.009) return true;
     const required = Number(funding.requiredAmount ?? funding.loan?.amount ?? NaN);
-    const book = Number(funding.bookBalance);
-    if (Number.isFinite(required) && Number.isFinite(book) && book + 0.009 < required) return true;
-    return false;
+    const funded = Number(funding.fundedAmount ?? NaN);
+    if (Number.isFinite(required) && Number.isFinite(funded) && funded + 0.009 < required) return true;
+    if (funding.canDisburseDirectly === true || funding.canCompleteDirectly === true) return false;
+    return true;
   }
   assert.equal(needsModal({
-    openingSet: true,
     canDisburseDirectly: true,
     hasShortfall: false,
-    shortfall: 0,
+    remainingToFund: 0,
     requiredAmount: 20000,
-    bookBalance: 20000,
+    fundedAmount: 20000,
   }), false);
   assert.equal(needsModal({
-    openingSet: true,
     canDisburseDirectly: false,
     hasShortfall: true,
-    shortfall: 17000,
+    remainingToFund: 17000,
     requiredAmount: 22000,
-    bookBalance: 5000,
+    fundedAmount: 5000,
   }), true);
   assert.equal(needsModal({
-    openingSet: false,
     canDisburseDirectly: false,
-    hasShortfall: false,
-    shortfall: 0,
-    requiredAmount: 1000,
-    bookBalance: 5000,
-  }), true);
-  assert.equal(needsModal({
-    openingSet: true,
-    requiredAmount: 10000,
-    bookBalance: 9999.98,
-    shortfall: 0.02,
     hasShortfall: true,
-    canDisburseDirectly: false,
+    remainingToFund: 0.02,
+    requiredAmount: 10000,
+    fundedAmount: 9999.98,
   }), true);
 });
 
@@ -137,6 +148,7 @@ test('LoanApplication persists funding source fields', () => {
   assert.match(loanModelJs, /fundingReserveOutstanding/);
   assert.match(loanModelJs, /fundingAdvanceAmount/);
   assert.match(loanModelJs, /fundingLenderName/);
+  assert.match(loanModelJs, /never use book balance/i);
 });
 
 test('InternalBorrowing can link to a loan', () => {
@@ -162,8 +174,7 @@ test('member dashboard shows funding source and repayment obligation', () => {
   assert.match(memberJs, /fundingSourceLabel/);
 });
 
-test('resolveLoanFundingSourceLabel covers bank/reserve/advance/mixed', () => {
-  assert.equal(loanService.resolveLoanFundingSourceLabel({ fundingSource: 'bank' }), 'Society book balance');
+test('resolveLoanFundingSourceLabel covers advance/reserve/mixed without book default', () => {
   assert.equal(loanService.resolveLoanFundingSourceLabel({ fundingSource: 'reserve' }), 'Emergency / Reserve Fund');
   assert.match(loanService.resolveLoanFundingSourceLabel({ fundingSource: 'advance' }), /Internal borrow/);
   assert.match(loanService.resolveLoanFundingSourceLabel({
@@ -171,4 +182,11 @@ test('resolveLoanFundingSourceLabel covers bank/reserve/advance/mixed', () => {
     fundingAdvanceAmount: 1000,
     fundingReserveAmount: 500,
   }), /Mixed/);
+  assert.doesNotMatch(loanService.resolveLoanFundingSourceLabel({
+    fundingSource: 'mixed',
+    fundingAdvanceAmount: 1000,
+    fundingReserveAmount: 500,
+  }), /society book balance/i);
+  assert.match(loanService.resolveLoanFundingSourceLabel({ fundingSource: 'bank' }), /legacy/i);
+  assert.match(loanService.resolveLoanFundingSourceLabel({}), /External funding|advance|Reserve/i);
 });
