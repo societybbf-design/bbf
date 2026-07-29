@@ -1,8 +1,9 @@
 'use strict';
 
 const express = require('express');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
 const { getApprovalsInbox, getApprovalsCounts } = require('../services/approvalsInboxService');
+const { getCashierApprovalTracking } = require('../services/approvalTrackingService');
 
 const router = express.Router();
 
@@ -27,5 +28,25 @@ router.get('/counts', async (req, res) => {
     return res.status(err.status || 500).json({ error: err.message || 'Failed to load approvals counts' });
   }
 });
+
+/**
+ * Read-only Cashier view: who has / has not approved loans & projects.
+ * Does not alter approval or disbursement state.
+ */
+router.get(
+  '/tracking',
+  requirePermission('can_disburse_loans', 'can_manage_deposits', 'can_manage_investments'),
+  async (req, res) => {
+    try {
+      const data = await getCashierApprovalTracking();
+      return res.json(data);
+    } catch (err) {
+      console.error('approvals tracking error', err);
+      return res.status(err.status || 500).json({
+        error: err.message || 'Failed to load approval tracking',
+      });
+    }
+  }
+);
 
 module.exports = router;
