@@ -26,6 +26,25 @@ const AdminNotificationSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /** Optional single staff user recipient (targeted). */
+  targetUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true,
+  },
+  /** Optional role audience, e.g. ['ceo'], ['cashier']. Empty + no targetUser = legacy broadcast. */
+  targetRoles: {
+    type: [String],
+    default: [],
+    index: true,
+  },
+  /** Per-user read receipts — preferred over shared `read`. */
+  readBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  /** Legacy shared read flag (kept for older documents). */
   read: {
     type: Boolean,
     default: false,

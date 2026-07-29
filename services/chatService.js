@@ -1,12 +1,16 @@
+const mongoose = require('mongoose');
 const ChatMessage = require('../models/ChatMessage');
+const StaffChatMessage = require('../models/StaffChatMessage');
 const User = require('../models/User');
 const { createAdminNotification } = require('./adminNotificationService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { saveUploadedFiles } = require('../middleware/upload');
+const { normalizeRole, ROLE_LABELS } = require('./rbac');
 
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_ATTACHMENTS = 4;
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
+const STAFF_CHAT_ROLES = ['ceo', 'cashier', 'project_manager', 'employee', 'developer', 'admin'];
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -192,6 +196,7 @@ async function sendMessage({
       message: preview,
       relatedId: memberId,
       relatedModel: 'User',
+      targetRoles: ['ceo', 'cashier'],
     });
   } else {
     await createMemberNotification({
@@ -270,8 +275,230 @@ async function getChatDirectory() {
   });
 }
 
+function staffConversationKey(userA, userB) {
+  return [String(userA), String(userB)].sort().join(':');
+}
+
+function serializeStaffMessage(doc) {
+  if (!doc) return null;
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+  const reply = plain.replyTo && typeof plain.replyTo === 'object' && plain.replyTo._id
+    ? {
+      id: plain.replyTo._id,
+      body: plain.replyTo.body || '',
+      senderName: plain.replyTo.senderName || '',
+      senderRole: plain.replyTo.senderRole || '',
+      hasAttachments: Array.isArray(plain.replyTo.attachments) && plain.replyTo.attachments.length > 0,
+      createdAt: plain.replyTo.createdAt,
+    }
+    : plain.replyTo
+      ? { id: plain.replyTo }
+      : null;
+
+  return {
+    id: plain._id,
+    _id: plain._id,
+    conversationKey: plain.conversationKey,
+    participants: plain.participants || [],
+    senderRole: plain.senderRole || 'staff',
+    senderId: plain.senderId,
+    senderName: plain.senderName || '',
+    body: plain.body || '',
+    replyTo: reply,
+    attachments: Array.isArray(plain.attachments) ? plain.attachments : [],
+    readBy: Array.isArray(plain.readBy) ? plain.readBy : [],
+    createdAt: plain.createdAt,
+  };
+}
+
+async function assertStaffPeer(userId) {
+  const user = await User.findById(userId).select('name email role status');
+  if (!user) throw httpError('Staff user not found.', 404);
+  const role = normalizeRole(user.role);
+  if (!STAFF_CHAT_ROLES.includes(role)) {
+    throw httpError('Selected user is not available for staff messaging.', 400);
+  }
+  if (user.status === 'deleted') {
+    throw httpError('This staff account is no longer active.', 403);
+  }
+  return user;
+}
+
+async function getStaffChatDirectory(viewer) {
+  const viewerId = String(viewer?.id || viewer?._id || '');
+  const peers = await User.find({
+    role: { $in: STAFF_CHAT_ROLES },
+    status: { $in: ['active', 'inactive'] },
+    _id: { $ne: viewerId },
+  })
+    .select('name email role status')
+    .sort({ name: 1 })
+    .lean();
+
+  const keys = peers.map((peer) => staffConversationKey(viewerId, peer._id));
+  const latestByKey = new Map();
+  const unreadByKey = new Map();
+
+  if (keys.length) {
+    const viewerObjectId = new mongoose.Types.ObjectId(String(viewerId));
+    const recent = await StaffChatMessage.aggregate([
+      { $match: { conversationKey: { $in: keys } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$conversationKey',
+          lastMessage: { $first: '$$ROOT' },
+          unreadCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ['$senderId', viewerObjectId] },
+                    { $not: [{ $in: [viewerObjectId, { $ifNull: ['$readBy', []] }] }] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    recent.forEach((row) => {
+      latestByKey.set(row._id, serializeStaffMessage(row.lastMessage));
+      unreadByKey.set(row._id, row.unreadCount || 0);
+    });
+  }
+
+  return peers.map((peer) => {
+    const key = staffConversationKey(viewerId, peer._id);
+    const role = normalizeRole(peer.role);
+    return {
+      userId: peer._id,
+      user: {
+        ...peer,
+        role,
+        roleLabel: ROLE_LABELS[role] || role,
+      },
+      conversationKey: key,
+      lastMessage: latestByKey.get(key) || null,
+      unreadCount: unreadByKey.get(key) || 0,
+    };
+  }).sort((a, b) => {
+    const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
+    const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return String(a.user?.name || '').localeCompare(String(b.user?.name || ''));
+  });
+}
+
+async function getStaffMessages(viewerId, peerId, { limit = 200 } = {}) {
+  await assertStaffPeer(peerId);
+  const key = staffConversationKey(viewerId, peerId);
+  const messages = await StaffChatMessage.find({ conversationKey: key })
+    .sort({ createdAt: 1 })
+    .limit(Math.min(Number(limit) || 200, 500))
+    .populate('replyTo', 'body senderName senderRole attachments createdAt')
+    .lean();
+  return messages.map(serializeStaffMessage);
+}
+
+async function markStaffMessagesRead(viewerId, peerId) {
+  const key = staffConversationKey(viewerId, peerId);
+  await StaffChatMessage.updateMany(
+    {
+      conversationKey: key,
+      senderId: { $ne: viewerId },
+      readBy: { $ne: viewerId },
+    },
+    { $addToSet: { readBy: viewerId } }
+  );
+  return { success: true };
+}
+
+async function sendStaffMessage({
+  sender,
+  peerId,
+  body = '',
+  replyTo = null,
+  files = [],
+}) {
+  const senderId = sender?.id || sender?._id;
+  if (!senderId) throw httpError('Authentication required.', 401);
+  if (String(senderId) === String(peerId)) {
+    throw httpError('You cannot message yourself.', 400);
+  }
+
+  const peer = await assertStaffPeer(peerId);
+  const senderRole = normalizeRole(sender.role);
+  if (!STAFF_CHAT_ROLES.includes(senderRole)) {
+    throw httpError('Your role cannot use staff messaging.', 403);
+  }
+
+  const trimmedBody = String(body || '').trim();
+  const incomingFiles = normalizeIncomingFiles(files);
+  if (!trimmedBody && !incomingFiles.length) {
+    throw httpError('Message cannot be empty. Add text or an attachment.');
+  }
+  if (trimmedBody.length > MAX_MESSAGE_LENGTH) {
+    throw httpError(`Message must be ${MAX_MESSAGE_LENGTH} characters or fewer.`);
+  }
+
+  const key = staffConversationKey(senderId, peerId);
+  let replyToId = null;
+  if (replyTo) {
+    const parent = await StaffChatMessage.findOne({ _id: replyTo, conversationKey: key }).select('_id');
+    if (!parent) throw httpError('The message you are replying to was not found in this conversation.');
+    replyToId = parent._id;
+  }
+
+  const savedFiles = saveUploadedFiles(
+    incomingFiles.map((f) => ({ name: f.name, data: f.data })),
+    'chat'
+  );
+  const attachments = savedFiles.map((file, index) => ({
+    originalName: file.originalName,
+    filePath: file.filePath,
+    mimeType: incomingFiles[index]?.mimeType || '',
+    size: incomingFiles[index]?.size || 0,
+    uploadedAt: file.uploadedAt,
+  }));
+
+  const message = await StaffChatMessage.create({
+    conversationKey: key,
+    participants: [senderId, peerId],
+    senderId,
+    senderName: sender.name || ROLE_LABELS[senderRole] || 'Staff',
+    senderRole,
+    body: trimmedBody || (attachments.length ? 'Shared an attachment' : ''),
+    replyTo: replyToId,
+    attachments,
+    readBy: [senderId],
+  });
+
+  const populated = await StaffChatMessage.findById(message._id)
+    .populate('replyTo', 'body senderName senderRole attachments createdAt');
+
+  const previewBase = trimmedBody
+    || (attachments.length ? `📎 ${attachments[0].originalName}` : 'New message');
+  const preview = previewBase.length > 120 ? `${previewBase.slice(0, 117)}...` : previewBase;
+
+  await createAdminNotification({
+    type: 'general',
+    title: `Message from ${sender.name || 'Staff'}`,
+    message: preview,
+    relatedId: senderId,
+    relatedModel: 'User',
+    targetUser: peerId,
+  });
+
+  return serializeStaffMessage(populated);
+}
+
 module.exports = {
   MAX_MESSAGE_LENGTH,
+  STAFF_CHAT_ROLES,
   serializeMessage,
   getMessagesForMember,
   markMessagesReadForAdmin,
@@ -281,4 +508,8 @@ module.exports = {
   sendMessage,
   getAdminInbox,
   getChatDirectory,
+  getStaffChatDirectory,
+  getStaffMessages,
+  markStaffMessagesRead,
+  sendStaffMessage,
 };

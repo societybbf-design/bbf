@@ -3548,10 +3548,12 @@ function bindDirectoryTabs() {
   investorsTab?.addEventListener('click', () => activate('investors'));
 }
 
-let cashierChatMemberId = null;
-let cashierChatMemberName = '';
+let cashierChatPeerId = null;
+let cashierChatPeerName = '';
+let cashierChatMode = 'members'; // members | staff
 let cashierChatReplyTo = null;
-let cashierChatDirectory = [];
+let cashierChatMemberDirectory = [];
+let cashierChatStaffDirectory = [];
 let cashierChatPollTimer = null;
 
 function stopCashierChatPolling() {
@@ -3576,77 +3578,127 @@ function setCashierReplyTarget(target = null) {
   if (previewEl) previewEl.textContent = target.preview || '';
 }
 
+function setCashierChatTab(mode = 'members') {
+  cashierChatMode = mode === 'staff' ? 'staff' : 'members';
+  document.querySelectorAll('[data-cashier-chat-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.cashierChatTab === cashierChatMode);
+  });
+  renderCashierChatDirectory(document.getElementById('cashierChatSearch')?.value || '');
+}
+
+function currentCashierChatDirectory() {
+  return cashierChatMode === 'staff' ? cashierChatStaffDirectory : cashierChatMemberDirectory;
+}
+
+function syncCashierRecipientSelect(filter = '') {
+  const select = document.getElementById('cashierChatRecipientSelect');
+  if (!select) return;
+  const term = String(filter || '').trim().toLowerCase();
+  const rows = currentCashierChatDirectory().filter((row) => {
+    const name = cashierChatMode === 'staff' ? (row.user?.name || '') : (row.member?.name || '');
+    const email = cashierChatMode === 'staff' ? (row.user?.email || '') : (row.member?.email || '');
+    const role = row.user?.roleLabel || '';
+    if (!term) return true;
+    return `${name} ${email} ${role}`.toLowerCase().includes(term);
+  });
+  const previous = select.value;
+  select.innerHTML = `<option value="">Choose who to message…</option>${rows.map((row) => {
+    const id = String(cashierChatMode === 'staff' ? row.userId : row.memberId);
+    const name = cashierChatMode === 'staff'
+      ? `${row.user?.name || 'Staff'}${row.user?.roleLabel ? ` (${row.user.roleLabel})` : ''}`
+      : (row.member?.name || 'Member');
+    return `<option value="${escapeHtml(id)}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+  }).join('')}`;
+  if (previous && [...select.options].some((opt) => opt.value === previous)) {
+    select.value = previous;
+  } else if (cashierChatPeerId && cashierChatMode) {
+    select.value = cashierChatPeerId;
+  }
+}
+
 function renderCashierChatDirectory(filter = '') {
   const list = document.getElementById('cashierChatInboxList');
   if (!list) return;
   const Chat = window.SocietyChat;
   const term = String(filter || '').trim().toLowerCase();
-  const rows = cashierChatDirectory.filter((row) => {
-    const name = row.member?.name || '';
-    const email = row.member?.email || '';
+  const rows = currentCashierChatDirectory().filter((row) => {
+    const name = cashierChatMode === 'staff' ? (row.user?.name || '') : (row.member?.name || '');
+    const email = cashierChatMode === 'staff' ? (row.user?.email || '') : (row.member?.email || '');
+    const role = row.user?.roleLabel || '';
     if (!term) return true;
-    return name.toLowerCase().includes(term) || email.toLowerCase().includes(term);
+    return `${name} ${email} ${role}`.toLowerCase().includes(term);
   });
 
+  syncCashierRecipientSelect(filter);
+
   if (!rows.length) {
-    list.innerHTML = '<p class="table-subtitle">No members found.</p>';
+    list.innerHTML = `<p class="table-subtitle">No ${cashierChatMode === 'staff' ? 'staff' : 'members'} found.</p>`;
     return;
   }
 
   list.innerHTML = rows.map((row) => {
-    const id = String(row.memberId);
-    const name = row.member?.name || 'Member';
+    const id = String(cashierChatMode === 'staff' ? row.userId : row.memberId);
+    const name = cashierChatMode === 'staff' ? (row.user?.name || 'Staff') : (row.member?.name || 'Member');
+    const meta = cashierChatMode === 'staff' ? (row.user?.roleLabel || 'Staff') : 'Member';
     const preview = Chat ? Chat.lastMessagePreview(row.lastMessage) : (row.lastMessage?.body || 'Start a conversation');
-    const active = cashierChatMemberId === id ? 'active' : '';
+    const active = cashierChatPeerId === id ? 'active' : '';
     return `
-      <button type="button" class="chat-inbox-item ${active}" data-cashier-chat-member="${escapeHtml(id)}" data-member-name="${escapeHtml(name)}">
+      <button type="button" class="chat-inbox-item ${active}" data-cashier-chat-peer="${escapeHtml(id)}" data-peer-name="${escapeHtml(name)}" data-chat-mode="${escapeHtml(cashierChatMode)}">
         <div class="chat-inbox-item-head">
           <strong>${escapeHtml(name)}</strong>
           ${row.unreadCount ? `<span class="chat-unread-badge">${row.unreadCount}</span>` : ''}
         </div>
-        <p class="chat-inbox-preview">${escapeHtml(preview)}</p>
+        <p class="chat-inbox-preview">${escapeHtml(meta)} · ${escapeHtml(preview)}</p>
       </button>
     `;
   }).join('');
 
-  list.querySelectorAll('[data-cashier-chat-member]').forEach((btn) => {
+  list.querySelectorAll('[data-cashier-chat-peer]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      void openCashierChat(btn.dataset.cashierChatMember, btn.dataset.memberName || 'Member');
+      void openCashierChat(btn.dataset.cashierChatPeer, btn.dataset.peerName || 'Recipient', btn.dataset.chatMode || cashierChatMode);
     });
   });
 }
 
 async function refreshCashierChatThread() {
-  if (!cashierChatMemberId) return;
+  if (!cashierChatPeerId) return;
   const thread = document.getElementById('cashierChatThread');
   const Chat = window.SocietyChat;
   if (!thread || !Chat) return;
   try {
-    const response = await fetch(`/api/admin/chat/members/${cashierChatMemberId}/messages`);
+    const url = cashierChatMode === 'staff'
+      ? `/api/admin/chat/staff/${cashierChatPeerId}/messages`
+      : `/api/admin/chat/members/${cashierChatPeerId}/messages`;
+    const response = await fetch(url);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to load messages.');
     Chat.renderChatMessages(thread, data.messages || [], 'admin', {
       onReplyClick: setCashierReplyTarget,
+      viewerUserId: cashierChatMode === 'staff' ? (staffSessionUser?.id || staffSessionUser?._id || '') : '',
     });
   } catch (error) {
     thread.innerHTML = `<p class="table-subtitle chat-empty-state">${escapeHtml(error.message)}</p>`;
   }
 }
 
-async function openCashierChat(memberId, memberName = 'Member') {
-  cashierChatMemberId = String(memberId);
-  cashierChatMemberName = memberName;
+async function openCashierChat(peerId, peerName = 'Recipient', mode = cashierChatMode) {
+  cashierChatMode = mode === 'staff' ? 'staff' : 'members';
+  cashierChatPeerId = String(peerId);
+  cashierChatPeerName = peerName;
   setCashierReplyTarget(null);
+  setCashierChatTab(cashierChatMode);
 
   const header = document.getElementById('cashierChatThreadHeader');
   const form = document.getElementById('cashierChatComposeForm');
   if (header) {
     header.innerHTML = `
-      <h3>${escapeHtml(memberName)}</h3>
-      <p class="table-subtitle">Direct messenger thread · live updates every few seconds</p>
+      <h3>${escapeHtml(peerName)}</h3>
+      <p class="table-subtitle">${cashierChatMode === 'staff' ? 'Staff messenger' : 'Member messenger'} · live updates</p>
     `;
   }
   form?.classList.remove('hidden');
+  const select = document.getElementById('cashierChatRecipientSelect');
+  if (select) select.value = cashierChatPeerId;
   renderCashierChatDirectory(document.getElementById('cashierChatSearch')?.value || '');
   await refreshCashierChatThread();
 
@@ -3667,10 +3719,16 @@ async function loadCashierChatDirectory(silent = false) {
   const list = document.getElementById('cashierChatInboxList');
   const msg = document.getElementById('cashierChatMessage');
   try {
-    const response = await fetch('/api/admin/chat/directory');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load chat directory.');
-    cashierChatDirectory = data.directory || [];
+    const [membersRes, staffRes] = await Promise.all([
+      fetch('/api/admin/chat/directory'),
+      fetch('/api/admin/chat/staff-directory'),
+    ]);
+    const membersData = await membersRes.json();
+    const staffData = await staffRes.json();
+    if (!membersRes.ok) throw new Error(membersData.error || 'Unable to load member directory.');
+    if (!staffRes.ok) throw new Error(staffData.error || 'Unable to load staff directory.');
+    cashierChatMemberDirectory = membersData.directory || [];
+    cashierChatStaffDirectory = staffData.directory || [];
     renderCashierChatDirectory(document.getElementById('cashierChatSearch')?.value || '');
   } catch (error) {
     if (!silent && msg) msg.textContent = error.message;
@@ -3685,6 +3743,34 @@ async function loadChatModule() {
   const form = document.getElementById('cashierChatComposeForm');
   const filesInput = document.getElementById('cashierChatFiles');
   const fileLabel = document.getElementById('cashierChatFileLabel');
+  const recipientSelect = document.getElementById('cashierChatRecipientSelect');
+
+  document.querySelectorAll('[data-cashier-chat-tab]').forEach((btn) => {
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      cashierChatPeerId = null;
+      setCashierChatTab(btn.dataset.cashierChatTab);
+      const header = document.getElementById('cashierChatThreadHeader');
+      const thread = document.getElementById('cashierChatThread');
+      const compose = document.getElementById('cashierChatComposeForm');
+      if (header) {
+        header.innerHTML = `<h3>Select a recipient</h3><p class="table-subtitle">Choose someone from ${cashierChatMode === 'staff' ? 'staff' : 'members'}.</p>`;
+      }
+      if (thread) thread.innerHTML = '<p class="table-subtitle chat-empty-state">No conversation selected.</p>';
+      compose?.classList.add('hidden');
+      stopCashierChatPolling();
+    });
+  });
+
+  if (recipientSelect && recipientSelect.dataset.bound !== '1') {
+    recipientSelect.dataset.bound = '1';
+    recipientSelect.addEventListener('change', () => {
+      const option = recipientSelect.selectedOptions?.[0];
+      if (!recipientSelect.value || !option) return;
+      void openCashierChat(recipientSelect.value, option.dataset.name || option.textContent || 'Recipient', cashierChatMode);
+    });
+  }
 
   if (search && search.dataset.bound !== '1') {
     search.dataset.bound = '1';
@@ -3712,7 +3798,7 @@ async function loadChatModule() {
     form.dataset.bound = '1';
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!cashierChatMemberId) return;
+      if (!cashierChatPeerId) return;
       const messageEl = document.getElementById('cashierChatComposeMessage');
       const body = form.body?.value?.trim() || '';
       const Chat = window.SocietyChat;
@@ -3724,7 +3810,10 @@ async function loadChatModule() {
           if (messageEl) messageEl.textContent = 'Add a message or attachment.';
           return;
         }
-        const response = await fetch(`/api/admin/chat/members/${cashierChatMemberId}/messages`, {
+        const url = cashierChatMode === 'staff'
+          ? `/api/admin/chat/staff/${cashierChatPeerId}/messages`
+          : `/api/admin/chat/members/${cashierChatPeerId}/messages`;
+        const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3753,8 +3842,8 @@ async function loadChatModule() {
     });
   }
 
-  if (cashierChatMemberId) {
-    await openCashierChat(cashierChatMemberId, cashierChatMemberName);
+  if (cashierChatPeerId) {
+    await openCashierChat(cashierChatPeerId, cashierChatPeerName, cashierChatMode);
   }
 }
 

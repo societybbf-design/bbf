@@ -19,19 +19,13 @@ async function notifyDepositRecorded({
   const channelLabel = paymentChannelLabel(paymentMethod);
   const receiptLabel = receiptNumber ? ` Receipt ${receiptNumber}.` : '';
 
+  // Deposit confirmations go only to the depositing member (not broadcast).
   await Promise.allSettled([
     createMemberNotification({
       memberId: member._id,
       type: 'deposit',
       title: uiText('bn', 'depositRecorded', 'Deposit recorded'),
       message: `Your deposit of ${amountLabel} via ${channelLabel} has been recorded.${receiptLabel}`,
-      relatedId: deposit._id,
-      relatedModel: 'Deposit',
-    }),
-    createAdminNotification({
-      type: 'deposit',
-      title: `Deposit from ${member.name}`,
-      message: `${recordedBy} recorded ${amountLabel} for ${member.name} via ${channelLabel}.${receiptLabel}`,
       relatedId: deposit._id,
       relatedModel: 'Deposit',
     }),
@@ -60,6 +54,7 @@ async function notifyWithdrawalEvent({
       message: `${member.name} requested ${amountLabel}.`,
       relatedId: request._id,
       relatedModel: 'WithdrawalRequest',
+      targetRoles: ['ceo', 'cashier'],
     });
     await createMemberNotification({
       memberId: member._id,
@@ -93,6 +88,7 @@ async function notifyWithdrawalEvent({
       message: `${actorName} processed ${amountLabel} for ${member.name}.`,
       relatedId: request._id,
       relatedModel: 'WithdrawalRequest',
+      targetRoles: ['ceo'],
     });
   }
 }
@@ -111,6 +107,7 @@ async function notifyProfitDistribution({
     message: `${distributedBy} distributed ${amountLabel} across ${members.length} member(s).`,
     relatedId: distributionId,
     relatedModel: 'ProfitDistribution',
+    targetRoles: ['ceo', 'cashier'],
   });
 
   await Promise.allSettled(members.map(async (share) => {

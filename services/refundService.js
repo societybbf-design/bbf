@@ -86,6 +86,7 @@ async function updateRefundStatus(refundId, status, adminNote = '') {
         message: `Refund of ${formatMoney(Number(refund.amount), 2)} completed.`,
         relatedId: refund._id,
         relatedModel: 'Refund',
+        targetRoles: ['ceo', 'cashier'],
       });
     }
   }

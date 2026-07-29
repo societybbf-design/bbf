@@ -7,6 +7,10 @@ const {
   sendMessage,
   getAdminInbox,
   getChatDirectory,
+  getStaffChatDirectory,
+  getStaffMessages,
+  markStaffMessagesRead,
+  sendStaffMessage,
 } = require('../services/chatService');
 
 router.use(requireAuth, requirePermission('can_manage_chat'));
@@ -26,6 +30,43 @@ router.get('/directory', async (req, res) => {
     return res.json({ directory });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load chat directory.' });
+  }
+});
+
+router.get('/staff-directory', async (req, res) => {
+  try {
+    const directory = await getStaffChatDirectory(req.session.user);
+    return res.json({ directory });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load staff directory.' });
+  }
+});
+
+router.get('/staff/:userId/messages', async (req, res) => {
+  try {
+    const viewerId = req.session.user.id;
+    const [messages] = await Promise.all([
+      getStaffMessages(viewerId, req.params.userId),
+      markStaffMessagesRead(viewerId, req.params.userId),
+    ]);
+    return res.json({ messages });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load staff messages.' });
+  }
+});
+
+router.post('/staff/:userId/messages', async (req, res) => {
+  try {
+    const message = await sendStaffMessage({
+      sender: req.session.user,
+      peerId: req.params.userId,
+      body: req.body?.body,
+      replyTo: req.body?.replyTo || null,
+      files: req.body?.files || [],
+    });
+    return res.status(201).json({ message });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to send staff message.' });
   }
 });
 
