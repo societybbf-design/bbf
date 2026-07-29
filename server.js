@@ -198,6 +198,7 @@ function buildApp(sessionStore) {
   app.use('/api/admin/monthly-targets', monthlyTargetsRoutes);
   app.use('/api/admin/transaction-audit', transactionAuditRoutes);
   app.use('/api/cashier-tracking', cashierTrackingRoutes);
+  app.use('/api/cashier-notes', require('./routes/cashierNotes'));
   app.use('/api/admin/analytics', analyticsRoutes);
   app.use('/api/admin/dues-reminders', duesRemindersRoutes);
   app.use('/api/admin/activity-log', activityLogRoutes);
