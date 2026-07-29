@@ -200,6 +200,88 @@ async function allocateFromBookBalance(amount, {
   };
 }
 
+/**
+ * Return cash from the Emergency / Reserve Fund back into society book balance.
+ * Debits reserve, credits book ledger, and refreshes equal member shares.
+ */
+async function allocateToBookBalance(amount, {
+  note = '',
+  createdBy = 'Cashier',
+} = {}) {
+  const normalized = money(amount);
+  if (!(normalized > 0)) {
+    throw httpError('Transfer amount must be greater than zero.');
+  }
+
+  const ledger = await getLedger({ entryLimit: 1 });
+  if (!ledger.openingSet) {
+    throw httpError('Set the bank ledger opening balance before transferring from the reserve fund.');
+  }
+
+  const fund = await assertReserveBalance(normalized);
+  const releaseNote = note?.trim() || 'Released from Emergency / Reserve Fund to society book balance';
+
+  const entry = await pushEntry(fund, {
+    type: 'release',
+    direction: 'debit',
+    amount: normalized,
+    note: releaseNote,
+    createdBy,
+    referenceType: 'BankLedger',
+    referenceId: null,
+  });
+
+  const { creditInbound } = require('./bankLedgerService');
+  let ledgerResult;
+  try {
+    ledgerResult = await creditInbound({
+      type: 'reserve_disbursement',
+      amount: normalized,
+      referenceType: 'EmergencyReserveFund',
+      referenceId: fund._id,
+      note: releaseNote,
+      createdBy,
+    });
+  } catch (error) {
+    // Roll back the reserve debit if the book credit fails so balances stay in sync.
+    await pushEntry(fund, {
+      type: 'adjustment',
+      direction: 'credit',
+      amount: normalized,
+      note: `Rollback failed reserve→book transfer · ${error.message || 'ledger credit failed'}`,
+      createdBy,
+      referenceType: 'EmergencyReserveFund',
+      referenceId: entry?._id || null,
+    });
+    throw httpError(
+      error.message || 'Unable to credit book balance for reserve release.',
+      error.status || 400
+    );
+  }
+
+  if (ledgerResult?.entry?._id) {
+    const latest = fund.entries[fund.entries.length - 1];
+    if (latest && String(latest._id) === String(entry?._id)) {
+      latest.referenceId = ledgerResult.entry._id;
+      fund.markModified('entries');
+      await fund.save();
+    }
+  }
+
+  const shares = await listMemberReserveShares(fund.balance);
+
+  return {
+    fund: {
+      balance: money(fund.balance),
+      entry,
+    },
+    ledger: ledgerResult?.ledger || null,
+    bookBalance: ledgerResult?.ledger?.bookBalance ?? null,
+    memberShares: shares.shares,
+    message: `Transferred ${formatMoney(normalized, 2)} from Emergency / Reserve Fund to book balance.`,
+  };
+}
+
 async function assertReserveBalance(amount) {
   const fund = await ensureFund();
   const normalized = money(amount);
@@ -331,6 +413,7 @@ module.exports = {
   listMemberReserveShares,
   getMemberReserveShare,
   allocateFromBookBalance,
+  allocateToBookBalance,
   debitReserve,
   creditReserve,
   assertReserveBalance,

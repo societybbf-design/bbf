@@ -13,6 +13,7 @@ const EmergencyReserveEntrySchema = new mongoose.Schema({
       'adjustment',
       'replenishment',
       'replenish',
+      'release',
     ],
     required: true,
   },

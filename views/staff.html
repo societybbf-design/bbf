@@ -1107,7 +1107,7 @@
         <div class="panel-card hidden" data-staff-view="reserve" id="moduleEmergencyReserve">
           <div class="panel-card-header">
             <h2>Emergency / Reserve Fund</h2>
-            <p class="text-secondary">Allocate cash from the society book balance into a dedicated reserve pool. Member dashboards show each person’s proportional share. Loans and project shortfalls can be funded from this pool.</p>
+            <p class="text-secondary">Move cash both ways between the society book balance and the Emergency / Reserve Fund. Member dashboards show each person’s proportional share. Loans and project shortfalls can also be funded from this pool.</p>
           </div>
 
           <div class="stats-grid u-mb-1">
@@ -1132,6 +1132,25 @@
             </div>
             <button type="submit" class="primary-btn">Transfer to Emergency / Reserve Fund</button>
             <p id="cashierReserveAllocateMessage" class="message"></p>
+          </form>
+
+          <h3 class="u-mt-1">Transfer to Book Balance</h3>
+          <p class="text-secondary">Release cash from the Emergency / Reserve Fund back into the live society book balance. Member proportional shares update automatically.</p>
+          <form id="cashierReserveReturnForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Amount to release
+                  <input type="number" name="amount" id="cashierReserveReturnAmount" min="0.01" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Reason for reserve release
+                  <input type="text" name="note" placeholder="Optional — e.g. working capital for payouts" />
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Transfer to Book Balance</button>
+            <p id="cashierReserveReturnMessage" class="message"></p>
           </form>
 
           <h3 class="u-mt-1">Member proportional shares</h3>
