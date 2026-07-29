@@ -5,7 +5,15 @@ const FUND_KEY = 'society_emergency_reserve';
 const EmergencyReserveEntrySchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['allocation', 'loan_disbursement', 'project_cover', 'adjustment', 'replenishment'],
+    enum: [
+      'allocation',
+      'loan_disbursement',
+      'loan_cover',
+      'project_cover',
+      'adjustment',
+      'replenishment',
+      'replenish',
+    ],
     required: true,
   },
   direction: {
