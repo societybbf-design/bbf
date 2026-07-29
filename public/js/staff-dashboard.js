@@ -2954,6 +2954,24 @@ async function loadEmergencyReserveModule() {
     if (countEl) countEl.textContent = String(data.memberCount || (data.memberShares || []).length || 0);
     applyLiveBookBalance(data.bookBalance);
 
+    const returnAmountInput = document.getElementById('cashierReserveReturnAmount');
+    if (returnAmountInput) {
+      const reserveBal = Number(data.balance || 0);
+      returnAmountInput.max = reserveBal > 0 ? String(reserveBal) : undefined;
+      returnAmountInput.placeholder = reserveBal > 0
+        ? `Up to ${Number(reserveBal).toFixed(2)}`
+        : 'No reserve available';
+    }
+
+    const allocateAmountInput = document.getElementById('cashierReserveAmount');
+    if (allocateAmountInput && data.bookBalance != null) {
+      const bookBal = Number(data.bookBalance || 0);
+      allocateAmountInput.max = bookBal > 0 ? String(bookBal) : undefined;
+      allocateAmountInput.placeholder = bookBal > 0
+        ? `Up to ${Number(bookBal).toFixed(2)}`
+        : 'No book balance available';
+    }
+
     const shares = data.memberShares || [];
     if (sharesBody) {
       sharesBody.innerHTML = shares.length
@@ -2992,10 +3010,15 @@ let reserveAllocateBound = false;
 function bindEmergencyReserveForms() {
   if (reserveAllocateBound) return;
   reserveAllocateBound = true;
+
   document.getElementById('cashierReserveAllocateForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const msg = document.getElementById('cashierReserveAllocateMessage');
     const formData = new FormData(event.target);
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = '';
+    }
     try {
       const response = await fetch('/api/admin/emergency-reserve/allocate', {
         method: 'POST',
@@ -3017,6 +3040,42 @@ function bindEmergencyReserveForms() {
     } catch (error) {
       if (msg) {
         msg.classList.remove('success');
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.getElementById('cashierReserveReturnForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('cashierReserveReturnMessage');
+    const formData = new FormData(event.target);
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = '';
+    }
+    try {
+      const response = await fetch('/api/admin/emergency-reserve/return-to-book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: formData.get('amount'),
+          note: formData.get('note') || '',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to transfer reserve to book balance.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Transferred from Emergency / Reserve Fund to book balance.';
+      }
+      event.target.reset();
+      invalidateStaffViewCache(['reserve', 'ledger', 'home']);
+      await loadEmergencyReserveModule();
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.classList.add('error');
         msg.textContent = error.message;
       }
     }

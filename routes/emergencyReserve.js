@@ -5,6 +5,7 @@ const router = require('express').Router();
 const {
   getFund,
   allocateFromBookBalance,
+  allocateToBookBalance,
   coverContributionFromReserve,
   listMemberReserveShares,
 } = require('../services/emergencyReserveService');
@@ -48,6 +49,24 @@ router.post('/allocate', requirePasswordConfirmation, async (req, res) => {
     return res.status(201).json({ ...result, message });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to allocate to reserve fund.' });
+  }
+});
+
+router.post('/return-to-book', requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await allocateToBookBalance(req.body?.amount, {
+      note: req.body?.note || '',
+      createdBy: req.session?.user?.name || 'Cashier',
+    });
+    let message = result.message
+      || `Transferred ${formatMoney(Number(req.body?.amount || 0), 2)} from Emergency / Reserve Fund to book balance.`;
+    message += ` Reserve balance now ${formatMoney(Number(result.fund?.balance || 0), 2)}.`;
+    if (result.bookBalance != null) {
+      message += ` Book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+    }
+    return res.status(201).json({ ...result, message });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to transfer reserve to book balance.' });
   }
 });
 
