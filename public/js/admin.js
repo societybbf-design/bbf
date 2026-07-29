@@ -304,8 +304,16 @@ async function openPdfPreview(url, title = 'Investment Receipt', subtitle = '') 
 
   try {
     const response = await fetch(localizedUrl, { credentials: 'same-origin' });
-    if (!response.ok) {
-      throw new Error('Unable to load PDF');
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (!response.ok || contentType.includes('application/json')) {
+      let message = 'Unable to load PDF';
+      try {
+        const data = await response.json();
+        if (data?.error) message = data.error;
+      } catch (_) {
+        // keep default
+      }
+      throw new Error(message);
     }
 
     const blob = await response.blob();
@@ -330,6 +338,8 @@ async function openPdfPreview(url, title = 'Investment Receipt', subtitle = '') 
       }
     }, 1200);
   } catch (error) {
+    console.error('[pdf-preview]', error);
+    window.PdfLanguage?.showError?.(error.message || 'Unable to load PDF.');
     if (pdfPreviewLoading) {
       pdfPreviewLoading.classList.add('hidden');
     }
@@ -338,6 +348,16 @@ async function openPdfPreview(url, title = 'Investment Receipt', subtitle = '') 
     }
     if (pdfPreviewFallback) {
       pdfPreviewFallback.classList.remove('hidden');
+      const detail = pdfPreviewFallback.querySelector('[data-pdf-error-detail]');
+      if (detail) {
+        detail.textContent = error.message || 'Unable to load PDF.';
+      } else {
+        const p = document.createElement('p');
+        p.className = 'message error';
+        p.dataset.pdfErrorDetail = '1';
+        p.textContent = error.message || 'Unable to load PDF.';
+        pdfPreviewFallback.appendChild(p);
+      }
     }
   }
 }
@@ -3615,7 +3635,9 @@ function buildMemberLoansSectionHtml(loans = [], memberId = '', loanSummary = {}
           : '-'
       }</td>
       <td>
-        ${loan.contractPath ? `<a href="/api/loans/admin/${loan._id}/contract" class="receipt-button" target="_blank" rel="noopener">Contract</a>` : '-'}
+        ${['approved', 'disbursed', 'completed'].includes(loan.status)
+          ? `<button type="button" class="receipt-button" data-loan-contract-download="${loan._id}" data-loan-contract-scope="admin">Contract</button>`
+          : '-'}
       </td>
       <td>
         <button type="button" class="secondary-btn" data-loan-review="${loan._id}">${loan.status === 'pending' ? 'Review' : 'View'}</button>
@@ -6867,7 +6889,10 @@ function buildLoanReviewHtml(loan = {}) {
         <p class="table-subtitle"><strong>Witness:</strong> ${loan.witnessName || '-'} (${loan.witnessPhone || '-'}) — ${loan.witnessRelation || 'N/A'}</p>
         ${loan.rejectionReason ? `<p class="table-subtitle"><strong>Rejection:</strong> ${loan.rejectionReason}</p>` : ''}
         ${loan.adminNote ? `<p class="table-subtitle"><strong>Admin Note:</strong> ${loan.adminNote}</p>` : ''}
-        ${loan.contractPath ? `<p class="table-subtitle"><a href="/api/loans/admin/${loan._id}/contract" class="receipt-button" target="_blank" rel="noopener">Download Contract PDF</a>${loan.signedContractPath ? ` <a href="${loan.signedContractPath}" class="receipt-button" target="_blank" rel="noopener">View Signed Copy</a>` : ''}</p>` : ''}
+        ${['approved', 'disbursed', 'completed'].includes(loan.status)
+          ? `<p class="table-subtitle"><button type="button" class="receipt-button" data-loan-contract-download="${loan._id}" data-loan-contract-scope="admin">Download Contract PDF</button>${loan.signedContractPath ? ` <a href="${loan.signedContractPath}" class="receipt-button" target="_blank" rel="noopener">View Signed Copy</a>` : ''}</p>`
+          : ''}
+        <p class="message" id="loanReviewMessage"></p>
       </section>
       <section class="panel-card">
         <h3>Supporting Documents</h3>
@@ -6895,7 +6920,6 @@ function buildLoanReviewHtml(loan = {}) {
             <button type="button" class="primary-btn" data-loan-review-action="approved" data-loan-id="${loan._id}">Approve Loan</button>
             <button type="button" class="secondary-btn" data-loan-review-action="rejected" data-loan-id="${loan._id}">Reject Loan</button>
           </div>
-          <p class="message" id="loanReviewMessage"></p>
         </section>
       ` : ''}
       ${loan.status === 'approved' ? buildLoanDisbursementFormHtml(loan) : ''}
@@ -7404,6 +7428,41 @@ function bindDividendUi() {
 }
 
 document.addEventListener('click', async (event) => {
+  const loanContractBtn = event.target.closest('[data-loan-contract-download]');
+  if (loanContractBtn) {
+    event.preventDefault();
+    const loanId = String(loanContractBtn.dataset.loanContractDownload || '').trim();
+    const scope = String(loanContractBtn.dataset.loanContractScope || 'admin').trim();
+    if (!loanId) return;
+    const url = scope === 'member'
+      ? `/api/loans/member/${encodeURIComponent(loanId)}/contract`
+      : `/api/loans/admin/${encodeURIComponent(loanId)}/contract`;
+    const reviewMsg = document.getElementById('loanReviewMessage');
+    try {
+      if (window.PdfLanguage?.triggerDownload) {
+        await window.PdfLanguage.triggerDownload(loanContractBtn, url, {
+          skipLanguagePrompt: true,
+          filename: `loan-contract-${loanId}.pdf`,
+        });
+      } else {
+        throw new Error('PDF download helper is not loaded. Refresh and try again.');
+      }
+      if (reviewMsg) {
+        reviewMsg.classList.remove('error');
+        reviewMsg.classList.add('success');
+        reviewMsg.textContent = 'Contract PDF downloaded.';
+      }
+    } catch (error) {
+      console.error('[ceo-loan-contract-download]', error);
+      if (reviewMsg) {
+        reviewMsg.classList.remove('success');
+        reviewMsg.classList.add('error');
+        reviewMsg.textContent = error.message || 'Unable to download contract PDF.';
+      }
+    }
+    return;
+  }
+
   const pdfButton = event.target.closest('[data-pdf-preview]');
   if (pdfButton) {
     event.preventDefault();

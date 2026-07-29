@@ -128,17 +128,40 @@ function triggerPdfDownload(button, url, options = {}) {
   if (window.PdfLanguage?.triggerDownload) {
     return window.PdfLanguage.triggerDownload(button, url, options);
   }
-  if (!button || button.disabled) return;
+  if (!button || button.disabled) return Promise.resolve(null);
   const original = button.textContent;
   button.disabled = true;
   button.classList.add('is-loading');
   button.textContent = window.I18n?.t('pdf.generating', 'Generating PDF…');
-  window.open(url, '_blank', 'noopener');
-  window.setTimeout(() => {
+  return fetch(url, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/pdf,application/json' },
+    skipPasswordConfirm: true,
+  }).then(async (response) => {
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (!response.ok || contentType.includes('application/json')) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Unable to download PDF.');
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = options.filename || 'document.pdf';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    return url;
+  }).catch((error) => {
+    console.error('[pdf-download]', error);
+    window.alert(error.message || 'Unable to download PDF.');
+    throw error;
+  }).finally(() => {
     button.disabled = false;
     button.classList.remove('is-loading');
     button.textContent = original;
-  }, 900);
+  });
 }
 
 function auditDirectionClass(direction) {
