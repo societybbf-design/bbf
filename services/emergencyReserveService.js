@@ -239,6 +239,39 @@ async function debitReserve(amount, {
 }
 
 /**
+ * Credit the reserve pool directly (e.g. replenish after a reserve-funded loan repayment).
+ * Does not touch the bank ledger — callers that received cash should credit the book first,
+ * then move funds here via allocateFromBookBalance, or call this after a book debit.
+ */
+async function creditReserve(amount, {
+  type = 'replenish',
+  note = '',
+  createdBy = 'Cashier',
+  referenceType = '',
+  referenceId = null,
+} = {}) {
+  const normalized = money(amount);
+  if (!(normalized > 0)) {
+    throw httpError('Replenish amount must be greater than zero.');
+  }
+  const fund = await ensureFund();
+  const entry = await pushEntry(fund, {
+    type,
+    direction: 'credit',
+    amount: normalized,
+    note,
+    createdBy,
+    referenceType,
+    referenceId,
+  });
+  return {
+    fund,
+    entry,
+    balance: money(fund.balance),
+  };
+}
+
+/**
  * Cover an unpaid project contribution from the Emergency / Reserve Fund.
  */
 async function coverContributionFromReserve(contributionId, {
@@ -299,6 +332,7 @@ module.exports = {
   getMemberReserveShare,
   allocateFromBookBalance,
   debitReserve,
+  creditReserve,
   assertReserveBalance,
   coverContributionFromReserve,
 };

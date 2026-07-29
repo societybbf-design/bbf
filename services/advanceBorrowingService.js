@@ -104,6 +104,7 @@ async function listInternalBorrowings({ status, memberId, openOnly = false } = {
     .populate('lender', 'name email advanceBalance')
     .populate('borrower', 'name email advanceBalance savings')
     .populate('investment', 'investmentCode amount')
+    .populate('loan', 'amount loanType status fundingSource member')
     .sort({ createdAt: -1 });
 }
 
@@ -211,7 +212,8 @@ async function createInternalBorrowing({
 /**
  * Record repayment from a borrowing member.
  * - Deducts the repaid amount from the borrower's savings (source of repayment)
- * - Credits the society bank/book ledger
+ *   unless `cashReceived` (cash already taken at the cashier desk / loan repay)
+ * - Credits the society bank/book ledger unless `skipBankCredit`
  * - Restores the exact amount to the original lender's advance balance
  * - Settles (or partially settles) the borrowing record
  */
@@ -219,6 +221,8 @@ async function settleInternalBorrowing(borrowingId, {
   amount = null,
   recordedBy = 'Cashier',
   notes = '',
+  cashReceived = false,
+  skipBankCredit = false,
 } = {}) {
   const borrowing = await InternalBorrowing.findById(borrowingId);
   if (!borrowing) {
@@ -249,48 +253,51 @@ async function settleInternalBorrowing(borrowingId, {
   }
 
   const borrowerSavingsBefore = money(borrower.savings);
-  if (borrowerSavingsBefore + 0.001 < payAmount) {
-    throw httpError(
-      `${borrower.name} has only ${formatMoney(borrowerSavingsBefore, 2)} in savings, but ${formatMoney(payAmount, 2)} is needed to settle. Record a deposit for the borrower first, then settle.`
-    );
+  if (!cashReceived) {
+    if (borrowerSavingsBefore + 0.001 < payAmount) {
+      throw httpError(
+        `${borrower.name} has only ${formatMoney(borrowerSavingsBefore, 2)} in savings, but ${formatMoney(payAmount, 2)} is needed to settle. Record a deposit for the borrower first, then settle.`
+      );
+    }
+    // Deduct repayment from the borrower
+    borrower.savings = money(borrowerSavingsBefore - payAmount);
+    await borrower.save();
   }
-
-  // Deduct repayment from the borrower
-  borrower.savings = money(borrowerSavingsBefore - payAmount);
-  await borrower.save();
 
   const deposit = await Deposit.create({
     member: borrower._id,
     amount: payAmount,
     type: 'borrow_repayment',
     notes: notes?.trim()
-      || `Repayment of internal borrow to ${lender.name} (borrowing ${borrowing._id})`,
+      || `Repayment of internal borrow to ${lender.name} (borrowing ${borrowing._id})${cashReceived ? ' · cash at desk' : ''}`,
     recordedBy,
   });
 
   // Cash-in: society bank ledger increases (allow without opening so settlement is not skipped)
   let bankLedger = null;
-  try {
-    bankLedger = await creditInbound({
-      type: 'deposit',
-      amount: payAmount,
-      referenceType: 'InternalBorrowing',
-      referenceId: borrowing._id,
-      note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
-      createdBy: recordedBy,
-    });
-  } catch (error) {
-    // Fall back to soft credit so lender refund still proceeds if ledger is mid-setup.
-    bankLedger = await tryCredit({
-      type: 'deposit',
-      amount: payAmount,
-      referenceType: 'InternalBorrowing',
-      referenceId: borrowing._id,
-      note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
-      createdBy: recordedBy,
-    });
-    if (!bankLedger) {
-      console.warn('[advanceBorrowing] bank ledger credit skipped during settle:', error.message);
+  if (!skipBankCredit) {
+    try {
+      bankLedger = await creditInbound({
+        type: 'deposit',
+        amount: payAmount,
+        referenceType: 'InternalBorrowing',
+        referenceId: borrowing._id,
+        note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
+        createdBy: recordedBy,
+      });
+    } catch (error) {
+      // Fall back to soft credit so lender refund still proceeds if ledger is mid-setup.
+      bankLedger = await tryCredit({
+        type: 'deposit',
+        amount: payAmount,
+        referenceType: 'InternalBorrowing',
+        referenceId: borrowing._id,
+        note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
+        createdBy: recordedBy,
+      });
+      if (!bankLedger) {
+        console.warn('[advanceBorrowing] bank ledger credit skipped during settle:', error.message);
+      }
     }
   }
 
@@ -360,12 +367,13 @@ async function settleInternalBorrowing(borrowingId, {
       name: borrower.name,
       savings: borrower.savings,
       savingsBefore: borrowerSavingsBefore,
-      deductedAmount: payAmount,
+      deductedAmount: cashReceived ? 0 : payAmount,
     },
     settledAmount: payAmount,
     outstandingAfter: Math.max(0, remaining),
     fullySettled: borrowing.status === 'settled',
     bookBalance: bankLedger?.ledger?.bookBalance ?? null,
+    cashReceived: Boolean(cashReceived),
   };
 }
 

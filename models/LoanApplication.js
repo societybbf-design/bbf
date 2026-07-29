@@ -121,6 +121,40 @@ const LoanApplicationSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /**
+   * How the disbursement was funded at payout time.
+   * bank = society book; reserve = Emergency/Reserve Fund; advance = internal borrow cover;
+   * mixed = book + advance and/or reserve covers.
+   */
+  fundingSource: {
+    type: String,
+    enum: ['', 'bank', 'reserve', 'advance', 'mixed'],
+    default: '',
+    index: true,
+  },
+  /** Amount released from Emergency / Reserve into the book (or debited directly) for this loan. */
+  fundingReserveAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  /** Remaining reserve amount still to replenish on repayment. */
+  fundingReserveOutstanding: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  /** Amount covered from member advance (internal borrow) before/at disbursement. */
+  fundingAdvanceAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  fundingLenderName: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   outstandingBalance: {
     type: Number,
     default: 0,

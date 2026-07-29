@@ -26,8 +26,9 @@ test('settlement deducts borrower savings, credits ledger, refunds lender advanc
   assert.match(serviceJs, /borrower\.savings = money\(borrowerSavingsBefore - payAmount\)/);
   assert.match(serviceJs, /lender\.advanceBalance = money\(Number\(lender\.advanceBalance \|\| 0\) \+ payAmount\)/);
   assert.match(serviceJs, /creditInbound/);
-  assert.match(serviceJs, /deductedAmount: payAmount/);
+  assert.match(serviceJs, /deductedAmount: cashReceived \? 0 : payAmount/);
   assert.match(serviceJs, /refundedAmount: payAmount/);
+  assert.match(serviceJs, /cashReceived/);
 });
 
 test('funding repay route is wired for settlement', () => {

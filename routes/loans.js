@@ -12,6 +12,9 @@ const {
   uploadSignedLoanContract,
   updateLoanApplicationStatus,
   disburseLoanApplication,
+  previewLoanDisbursement,
+  coverLoanDisbursementFromAdvance,
+  coverLoanDisbursementFromReserve,
   getAllLoanTakers,
   getActiveBorrowers,
   getLoanPortfolioSummary,
@@ -338,11 +341,58 @@ router.post('/admin/:id/disburse', loanCashier, requirePasswordConfirmation, asy
     return res.json({
       loan,
       fundingSource: result?.fundingSource || 'bank',
+      fundingSourceLabel: result?.fundingSourceLabel || null,
       reserveBalance: result?.reserveBalance ?? null,
       bookBalance: result?.bookBalance ?? null,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to disburse loan.' });
+    const payload = { error: error.message || 'Unable to disburse loan.' };
+    if (error.funding) payload.funding = error.funding;
+    return res.status(error.status || 500).json(payload);
+  }
+});
+
+router.get('/admin/:id/disburse-check', loanCashier, async (req, res) => {
+  try {
+    const result = await previewLoanDisbursement(req.params.id);
+    return res.json(result);
+  } catch (error) {
+    const payload = { error: error.message || 'Unable to check loan disbursement funding.' };
+    if (error.funding) payload.funding = error.funding;
+    return res.status(error.status || 500).json(payload);
+  }
+});
+
+router.post('/admin/:id/disburse-cover-advance', loanCashier, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await coverLoanDisbursementFromAdvance({
+      loanId: req.params.id,
+      lenderId: req.body.lenderId,
+      amount: req.body.amount,
+      note: req.body.note,
+      createdBy: req.session?.user?.name || 'Cashier',
+    });
+    return res.json(result);
+  } catch (error) {
+    const payload = { error: error.message || 'Unable to cover loan shortfall from advance.' };
+    if (error.funding) payload.funding = error.funding;
+    return res.status(error.status || 500).json(payload);
+  }
+});
+
+router.post('/admin/:id/disburse-cover-reserve', loanCashier, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await coverLoanDisbursementFromReserve({
+      loanId: req.params.id,
+      amount: req.body.amount,
+      note: req.body.note,
+      createdBy: req.session?.user?.name || 'Cashier',
+    });
+    return res.json(result);
+  } catch (error) {
+    const payload = { error: error.message || 'Unable to cover loan shortfall from reserve.' };
+    if (error.funding) payload.funding = error.funding;
+    return res.status(error.status || 500).json(payload);
   }
 });
 
