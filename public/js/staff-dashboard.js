@@ -4049,6 +4049,55 @@ function buildCashierDisburseCard(loan = {}) {
 let cashierLoanBorrowersCache = [];
 let cashierLoansUiBound = false;
 let cashierLoanRepayState = null;
+let cashierLoanRepayAmountDirty = false;
+
+function normalizeCashierRepayAmount(raw) {
+  if (raw == null || raw === '') return NaN;
+  let text = String(raw).trim().replace(/[^\d,.-]/g, '');
+  if (!text) return NaN;
+  if (text.includes(',') && text.includes('.')) {
+    if (text.lastIndexOf(',') > text.lastIndexOf('.')) {
+      text = text.replace(/\./g, '').replace(',', '.');
+    } else {
+      text = text.replace(/,/g, '');
+    }
+  } else if (text.includes(',')) {
+    text = text.replace(',', '.');
+  }
+  const n = Number(text);
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : NaN;
+}
+
+function syncCashierRepayAmountField({ force = false } = {}) {
+  const amountInput = document.getElementById('cashierLoanRepayAmount');
+  const typeSelect = document.getElementById('cashierLoanRepayType');
+  const summary = cashierLoanRepayState?.summary;
+  if (!amountInput || !summary) return;
+
+  const remaining = Number(summary.availableToPay ?? summary.outstandingBalance ?? 0);
+  const suggested = Number(summary.suggestedInstallment || remaining || 0);
+  const type = String(typeSelect?.value || 'partial');
+  const isFull = type === 'full';
+
+  amountInput.readOnly = isFull;
+  amountInput.classList.toggle('is-readonly', isFull);
+
+  if (isFull) {
+    amountInput.value = remaining > 0 ? remaining.toFixed(2) : '';
+    cashierLoanRepayAmountDirty = false;
+    return;
+  }
+
+  if (!force && cashierLoanRepayAmountDirty) return;
+
+  if (type === 'installment' && suggested > 0) {
+    amountInput.value = suggested.toFixed(2);
+  } else if (!amountInput.value || force) {
+    // Partial / custom: leave blank or keep a light suggestion without locking.
+    amountInput.value = suggested > 0 ? Math.min(suggested, remaining).toFixed(2) : '';
+  }
+  cashierLoanRepayAmountDirty = false;
+}
 
 function formatLoanScheduleStatus(status) {
   if (status === 'paid') return 'Paid';
@@ -4089,9 +4138,7 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
   const statusEl = document.getElementById('cashierLoanDetailStatus');
   const metaEl = document.getElementById('cashierLoanDetailMeta');
   const hint = document.getElementById('cashierLoanRepayHint');
-  const amountInput = document.getElementById('cashierLoanRepayAmount');
   const memberIdInput = document.getElementById('cashierLoanRepayMemberId');
-  const typeSelect = document.getElementById('cashierLoanRepayType');
 
   if (!detail) return;
   detail.classList.remove('hidden');
@@ -4128,27 +4175,19 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
   if (memberIdInput) memberIdInput.value = memberMeta.memberId || '';
   renderCashierLoanSchedule(summary.schedule);
 
-  if (amountInput) {
-    amountInput.max = remaining > 0 ? remaining : undefined;
-    const suggested = Number(summary.suggestedInstallment || remaining || 0);
-    if (typeSelect?.value === 'full') {
-      amountInput.value = remaining > 0 ? remaining.toFixed(2) : '';
-    } else if (suggested > 0) {
-      amountInput.value = suggested.toFixed(2);
-    }
-  }
+  syncCashierRepayAmountField({ force: true });
 
   if (hint) {
     if (!summary.hasOutstandingLoan) {
       hint.textContent = 'This loan is fully paid (Completed / Paid). No further payment needed.';
     } else {
-      hint.textContent = `Available to collect now: ${money(remaining)}`
+      hint.textContent = `Remaining due: ${money(remaining)}. Type any amount up to that (partial payments allowed).`
         + (summary.suggestedInstallment
-          ? ` · Suggested installment: ${money(summary.suggestedInstallment)}`
+          ? ` Suggested installment: ${money(summary.suggestedInstallment)}.`
           : '')
         + ((summary.openBorrowings || []).some((r) => Number(r.outstanding || 0) > 0)
           || Number(summary.fundingReserveOutstanding || 0) > 0
-          ? ' · Recording payment will auto-refund lenders / replenish reserve.'
+          ? ' Recording a payment auto-refunds internal-borrow lenders and/or replenishes Emergency / Reserve Fund.'
           : '');
     }
   }
@@ -4360,7 +4399,7 @@ async function loadLoansModule() {
           <tr>
             <td>${escapeHtml(item.member?.name || 'Unknown')}</td>
             <td>${money(item.amount)}</td>
-            <td>${item.repaymentType === 'full' ? 'Full' : 'Installment'}</td>
+            <td>${item.repaymentType === 'full' ? 'Full' : (item.repaymentType === 'partial' ? 'Partial' : 'Installment')}</td>
             <td>${escapeHtml(formatLoanPaymentMethodLabel(item.paymentMethod))}</td>
             <td>${escapeHtml(translateStatus(item.status || '—'))}</td>
             <td>${item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'}</td>
@@ -4404,16 +4443,15 @@ function bindCashierLoansUi() {
     });
   });
 
-  document.getElementById('cashierLoanRepayType')?.addEventListener('change', (event) => {
-    const amountInput = document.getElementById('cashierLoanRepayAmount');
-    const summary = cashierLoanRepayState?.summary;
-    if (!amountInput || !summary) return;
-    const remaining = Number(summary.availableToPay ?? summary.outstandingBalance ?? 0);
-    if (event.target.value === 'full' && remaining > 0) {
-      amountInput.value = remaining.toFixed(2);
-    } else if (summary.suggestedInstallment > 0) {
-      amountInput.value = Number(summary.suggestedInstallment).toFixed(2);
-    }
+  document.getElementById('cashierLoanRepayType')?.addEventListener('change', () => {
+    cashierLoanRepayAmountDirty = false;
+    syncCashierRepayAmountField({ force: true });
+  });
+
+  document.getElementById('cashierLoanRepayAmount')?.addEventListener('input', () => {
+    const typeSelect = document.getElementById('cashierLoanRepayType');
+    if (typeSelect?.value === 'full') return;
+    cashierLoanRepayAmountDirty = true;
   });
 
   document.getElementById('cashierLoanDisburseQueue')?.addEventListener('submit', async (event) => {
@@ -4487,6 +4525,30 @@ function bindCashierLoansUi() {
       return;
     }
 
+    const repaymentType = String(formData.get('repaymentType') || 'partial');
+    const amountRaw = formData.get('amount');
+    const amount = normalizeCashierRepayAmount(amountRaw);
+    const remainingCap = Number(
+      cashierLoanRepayState?.summary?.availableToPay
+      ?? cashierLoanRepayState?.summary?.outstandingBalance
+      ?? 0
+    );
+
+    if (!(amount > 0)) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = 'Enter a valid payment amount (for example 2000).';
+      }
+      return;
+    }
+    if (repaymentType !== 'full' && remainingCap > 0 && amount > remainingCap + 0.001) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = `Amount cannot exceed remaining due of ${money(remainingCap)}.`;
+      }
+      return;
+    }
+
     const submitBtn = document.getElementById('cashierLoanRepaySubmitBtn');
     if (submitBtn) submitBtn.disabled = true;
 
@@ -4495,8 +4557,8 @@ function bindCashierLoansUi() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: formData.get('amount'),
-          repaymentType: formData.get('repaymentType'),
+          amount: amount.toFixed(2),
+          repaymentType,
           paymentMethod: formData.get('paymentMethod'),
           adminNote: formData.get('adminNote'),
         }),
@@ -4505,18 +4567,21 @@ function bindCashierLoansUi() {
       if (!response.ok) throw new Error(data.error || 'Unable to record loan payment.');
 
       const summary = data.summary || {};
-      const remaining = Number(summary.outstandingBalance || 0);
+      const remaining = Number(data.remainingDue ?? summary.outstandingBalance ?? 0);
       if (msg) {
         msg.classList.add('success');
         msg.textContent = data.message
           || (data.loanCleared || !summary.hasOutstandingLoan
-            ? 'Payment recorded. Loan is now Completed / Paid. Member dashboard will show the cleared balance.'
-            : `Payment recorded. Remaining due: ${money(remaining)}.`);
+            ? `Payment of ${money(data.amountPaid || amount)} recorded. Loan is now Completed / Paid.`
+            : `Payment of ${money(data.amountPaid || amount)} recorded. Remaining due: ${money(remaining)}.`);
       }
 
+      cashierLoanRepayAmountDirty = false;
       event.target.reset();
+      const typeSelect = document.getElementById('cashierLoanRepayType');
+      if (typeSelect) typeSelect.value = 'partial';
       document.getElementById('cashierLoanRepayMemberId').value = memberId;
-      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue']);
+      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue', 'reserve', 'funding']);
       await loadLoansModule();
       markStaffViewCache?.('loans');
       await loadCashierLoanRepayDetail(memberId, cashierLoanRepayState?.meta);

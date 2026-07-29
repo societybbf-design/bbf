@@ -1182,7 +1182,7 @@
 
           <h3>Loan Repayment Desk</h3>
           <p class="text-secondary u-mb-1">
-            Member pays in person. Search the borrower, review outstanding balance, funding source, and installment schedule, then record the payment. Ledgers update automatically; internal borrow lenders are refunded and Emergency / Reserve Fund is replenished when applicable.
+            Member pays in person. Search the borrower, review outstanding balance and funding source, then type the exact amount received — full or partial (for example ৳2,000 of ৳5,000). Outstanding balance updates immediately; internal-borrow lenders are refunded and Emergency / Reserve Fund is replenished automatically when applicable.
           </p>
 
           <section class="panel-card u-mb-1" id="cashierLoanRepayDesk">
@@ -1206,7 +1206,7 @@
               <div class="stats-grid u-mb-1">
                 <div class="stat-card"><h3 id="cashierLoanDetailOriginal">৳0</h3><p>Total loan</p></div>
                 <div class="stat-card"><h3 id="cashierLoanDetailPaid">৳0</h3><p>Paid so far</p></div>
-                <div class="stat-card"><h3 id="cashierLoanDetailRemaining">৳0</h3><p>Remaining</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailRemaining">৳0</h3><p>Remaining due</p></div>
                 <div class="stat-card"><h3 id="cashierLoanDetailStatus">—</h3><p>Loan status</p></div>
               </div>
               <p class="table-subtitle" id="cashierLoanDetailMeta">Select a borrower to load loan details.</p>
@@ -1235,14 +1235,16 @@
                   <div class="form-group">
                     <label>Payment type
                       <select name="repaymentType" id="cashierLoanRepayType">
-                        <option value="installment">Installment</option>
+                        <option value="partial" selected>Partial / custom amount</option>
+                        <option value="installment">Suggested installment</option>
                         <option value="full">Full payment (clear loan)</option>
                       </select>
                     </label>
                   </div>
                   <div class="form-group">
-                    <label>Amount (৳)
-                      <input type="number" name="amount" id="cashierLoanRepayAmount" min="0.01" step="0.01" required />
+                    <label>Amount received now (৳)
+                      <input type="text" inputmode="decimal" name="amount" id="cashierLoanRepayAmount"
+                        placeholder="e.g. 2000" autocomplete="off" required />
                     </label>
                   </div>
                 </div>
@@ -1264,7 +1266,7 @@
                     </label>
                   </div>
                 </div>
-                <p class="table-subtitle" id="cashierLoanRepayHint">Select a borrower to load outstanding balance.</p>
+                <p class="table-subtitle" id="cashierLoanRepayHint">Select a borrower to load outstanding balance. Type any amount up to the remaining due.</p>
                 <button type="submit" class="primary-btn" id="cashierLoanRepaySubmitBtn">Confirm &amp; Record Payment</button>
                 <p id="cashierLoanRepayMessage" class="message"></p>
               </form>

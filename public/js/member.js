@@ -1764,7 +1764,7 @@ async function loadLoanRepayments() {
     body.innerHTML = repayments.length ? repayments.map((item) => `
       <tr>
         <td>${formatMoney(Number(item.amount || 0), 2)}</td>
-        <td>${item.repaymentType === 'full' ? 'Full' : 'Installment'}</td>
+        <td>${item.repaymentType === 'full' ? 'Full' : (item.repaymentType === 'partial' ? 'Partial' : 'Installment')}</td>
         <td>${formatPaymentMethodLabel(item.paymentMethod)}</td>
         <td>${formatRepaymentStatusBadge(item.status)}${item.adminManual ? '<br><small>Recorded by admin</small>' : ''}</td>
         <td>${item.status === 'approved' ? `${formatMoney(Number(item.balanceAfter || 0), 2)}` : '-'}</td>
