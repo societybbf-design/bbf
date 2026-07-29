@@ -729,24 +729,16 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
   return loan;
 }
 
+/**
+ * Loan funding snapshot — loans are funded only via member advance (internal borrow)
+ * and/or Emergency / Reserve Fund. Society book balance is never used for loan payout.
+ */
 async function getLoanDisbursementFundingSnapshot(loan) {
   const requiredAmount = Number(Number(loan.amount || 0).toFixed(2));
-  const [{ getLedger }, { ensureFund, money: reserveMoney }, { listMemberAdvanceBalances }] = await Promise.all([
-    Promise.resolve(require('./bankLedgerService')),
+  const [{ ensureFund, money: reserveMoney }, { listMemberAdvanceBalances }] = await Promise.all([
     Promise.resolve(require('./emergencyReserveService')),
     Promise.resolve(require('./advanceBorrowingService')),
   ]);
-
-  let bookBalance = 0;
-  let openingSet = false;
-  try {
-    const ledger = await getLedger({ entryLimit: 1 });
-    bookBalance = Number(Number(ledger.bookBalance || 0).toFixed(2));
-    openingSet = Boolean(ledger.openingSet);
-  } catch (_) {
-    bookBalance = 0;
-    openingSet = false;
-  }
 
   const fund = await ensureFund();
   const reserveBalance = reserveMoney(fund.balance);
@@ -754,24 +746,31 @@ async function getLoanDisbursementFundingSnapshot(loan) {
     .filter((m) => Number(m.advanceBalance || 0) > 0.001)
     .sort((a, b) => Number(b.advanceBalance || 0) - Number(a.advanceBalance || 0));
 
-  const shortfall = Number(Math.max(0, requiredAmount - bookBalance).toFixed(2));
+  const fundedAdvance = Number(Number(loan.fundingAdvanceAmount || 0).toFixed(2));
+  const fundedReserve = Number(Number(loan.fundingReserveAmount || 0).toFixed(2));
+  const fundedAmount = Number((fundedAdvance + fundedReserve).toFixed(2));
+  const remainingToFund = Number(Math.max(0, requiredAmount - fundedAmount).toFixed(2));
   const totalAdvanceAvailable = Number(
     advances.reduce((sum, m) => sum + Number(m.advanceBalance || 0), 0).toFixed(2)
   );
-  const canDisburseDirectly = openingSet && shortfall <= 0.001;
+  const fullyFunded = remainingToFund <= 0.001;
 
   return {
     loanId: loan._id,
     status: loan.status,
     requiredAmount,
-    bookBalance,
-    openingSet,
-    shortfall,
-    hasShortfall: shortfall > 0.001,
-    canComplete: canDisburseDirectly,
-    canCompleteDirectly: canDisburseDirectly,
-    canDisburseDirectly,
-    needsPopup: !canDisburseDirectly,
+    fundedAmount,
+    fundedAdvance,
+    fundedReserve,
+    remainingToFund,
+    // Alias kept for older modal clients — means "amount still to fund", not book shortfall.
+    shortfall: remainingToFund,
+    hasShortfall: remainingToFund > 0.001,
+    canComplete: fullyFunded,
+    canCompleteDirectly: fullyFunded,
+    canDisburseDirectly: fullyFunded,
+    // Always show the funding modal so cashiers pick advance and/or reserve explicitly.
+    needsPopup: true,
     reserveBalance,
     totalAdvanceAvailable,
     advanceMembers: advances,
@@ -792,13 +791,13 @@ async function getLoanDisbursementFundingSnapshot(loan) {
     coverOptions: {
       canUseReserve: reserveBalance > 0.001,
       canUseAdvance: totalAdvanceAvailable > 0.001,
-      maxCoverable: Number(Math.min(shortfall, reserveBalance + totalAdvanceAvailable).toFixed(2)),
+      maxCoverable: Number(Math.min(remainingToFund, reserveBalance + totalAdvanceAvailable).toFixed(2)),
     },
   };
 }
 
 /**
- * Pre-flight check before loan Disburse — used by the shortfall modal.
+ * Pre-flight check before loan Disburse — used by the funding selection modal.
  */
 async function previewLoanDisbursement(loanId) {
   const loan = await LoanApplication.findById(loanId)
@@ -817,13 +816,11 @@ async function previewLoanDisbursement(loanId) {
   const funding = await getLoanDisbursementFundingSnapshot(loan);
   let message;
   if (funding.canDisburseDirectly) {
-    message = `Book balance covers ${formatMoney(funding.requiredAmount, 2)}. Disbursement can complete directly.`;
-  } else if (!funding.openingSet) {
-    message = 'Bank ledger opening balance is not set. Set it before disbursing the loan.';
+    message = `Loan is fully funded (${formatMoney(funding.fundedAmount, 2)}) from advance and/or Emergency / Reserve Fund. Confirm to disburse.`;
   } else if (funding.hasShortfall) {
-    message = `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it from member advance (internal borrow) or Emergency / Reserve Fund before disbursing.`;
+    message = `Fund ${formatMoney(funding.remainingToFund, 2)} from member advance (internal borrow) and/or Emergency / Reserve Fund before disbursing. Loans do not use society book balance.`;
   } else {
-    message = 'Resolve funding issues before disbursing.';
+    message = 'Select advance and/or Emergency / Reserve Fund to finance this loan.';
   }
 
   return {
@@ -833,8 +830,8 @@ async function previewLoanDisbursement(loanId) {
 }
 
 /**
- * Cover loan disbursement book-balance shortfall from a member's advance.
- * Debits lender advance → credits society book → opens InternalBorrowing linked to the loan.
+ * Allocate loan funding from a member's advance (internal borrow).
+ * Debits lender advance and opens InternalBorrowing — does NOT touch society book balance.
  */
 async function coverLoanDisbursementFromAdvance({
   loanId,
@@ -850,36 +847,30 @@ async function coverLoanDisbursementFromAdvance({
     throw error;
   }
   if (loan.status !== 'approved') {
-    const error = new Error('Only approved loans can receive disbursement funding covers.');
+    const error = new Error('Only approved loans can receive disbursement funding.');
     error.status = 400;
     throw error;
   }
 
   const snapshot = await getLoanDisbursementFundingSnapshot(loan);
-  if (!snapshot.openingSet) {
-    const error = new Error('Set the bank ledger opening balance before covering a loan shortfall.');
-    error.status = 409;
-    error.funding = snapshot;
-    throw error;
-  }
-  if (!(snapshot.shortfall > 0.001)) {
-    const error = new Error('There is no book-balance shortfall to cover for this loan.');
+  if (!(snapshot.remainingToFund > 0.001)) {
+    const error = new Error('This loan is already fully funded. You can disburse it now.');
     error.status = 400;
     error.funding = snapshot;
     throw error;
   }
 
   const payAmount = amount == null || amount === ''
-    ? snapshot.shortfall
+    ? snapshot.remainingToFund
     : parseLooseMoney(amount);
   if (!(payAmount > 0)) {
-    const error = new Error('Cover amount must be greater than zero.');
+    const error = new Error('Funding amount must be greater than zero.');
     error.status = 400;
     throw error;
   }
-  if (payAmount > snapshot.shortfall + 0.001) {
+  if (payAmount > snapshot.remainingToFund + 0.001) {
     const error = new Error(
-      `Cover amount exceeds shortfall of ${formatMoney(snapshot.shortfall, 2)}.`
+      `Amount exceeds remaining to fund of ${formatMoney(snapshot.remainingToFund, 2)}.`
     );
     error.status = 400;
     throw error;
@@ -917,19 +908,8 @@ async function coverLoanDisbursementFromAdvance({
     amountSettled: 0,
     status: 'open',
     note: note?.trim()
-      || `Internal borrow from ${lender.name} advance to cover loan disbursement shortfall for ${loan.member?.name || 'member'}`,
+      || `Internal borrow from ${lender.name} advance to fund loan disbursement for ${loan.member?.name || 'member'}`,
     createdBy: String(createdBy || 'Cashier').trim(),
-  });
-
-  const { creditInbound } = require('./bankLedgerService');
-  const bankLedger = await creditInbound({
-    type: 'deposit',
-    amount: payAmount,
-    referenceType: 'InternalBorrowing',
-    referenceId: borrowing._id,
-    note: `Advance released to book for loan disbursement shortfall · lender ${lender.name} · borrower ${loan.member?.name || ''}`,
-    createdBy,
-    paymentChannel: 'cash',
   });
 
   loan.fundingAdvanceAmount = Number(
@@ -944,19 +924,17 @@ async function coverLoanDisbursementFromAdvance({
 
   const funding = await getLoanDisbursementFundingSnapshot(loan);
   return {
-    mode: 'book',
+    mode: 'advance',
     borrowing,
-    bankLedger,
-    bookBalance: bankLedger?.ledger?.bookBalance ?? funding.bookBalance,
     amountCovered: payAmount,
     funding,
-    message: `Covered ${formatMoney(payAmount, 2)} from ${lender.name}'s advance. Book balance now ${formatMoney(funding.bookBalance, 2)}. Shortfall remaining: ${formatMoney(funding.shortfall, 2)}.`,
+    message: `Allocated ${formatMoney(payAmount, 2)} from ${lender.name}'s advance. Funded ${formatMoney(funding.fundedAmount, 2)} of ${formatMoney(funding.requiredAmount, 2)}. Remaining: ${formatMoney(funding.remainingToFund, 2)}.`,
   };
 }
 
 /**
- * Cover loan disbursement book-balance shortfall from Emergency / Reserve Fund.
- * Debits reserve → credits society book (ready for bank-path disbursement).
+ * Allocate loan funding from Emergency / Reserve Fund.
+ * Debits reserve only — does NOT credit or debit society book balance.
  */
 async function coverLoanDisbursementFromReserve({
   loanId,
@@ -971,36 +949,30 @@ async function coverLoanDisbursementFromReserve({
     throw error;
   }
   if (loan.status !== 'approved') {
-    const error = new Error('Only approved loans can receive disbursement funding covers.');
+    const error = new Error('Only approved loans can receive disbursement funding.');
     error.status = 400;
     throw error;
   }
 
   const snapshot = await getLoanDisbursementFundingSnapshot(loan);
-  if (!snapshot.openingSet) {
-    const error = new Error('Set the bank ledger opening balance before covering a loan shortfall.');
-    error.status = 409;
-    error.funding = snapshot;
-    throw error;
-  }
-  if (!(snapshot.shortfall > 0.001)) {
-    const error = new Error('There is no book-balance shortfall to cover for this loan.');
+  if (!(snapshot.remainingToFund > 0.001)) {
+    const error = new Error('This loan is already fully funded. You can disburse it now.');
     error.status = 400;
     error.funding = snapshot;
     throw error;
   }
 
   const payAmount = amount == null || amount === ''
-    ? Math.min(snapshot.shortfall, snapshot.reserveBalance)
+    ? Math.min(snapshot.remainingToFund, snapshot.reserveBalance)
     : parseLooseMoney(amount);
   if (!(payAmount > 0)) {
-    const error = new Error('Cover amount must be greater than zero.');
+    const error = new Error('Funding amount must be greater than zero.');
     error.status = 400;
     throw error;
   }
-  if (payAmount > snapshot.shortfall + 0.001) {
+  if (payAmount > snapshot.remainingToFund + 0.001) {
     const error = new Error(
-      `Cover amount exceeds shortfall of ${formatMoney(snapshot.shortfall, 2)}.`
+      `Amount exceeds remaining to fund of ${formatMoney(snapshot.remainingToFund, 2)}.`
     );
     error.status = 400;
     throw error;
@@ -1014,24 +986,14 @@ async function coverLoanDisbursementFromReserve({
   }
 
   const { debitReserve } = require('./emergencyReserveService');
-  const { creditInbound } = require('./bankLedgerService');
 
   const reserveResult = await debitReserve(payAmount, {
     type: 'loan_cover',
     note: note?.trim()
-      || `Released to book for loan disbursement shortfall · ${loan.member?.name || 'member'}`,
+      || `Emergency/Reserve allocated to fund loan disbursement · ${loan.member?.name || 'member'}`,
     createdBy,
     referenceType: 'LoanApplication',
     referenceId: loan._id,
-  });
-
-  const bankLedger = await creditInbound({
-    type: 'reserve_disbursement',
-    amount: payAmount,
-    referenceType: 'EmergencyReserveFund',
-    referenceId: reserveResult.fund?._id || null,
-    note: `Emergency/Reserve → book for loan disbursement · ${loan.member?.name || ''}`,
-    createdBy,
   });
 
   loan.fundingReserveAmount = Number(
@@ -1044,16 +1006,14 @@ async function coverLoanDisbursementFromReserve({
 
   const funding = await getLoanDisbursementFundingSnapshot(loan);
   return {
-    mode: 'book',
+    mode: 'reserve',
     reserve: {
       balance: reserveResult.balance,
       entry: reserveResult.entry,
     },
-    bankLedger,
-    bookBalance: bankLedger?.ledger?.bookBalance ?? funding.bookBalance,
     amountCovered: payAmount,
     funding,
-    message: `Covered ${formatMoney(payAmount, 2)} from Emergency / Reserve Fund. Book balance now ${formatMoney(funding.bookBalance, 2)}. Shortfall remaining: ${formatMoney(funding.shortfall, 2)}.`,
+    message: `Allocated ${formatMoney(payAmount, 2)} from Emergency / Reserve Fund. Funded ${formatMoney(funding.fundedAmount, 2)} of ${formatMoney(funding.requiredAmount, 2)}. Remaining: ${formatMoney(funding.remainingToFund, 2)}.`,
   };
 }
 
@@ -1065,20 +1025,28 @@ function resolveLoanFundingSourceLabel(loan) {
     const parts = [];
     if (Number(loan.fundingAdvanceAmount || 0) > 0) parts.push('member advance');
     if (Number(loan.fundingReserveAmount || 0) > 0) parts.push('Emergency / Reserve Fund');
-    parts.push('society book balance');
-    return `Mixed (${parts.join(' + ')})`;
+    return parts.length ? `Mixed (${parts.join(' + ')})` : 'Mixed external funding';
   }
-  if (source === 'bank') return 'Society book balance';
-  return 'Society book balance';
+  if (source === 'bank') return 'Society book balance (legacy)';
+  // Unpersisted / in-progress loans: describe from amounts when possible.
+  const advance = Number(loan.fundingAdvanceAmount || 0);
+  const reserve = Number(loan.fundingReserveAmount || 0);
+  if (advance > 0.001 && reserve > 0.001) return 'Mixed (member advance + Emergency / Reserve Fund)';
+  if (advance > 0.001) return 'Internal borrow (member advance)';
+  if (reserve > 0.001) return 'Emergency / Reserve Fund';
+  return 'External funding (advance or Emergency / Reserve Fund)';
 }
 
+/**
+ * Finalize loan disbursement after advance and/or reserve funding is fully allocated.
+ * Does not debit or credit society book balance.
+ */
 async function disburseLoanApplication(loanId, {
   paymentMethod = '',
   transferReference = '',
   disbursementNote = '',
   disbursedBy = 'Admin',
-  fundingSource = 'bank',
-  allowShortfall = false,
+  fundingSource = '',
 } = {}) {
   const loan = await LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' });
   if (!loan) {
@@ -1106,155 +1074,139 @@ async function disburseLoanApplication(loanId, {
     throw error;
   }
 
-  const requestedSource = String(fundingSource || 'bank').toLowerCase() === 'reserve' ? 'reserve' : 'bank';
-  const amount = Number(loan.amount || 0);
-
-  // Bank path: require sufficient book balance (or prior cover). On shortfall, return funding payload for modal.
-  if (requestedSource === 'bank' && !allowShortfall) {
+  const requested = String(fundingSource || '').toLowerCase();
+  if (requested === 'bank') {
     const funding = await getLoanDisbursementFundingSnapshot(loan);
-    if (!funding.openingSet || funding.hasShortfall) {
-      const error = new Error(
-        !funding.openingSet
-          ? 'Bank ledger opening balance is not set. Set it before disbursing, or cover the shortfall in the disbursement popup.'
-          : `Insufficient bank ledger balance for this debit. Shortfall ${formatMoney(funding.shortfall, 2)}.`
-      );
-      error.status = 409;
-      error.funding = {
-        ...funding,
-        message: !funding.openingSet
-          ? 'Bank ledger opening balance is not set. Set it before disbursing.'
-          : `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it from member advance or Emergency / Reserve Fund, then disburse.`,
-        needsPopup: true,
-      };
+    const error = new Error(
+      'Loans cannot be funded from society book balance. Fund via member advance or Emergency / Reserve Fund in the disbursement popup.'
+    );
+    error.status = 409;
+    error.funding = {
+      ...funding,
+      needsPopup: true,
+      message: error.message,
+    };
+    throw error;
+  }
+
+  const amount = Number(loan.amount || 0);
+  let workingLoan = loan;
+  let funding = await getLoanDisbursementFundingSnapshot(workingLoan);
+
+  // Optional convenience: request body fundingSource=reserve allocates any remaining amount from reserve.
+  if (requested === 'reserve' && funding.remainingToFund > 0.001) {
+    await coverLoanDisbursementFromReserve({
+      loanId: workingLoan._id,
+      amount: funding.remainingToFund,
+      createdBy: disbursedBy,
+      note: `Full remaining reserve allocation at disbursement · ${workingLoan.member?.name || 'member'}`,
+    });
+    workingLoan = await LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' });
+    if (!workingLoan) {
+      const error = new Error('Loan application not found after reserve funding.');
+      error.status = 404;
       throw error;
     }
+    funding = await getLoanDisbursementFundingSnapshot(workingLoan);
   }
 
-  // Reserve path: earmarked cash leaves the Emergency / Reserve Fund (already taken from book when allocated).
-  // Bank path: debit society book balance directly.
-  let reserveResult = null;
-  let ledgerResult = null;
-  if (requestedSource === 'reserve') {
-    const { debitReserve } = require('./emergencyReserveService');
-    reserveResult = await debitReserve(amount, {
-      type: 'loan_disbursement',
-      note: `Loan disbursement (${loan.loanType || 'loan'}) → ${loan.member?.name || 'member'} from Emergency / Reserve Fund`,
-      createdBy: disbursedBy,
-      referenceType: 'LoanApplication',
-      referenceId: loan._id,
-    });
-    loan.fundingReserveAmount = Number(
-      (Number(loan.fundingReserveAmount || 0) + amount).toFixed(2)
+  if (!funding.canDisburseDirectly || funding.remainingToFund > 0.001) {
+    const error = new Error(
+      `Loan is not fully funded. Allocate ${formatMoney(funding.remainingToFund, 2)} from member advance or Emergency / Reserve Fund before disbursing.`
     );
-    loan.fundingReserveOutstanding = Number(
-      (Number(loan.fundingReserveOutstanding || 0) + amount).toFixed(2)
-    );
-  } else {
-    const { debit: ledgerDebit } = require('./bankLedgerService');
-    try {
-      ledgerResult = await ledgerDebit({
-        type: 'loan_disbursement',
-        amount,
-        referenceType: 'LoanApplication',
-        referenceId: loan._id,
-        note: `Loan disbursement ${loan.loanType || ''} → ${loan.member?.name || 'member'}`,
-        createdBy: disbursedBy,
-      });
-    } catch (error) {
-      const funding = await getLoanDisbursementFundingSnapshot(loan).catch(() => null);
-      const err = new Error(error.message || 'Unable to debit book balance for loan disbursement.');
-      err.status = error.status || 400;
-      if (funding) {
-        err.funding = {
-          ...funding,
-          needsPopup: true,
-          message: funding.message
-            || `Book balance shortfall of ${formatMoney(funding.shortfall, 2)}. Cover it before disbursing.`,
-        };
-      }
-      throw err;
-    }
+    error.status = 409;
+    error.funding = {
+      ...funding,
+      needsPopup: true,
+      message: error.message,
+    };
+    throw error;
   }
 
-  const advanceCovered = Number(loan.fundingAdvanceAmount || 0);
-  const reserveCovered = Number(loan.fundingReserveAmount || 0);
-  let persistedSource = requestedSource;
-  if (requestedSource === 'reserve') {
+  const advanceCovered = Number(workingLoan.fundingAdvanceAmount || 0);
+  const reserveCovered = Number(workingLoan.fundingReserveAmount || 0);
+  let persistedSource = 'advance';
+  if (advanceCovered > 0.001 && reserveCovered > 0.001) {
+    persistedSource = 'mixed';
+  } else if (reserveCovered > 0.001 && !(advanceCovered > 0.001)) {
     persistedSource = 'reserve';
-  } else if (advanceCovered > 0.001 && reserveCovered > 0.001) {
-    persistedSource = 'mixed';
   } else if (advanceCovered > 0.001) {
-    persistedSource = advanceCovered + 0.001 >= amount ? 'advance' : 'mixed';
-  } else if (reserveCovered > 0.001) {
-    persistedSource = 'mixed';
+    persistedSource = 'advance';
   } else {
-    persistedSource = 'bank';
+    const error = new Error(
+      'Loan funding is incomplete. Allocate from member advance or Emergency / Reserve Fund first.'
+    );
+    error.status = 409;
+    error.funding = { ...funding, needsPopup: true, message: error.message };
+    throw error;
   }
 
   const fundingNote = persistedSource === 'reserve'
     ? 'Funded from Emergency / Reserve Fund'
     : persistedSource === 'advance'
-      ? `Funded via internal borrow${loan.fundingLenderName ? ` from ${loan.fundingLenderName}` : ''}`
-      : persistedSource === 'mixed'
-        ? `Mixed funding${advanceCovered > 0 ? ` · advance ${formatMoney(advanceCovered, 2)}` : ''}${reserveCovered > 0 ? ` · reserve ${formatMoney(reserveCovered, 2)}` : ''}`
-        : 'Funded from society book balance';
+      ? `Funded via internal borrow${workingLoan.fundingLenderName ? ` from ${workingLoan.fundingLenderName}` : ''}`
+      : `Mixed funding · advance ${formatMoney(advanceCovered, 2)} · reserve ${formatMoney(reserveCovered, 2)}`;
 
-  loan.status = 'disbursed';
-  loan.paymentMethod = normalizedPaymentMethod;
-  loan.disbursedAt = new Date();
-  loan.disbursedBy = disbursedBy?.trim() || 'Admin';
-  loan.disbursementReference = transferReference?.trim() || '';
-  loan.disbursementNote = [
+  workingLoan.status = 'disbursed';
+  workingLoan.paymentMethod = normalizedPaymentMethod;
+  workingLoan.disbursedAt = new Date();
+  workingLoan.disbursedBy = disbursedBy?.trim() || 'Admin';
+  workingLoan.disbursementReference = transferReference?.trim() || '';
+  workingLoan.disbursementNote = [
     disbursementNote?.trim() || '',
     fundingNote,
   ].filter(Boolean).join(' · ');
-  loan.fundingSource = persistedSource;
-  loan.outstandingBalance = amount;
-  loan.totalRepaid = 0;
-  loan.repaymentStatus = 'active';
-  if (!loan.installmentMonths) {
-    loan.installmentMonths = 12;
+  workingLoan.fundingSource = persistedSource;
+  workingLoan.outstandingBalance = amount;
+  workingLoan.totalRepaid = 0;
+  workingLoan.repaymentStatus = 'active';
+  if (!workingLoan.installmentMonths) {
+    workingLoan.installmentMonths = 12;
   }
-  await loan.save();
+  await workingLoan.save();
 
-  const member = loan.member;
-  const paymentLabel = formatPaymentMethodLabel(loan.paymentMethod);
-  const referenceNote = loan.disbursementReference ? ` Reference: ${loan.disbursementReference}.` : '';
-  const sourceLabel = resolveLoanFundingSourceLabel(loan);
-  const sourceNote = persistedSource === 'bank' ? '' : ` (${sourceLabel})`;
-  const transferMessage = `Dear ${member.name}, your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} has been transferred to you via ${paymentLabel}${sourceNote}.${referenceNote}`;
+  const member = workingLoan.member;
+  const paymentLabel = formatPaymentMethodLabel(workingLoan.paymentMethod);
+  const referenceNote = workingLoan.disbursementReference ? ` Reference: ${workingLoan.disbursementReference}.` : '';
+  const sourceLabel = resolveLoanFundingSourceLabel(workingLoan);
+  const sourceNote = ` (${sourceLabel})`;
+  const transferMessage = `Dear ${member.name}, your ${workingLoan.loanType} loan of ${formatMoney(Number(workingLoan.amount), 2)} has been transferred to you via ${paymentLabel}${sourceNote}.${referenceNote}`;
+
+  const { ensureFund, money: reserveMoney } = require('./emergencyReserveService');
+  const fund = await ensureFund();
+  const reserveBalance = reserveMoney(fund.balance);
 
   if (member?.email) {
     await sendTransactionalEmail({
       to: member.email,
       subject: 'Loan Money Transferred',
       text: transferMessage,
-      html: `<p>Dear ${member.name},</p><p>Your <strong>${loan.loanType}</strong> loan of <strong>${formatMoney(Number(loan.amount), 2)}</strong> has been transferred to you.</p><p><strong>Method:</strong> ${paymentLabel}</p><p><strong>Funding:</strong> ${sourceLabel}</p>${loan.disbursementReference ? `<p><strong>Reference:</strong> ${loan.disbursementReference}</p>` : ''}${loan.disbursementNote ? `<p><strong>Note:</strong> ${loan.disbursementNote}</p>` : ''}<p>Please check your member dashboard for full transfer details.</p>`,
+      html: `<p>Dear ${member.name},</p><p>Your <strong>${workingLoan.loanType}</strong> loan of <strong>${formatMoney(Number(workingLoan.amount), 2)}</strong> has been transferred to you.</p><p><strong>Method:</strong> ${paymentLabel}</p><p><strong>Funding:</strong> ${sourceLabel}</p>${workingLoan.disbursementReference ? `<p><strong>Reference:</strong> ${workingLoan.disbursementReference}</p>` : ''}${workingLoan.disbursementNote ? `<p><strong>Note:</strong> ${workingLoan.disbursementNote}</p>` : ''}<p>Please check your member dashboard for full transfer details.</p>`,
     });
   }
 
   if (member?.phone) {
     await sendSms({
       to: member.phone,
-      message: `Loan transferred: ${formatMoney(Number(loan.amount), 2)} via ${paymentLabel}${sourceNote}.${referenceNote}`,
+      message: `Loan transferred: ${formatMoney(Number(workingLoan.amount), 2)} via ${paymentLabel}${sourceNote}.${referenceNote}`,
     });
   }
 
   await createMemberNotification({
-    memberId: loan.member._id || loan.member,
+    memberId: workingLoan.member._id || workingLoan.member,
     type: 'loan',
     title: 'Loan Money Transferred',
-    message: `Your ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was transferred via ${paymentLabel}${sourceNote}.${referenceNote}`,
-    relatedId: loan._id,
+    message: `Your ${workingLoan.loanType} loan of ${formatMoney(Number(workingLoan.amount), 2)} was transferred via ${paymentLabel}${sourceNote}.${referenceNote}`,
+    relatedId: workingLoan._id,
     relatedModel: 'LoanApplication',
   });
 
   return {
-    loan,
+    loan: workingLoan,
     fundingSource: persistedSource,
     fundingSourceLabel: sourceLabel,
-    reserveBalance: reserveResult?.balance ?? null,
-    bookBalance: ledgerResult?.ledger?.bookBalance ?? null,
+    reserveBalance,
+    bookBalance: null,
   };
 }
 

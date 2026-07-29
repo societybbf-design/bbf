@@ -1479,21 +1479,21 @@ window.openCashierPaymentShortfallModal = openCashierPaymentShortfallModal;
 window.ensureCashierPaymentShortfallModal = ensureCashierPaymentShortfallModal;
 
 /* -------------------------------------------------------------------------- */
-/* Loan disbursement shortfall modal (mirrors project payment shortfall flow) */
+/* Loan disbursement funding modal (advance / Emergency Reserve only)          */
 /* -------------------------------------------------------------------------- */
 
-/** True when Disburse must be intercepted and the shortfall modal opened (no direct POST). */
+/** True until advance + reserve allocations fully cover the loan (never uses book). */
 function loanFundingNeedsShortfallModal(funding) {
   if (!funding || typeof funding !== 'object') return true;
-  if (funding.openingSet === false) return true;
   if (funding.canDisburseDirectly === false || funding.canCompleteDirectly === false) return true;
-  if (funding.hasShortfall === true || funding.needsPopup === true) return true;
-  const shortfall = Number(funding.shortfall || 0);
-  if (Number.isFinite(shortfall) && shortfall > 0.009) return true;
+  if (funding.hasShortfall === true) return true;
+  const remaining = Number(funding.remainingToFund ?? funding.shortfall ?? NaN);
+  if (Number.isFinite(remaining) && remaining > 0.009) return true;
   const required = Number(funding.requiredAmount ?? funding.loan?.amount ?? NaN);
-  const book = Number(funding.bookBalance);
-  if (Number.isFinite(required) && Number.isFinite(book) && book + 0.009 < required) return true;
-  return false;
+  const funded = Number(funding.fundedAmount ?? NaN);
+  if (Number.isFinite(required) && Number.isFinite(funded) && funded + 0.009 < required) return true;
+  if (funding.canDisburseDirectly === true || funding.canCompleteDirectly === true) return false;
+  return true;
 }
 
 let loanDisburseShortfallState = {
@@ -1522,15 +1522,15 @@ function ensureLoanDisburseShortfallModal() {
     <div class="modal-content modal-large">
       <div class="modal-header">
         <div>
-          <h2 id="loanDisburseShortfallTitle">Disburse loan</h2>
-          <p class="table-subtitle" id="loanDisburseShortfallSubtitle">Check book balance, fix any shortfall, then disburse.</p>
+          <h2 id="loanDisburseShortfallTitle">Fund &amp; disburse loan</h2>
+          <p class="table-subtitle" id="loanDisburseShortfallSubtitle">Choose member advance and/or Emergency / Reserve Fund. Loans never use society book balance.</p>
         </div>
         <div class="modal-header-actions">
           <button type="button" class="modal-close" id="loanDisburseShortfallClose" aria-label="Close">&times;</button>
         </div>
       </div>
       <div id="loanDisburseShortfallContent" class="member-profile-content">
-        <p class="text-secondary">Checking funding…</p>
+        <p class="text-secondary">Loading funding options…</p>
       </div>
       <p id="loanDisburseShortfallMessage" class="message"></p>
       <div class="inline-actions u-mt-1" style="justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;">
@@ -1585,17 +1585,18 @@ function renderLoanDisburseShortfallModal(funding) {
   const canFinish = !loanFundingNeedsShortfallModal(funding);
   const advances = Array.isArray(funding.advanceMembers) ? funding.advanceMembers : [];
   const memberName = funding.member?.name || funding.loan?.member?.name || 'Member';
-  const shortfall = Number(funding.shortfall || 0);
+  const remaining = Number(funding.remainingToFund ?? funding.shortfall ?? 0);
+  const fundedAmount = Number(funding.fundedAmount || 0);
+  const fundedAdvance = Number(funding.fundedAdvance || 0);
+  const fundedReserve = Number(funding.fundedReserve || 0);
 
   if (titleEl) {
-    titleEl.textContent = canFinish ? 'Ready to disburse loan' : 'Fund before disbursing';
+    titleEl.textContent = canFinish ? 'Ready to disburse loan' : 'Select funding source';
   }
   if (subtitle) {
     subtitle.textContent = canFinish
-      ? 'Book balance is sufficient. Confirm below to disburse.'
-      : (!funding.openingSet
-        ? 'Bank opening balance is not set. Fix it in Bank Ledger, then try again.'
-        : 'Book balance is short. Cover the gap from advance or Emergency / Reserve Fund, then disburse.');
+      ? 'External funding is complete. Confirm below to disburse (book balance is not used).'
+      : 'Fund this loan from member advance and/or Emergency / Reserve Fund. Society book balance is never used.';
   }
 
   const lenderOptions = advances.length
@@ -1608,16 +1609,11 @@ function renderLoanDisburseShortfallModal(funding) {
 
   const statusBanner = canFinish
     ? `<div class="panel-card u-mb-1" style="border-left:4px solid #059669;">
-         <p><strong>No funding problem.</strong> You can disburse this loan now.</p>
+         <p><strong>Fully funded.</strong> You can disburse this loan now.</p>
        </div>`
-    : !funding.openingSet
-      ? `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
-           <p><strong>Bank opening balance is not set.</strong> Set it in Bank Ledger first.</p>
-           <p class="u-mt-1"><button type="button" class="secondary-btn" id="loanShortfallOpenLedger">Open Bank Ledger</button></p>
-         </div>`
-      : `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
-           <p><strong>Cannot disburse yet.</strong> ${escapeHtml(funding.message || 'Cover the shortfall below, then click Disburse loan.')}</p>
-         </div>`;
+    : `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
+         <p><strong>Funding required.</strong> ${escapeHtml(funding.message || 'Allocate the remaining amount below, then click Disburse loan.')}</p>
+       </div>`;
 
   content.innerHTML = `
     ${statusBanner}
@@ -1625,18 +1621,20 @@ function renderLoanDisburseShortfallModal(funding) {
       <p><strong>Borrower:</strong> ${escapeHtml(memberName)}</p>
       <p><strong>Loan type:</strong> ${escapeHtml(funding.loan?.loanType || '—')}</p>
       <p><strong>Required amount:</strong> ${money(funding.requiredAmount)}</p>
-      <p><strong>Current book balance:</strong> ${money(funding.bookBalance)}</p>
-      <p><strong>Exact shortfall:</strong> <span class="${funding.hasShortfall ? 'message error' : 'message success'}">${money(funding.shortfall)}</span></p>
-      <p><strong>Emergency / Reserve Fund:</strong> ${money(funding.reserveBalance)}</p>
-      <p><strong>Opening balance set:</strong> ${funding.openingSet ? 'Yes' : 'No — set it in Bank Ledger first'}</p>
+      <p><strong>Already funded:</strong> ${money(fundedAmount)}
+        <span class="table-subtitle">(advance ${money(fundedAdvance)} · reserve ${money(fundedReserve)})</span>
+      </p>
+      <p><strong>Remaining to fund:</strong> <span class="${remaining > 0.009 ? 'message error' : 'message success'}">${money(remaining)}</span></p>
+      <p><strong>Emergency / Reserve Fund available:</strong> ${money(funding.reserveBalance)}</p>
+      <p><strong>Member advances available:</strong> ${money(funding.totalAdvanceAvailable)}</p>
       <p class="table-subtitle">${escapeHtml(funding.message || '')}</p>
     </div>
 
-    ${!canFinish && funding.openingSet ? `
+    ${!canFinish ? `
     <div class="form-row-2 u-mt-1">
       <div class="panel-card">
         <h3>Internal borrow (from advance)</h3>
-        <p class="table-subtitle">Select a lender with advance balance to cover the shortfall into the book.</p>
+        <p class="table-subtitle">Debit a member's advance to fund this loan. Does not change society book balance.</p>
         <form id="loanShortfallAdvanceForm" class="add-member-form">
           <div class="form-group">
             <label>Lender (advance available)
@@ -1648,25 +1646,25 @@ function renderLoanDisburseShortfallModal(funding) {
           <div class="form-group">
             <label>Amount (৳)
               <input type="text" inputmode="decimal" name="amount" id="loanShortfallAdvanceAmount"
-                value="${shortfall > 0 && advances.length ? Math.min(shortfall, Number(advances[0]?.advanceBalance || shortfall)).toFixed(2) : ''}"
+                value="${remaining > 0 && advances.length ? Math.min(remaining, Number(advances[0]?.advanceBalance || remaining)).toFixed(2) : ''}"
                 ${advances.length ? 'required' : 'disabled'} />
             </label>
           </div>
-          <button type="submit" class="secondary-btn" ${advances.length ? '' : 'disabled'}>Apply advance cover</button>
+          <button type="submit" class="secondary-btn" ${advances.length ? '' : 'disabled'}>Allocate from advance</button>
         </form>
       </div>
       <div class="panel-card">
         <h3>Emergency / Reserve Fund</h3>
-        <p class="table-subtitle">Release reserve into the society book to cover this loan shortfall.</p>
+        <p class="table-subtitle">Allocate reserve to this loan. Does not credit or debit society book balance.</p>
         <form id="loanShortfallReserveForm" class="add-member-form">
           <div class="form-group">
             <label>Amount (৳)
               <input type="text" inputmode="decimal" name="amount"
-                value="${shortfall > 0 ? Math.min(shortfall, Number(funding.reserveBalance || 0)).toFixed(2) : ''}"
+                value="${remaining > 0 ? Math.min(remaining, Number(funding.reserveBalance || 0)).toFixed(2) : ''}"
                 ${Number(funding.reserveBalance || 0) > 0 ? 'required' : 'disabled'} />
             </label>
           </div>
-          <button type="submit" class="secondary-btn" ${Number(funding.reserveBalance || 0) > 0 ? '' : 'disabled'}>Apply reserve cover</button>
+          <button type="submit" class="secondary-btn" ${Number(funding.reserveBalance || 0) > 0 ? '' : 'disabled'}>Allocate from reserve</button>
         </form>
       </div>
     </div>
@@ -1677,23 +1675,18 @@ function renderLoanDisburseShortfallModal(funding) {
     completeBtn.disabled = !canFinish;
     completeBtn.textContent = canFinish
       ? 'Disburse loan now'
-      : (!funding.openingSet
-        ? 'Disburse (set opening balance first)'
-        : 'Disburse (fix shortfall first)');
+      : 'Disburse (fund remaining first)';
   }
-
-  document.getElementById('loanShortfallOpenLedger')?.addEventListener('click', () => {
-    closeLoanDisburseShortfallModal({ completed: false, cancelled: true, openLedger: true });
-    const ledgerNav = document.querySelector('[data-staff-nav="ledger"]');
-    if (ledgerNav) ledgerNav.click();
-    else window.location.hash = 'ledger';
-  });
 
   document.getElementById('loanShortfallLender')?.addEventListener('change', (event) => {
     const selected = event.target.selectedOptions?.[0];
     const advance = Number(selected?.dataset?.advance || 0);
     const amountInput = document.getElementById('loanShortfallAdvanceAmount');
-    const cover = Number(loanDisburseShortfallState.funding?.shortfall || 0);
+    const cover = Number(
+      loanDisburseShortfallState.funding?.remainingToFund
+      ?? loanDisburseShortfallState.funding?.shortfall
+      ?? 0
+    );
     if (amountInput && cover > 0) {
       amountInput.value = Math.min(cover, advance).toFixed(2);
       amountInput.max = String(advance);
@@ -1708,8 +1701,8 @@ function renderLoanDisburseShortfallModal(funding) {
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Unable to apply cover.');
-    setLoanDisburseShortfallMessage(data.message || 'Cover applied.', false);
+    if (!res.ok) throw new Error(data.error || 'Unable to apply funding.');
+    setLoanDisburseShortfallMessage(data.message || 'Funding applied.', false);
     renderLoanDisburseShortfallModal(data.funding || data);
   };
 
@@ -1736,7 +1729,7 @@ function renderLoanDisburseShortfallModal(funding) {
     try {
       const amount = normalizeCoverAmount(formData.get('amount'));
       if (!amount || !(Number(amount) > 0)) {
-        throw new Error('Enter a valid cover amount.');
+        throw new Error('Enter a valid funding amount.');
       }
       await postCover(`/api/loans/admin/${loanId}/disburse-cover-advance`, {
         lenderId: formData.get('lenderId'),
@@ -1754,7 +1747,7 @@ function renderLoanDisburseShortfallModal(funding) {
     try {
       const amount = normalizeCoverAmount(formData.get('amount'));
       if (!amount || !(Number(amount) > 0)) {
-        throw new Error('Enter a valid cover amount.');
+        throw new Error('Enter a valid funding amount.');
       }
       await postCover(`/api/loans/admin/${loanId}/disburse-cover-reserve`, {
         amount,
@@ -1766,14 +1759,16 @@ function renderLoanDisburseShortfallModal(funding) {
 }
 
 async function executeLoanDisburse(loanId, body = {}, { messageEl = null } = {}) {
+  const requestedSource = String(body.fundingSource || '').toLowerCase();
+  const fundingSource = requestedSource === 'bank' ? '' : requestedSource;
   const res = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       paymentMethod: body.paymentMethod || 'bank_transfer',
       transferReference: body.transferReference || '',
-      disbursementNote: body.disbursementNote || 'Disbursed after shortfall cover',
-      fundingSource: body.fundingSource || 'bank',
+      disbursementNote: body.disbursementNote || 'Disbursed after external funding',
+      fundingSource,
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -1786,9 +1781,12 @@ async function executeLoanDisburse(loanId, body = {}, { messageEl = null } = {})
     messageEl.classList.remove('error');
     messageEl.classList.add('success');
     const sourceLabel = data.fundingSourceLabel
-      || (data.fundingSource === 'reserve' ? 'Emergency / Reserve Fund' : 'book balance');
+      || (data.fundingSource === 'reserve'
+        ? 'Emergency / Reserve Fund'
+        : data.fundingSource === 'advance'
+          ? 'Internal borrow (member advance)'
+          : 'external funding');
     messageEl.textContent = `Loan disbursed (${sourceLabel}).`
-      + (data.bookBalance != null ? ` Book now ${money(data.bookBalance)}.` : '')
       + (data.reserveBalance != null ? ` Reserve now ${money(data.reserveBalance)}.` : '');
   }
   try {
@@ -1816,14 +1814,14 @@ async function openLoanDisburseShortfallModal(loanId, {
   loanDisburseShortfallState.disburseBody = disburseBody || loanDisburseShortfallState.disburseBody || {
     paymentMethod: 'bank_transfer',
     disbursementNote: 'Disbursed from Approvals inbox',
-    fundingSource: 'bank',
+    fundingSource: '',
   };
-  content.innerHTML = '<p class="text-secondary">Checking book balance…</p>';
+  content.innerHTML = '<p class="text-secondary">Loading funding options…</p>';
   setLoanDisburseShortfallMessage('');
   const titleEl = document.getElementById('loanDisburseShortfallTitle');
   const subtitle = document.getElementById('loanDisburseShortfallSubtitle');
-  if (titleEl) titleEl.textContent = 'Disburse loan';
-  if (subtitle) subtitle.textContent = 'Checking book balance and cover options…';
+  if (titleEl) titleEl.textContent = 'Fund & disburse loan';
+  if (subtitle) subtitle.textContent = 'Choose advance and/or Emergency / Reserve Fund…';
   const completeBtn = document.getElementById('loanDisburseShortfallComplete');
   if (completeBtn) {
     completeBtn.disabled = true;
@@ -1844,7 +1842,7 @@ async function openLoanDisburseShortfallModal(loanId, {
   try {
     const res = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse-check`);
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Unable to check loan funding.');
+    if (!res.ok) throw new Error(data.error || 'Unable to load loan funding options.');
     renderLoanDisburseShortfallModal(data);
   } catch (error) {
     content.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
@@ -1853,16 +1851,13 @@ async function openLoanDisburseShortfallModal(loanId, {
 }
 
 /**
- * Conditional loan Disburse:
- * - Always GET disburse-check first (bookBalance >= loanAmount).
- * - If shortfall / missing opening → intercept: open modal, do NOT POST /disburse.
- * - Only POST /disburse when the check says the book can cover the loan.
+ * Every Disburse opens the funding modal. Loans never use book balance;
+ * cashiers must allocate advance and/or Emergency / Reserve Fund first.
  */
 async function beginLoanDisbursePayment(loanId, {
   messageEl = null,
   onDone = null,
   disburseBody = null,
-  forceModal = false,
 } = {}) {
   const id = String(loanId || '').trim();
   if (!id || id === 'undefined' || id === 'null') {
@@ -1874,63 +1869,18 @@ async function beginLoanDisbursePayment(loanId, {
   const body = {
     paymentMethod: 'bank_transfer',
     disbursementNote: 'Disbursed from Approvals inbox',
-    fundingSource: 'bank',
+    fundingSource: '',
     ...(disburseBody || {}),
   };
-
-  // Fully from reserve: skip book shortfall modal (existing Loans panel option).
-  if (String(body.fundingSource || '').toLowerCase() === 'reserve') {
-    const payload = await executeLoanDisburse(id, body, { messageEl });
-    if (typeof onDone === 'function') {
-      try { onDone({ completed: true, payload }); } catch (_) { /* ignore */ }
-    }
-    return { completed: true, payload };
+  if (String(body.fundingSource || '').toLowerCase() === 'bank') {
+    body.fundingSource = '';
   }
 
-  const finish = (result) => {
-    if (typeof onDone === 'function') {
-      try { onDone(result); } catch (_) { /* ignore */ }
-    }
-    return result;
-  };
-
-  const openInterceptModal = async (preloaded, preloadedError = null) => {
-    await openLoanDisburseShortfallModal(id, {
-      onDone,
-      disburseBody: body,
-      preloaded: preloaded || null,
-      preloadedError,
-    });
-    return { completed: false, shortfall: true, intercepted: true, funding: preloaded || null };
-  };
-
-  // Mandatory pre-disbursement balance check — never POST /disburse until this passes.
-  const checkRes = await fetch(`/api/loans/admin/${encodeURIComponent(id)}/disburse-check`);
-  const check = await checkRes.json().catch(() => ({}));
-  if (!checkRes.ok) {
-    return openInterceptModal(check.funding || null, check.error || 'Unable to check loan disbursement funding.');
-  }
-
-  if (forceModal || loanFundingNeedsShortfallModal(check)) {
-    return openInterceptModal(check);
-  }
-
-  // Re-check immediately before POST in case cash moved after the first snapshot.
-  const recheckRes = await fetch(`/api/loans/admin/${encodeURIComponent(id)}/disburse-check`);
-  const recheck = await recheckRes.json().catch(() => ({}));
-  if (!recheckRes.ok || loanFundingNeedsShortfallModal(recheck.funding || recheck)) {
-    return openInterceptModal(recheck.funding || recheck, recheck.error || null);
-  }
-
-  try {
-    const payload = await executeLoanDisburse(id, body, { messageEl });
-    return finish({ completed: true, payload });
-  } catch (error) {
-    if (error.funding && loanFundingNeedsShortfallModal(error.funding)) {
-      return openInterceptModal(error.funding);
-    }
-    throw error;
-  }
+  await openLoanDisburseShortfallModal(id, {
+    onDone,
+    disburseBody: body,
+  });
+  return { completed: false, shortfall: true, intercepted: true, fundingModal: true };
 }
 
 window.beginLoanDisbursePayment = beginLoanDisbursePayment;
@@ -1965,20 +1915,19 @@ function bindLoanDisburseShortfallModal() {
     if (!loanId) return;
     const funding = loanDisburseShortfallState.funding;
     if (loanFundingNeedsShortfallModal(funding)) {
-      setLoanDisburseShortfallMessage('Cover the full shortfall before disbursing.', true);
+      setLoanDisburseShortfallMessage('Allocate the full loan amount from advance and/or Emergency / Reserve Fund first.', true);
       return;
     }
     const completeBtn = document.getElementById('loanDisburseShortfallComplete');
     if (completeBtn) completeBtn.disabled = true;
-    setLoanDisburseShortfallMessage('Re-checking book balance…');
+    setLoanDisburseShortfallMessage('Confirming funding…');
     try {
-      // Fresh check before final POST so a stale "ready" modal cannot bypass shortfall.
       const checkRes = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse-check`);
       const check = await checkRes.json().catch(() => ({}));
       if (!checkRes.ok || loanFundingNeedsShortfallModal(check.funding || check)) {
         renderLoanDisburseShortfallModal(check.funding || check);
         setLoanDisburseShortfallMessage(
-          check.error || 'Book balance is still short. Cover the deficit, then try again.',
+          check.error || 'Funding is still incomplete. Allocate the remaining amount, then try again.',
           true
         );
         if (completeBtn) completeBtn.disabled = false;
@@ -4068,16 +4017,9 @@ function buildCashierDisburseCard(loan = {}) {
         · Approved payment hint: ${escapeHtml(formatLoanPaymentMethodLabel(loan.paymentMethod))}
         ${loan.approvedAt ? `· Approved ${new Date(loan.approvedAt).toLocaleString()}` : ''}
       </p>
+      <p class="table-subtitle">Funding opens in a popup — allocate from member advance and/or Emergency / Reserve Fund. Society book balance is never used.</p>
       <form class="cashier-loan-disburse-form add-member-form" data-loan-id="${loan._id}">
         <div class="form-row-2">
-          <div class="form-group">
-            <label>Funding source
-              <select name="fundingSource" required>
-                <option value="bank" selected>Society book balance (shortfall popup if needed)</option>
-                <option value="reserve">Emergency / Reserve Fund (full amount)</option>
-              </select>
-            </label>
-          </div>
           <div class="form-group">
             <label>Transfer method
               <select name="paymentMethod" required>
@@ -4086,20 +4028,18 @@ function buildCashierDisburseCard(loan = {}) {
               </select>
             </label>
           </div>
-        </div>
-        <div class="form-row-2">
           <div class="form-group">
             <label>Transfer reference
               <input type="text" name="transferReference" placeholder="Txn / receipt #" />
             </label>
           </div>
-          <div class="form-group">
-            <label>Transfer note
-              <input type="text" name="disbursementNote" placeholder="Cash given at office…" />
-            </label>
-          </div>
         </div>
-        <button type="submit" class="primary-btn">Confirm Transfer &amp; Disburse</button>
+        <div class="form-group">
+          <label>Transfer note
+            <input type="text" name="disbursementNote" placeholder="Cash given at office…" />
+          </label>
+        </div>
+        <button type="submit" class="primary-btn">Open funding &amp; Disburse</button>
         <p class="message cashier-loan-disburse-msg"></p>
       </form>
     </article>
@@ -4501,7 +4441,7 @@ function bindCashierLoansUi() {
             paymentMethod: formData.get('paymentMethod'),
             transferReference: formData.get('transferReference'),
             disbursementNote: formData.get('disbursementNote'),
-            fundingSource: formData.get('fundingSource') || 'bank',
+            fundingSource: '',
           },
           onDone: (done) => resolve(done || { completed: false, cancelled: true }),
         }).catch(reject);
@@ -4517,9 +4457,7 @@ function bindCashierLoansUi() {
         await loadLoansModule();
         markStaffViewCache?.('loans');
       } else if (msg) {
-        msg.textContent = result?.openLedger
-          ? 'Set the bank opening balance in Bank Ledger, then try Disburse again.'
-          : 'Disburse closed. Cover any shortfall in the popup, then try again.';
+        msg.textContent = 'Funding popup closed. Allocate advance and/or Emergency / Reserve Fund, then disburse.';
       }
     } catch (error) {
       if (msg) {
