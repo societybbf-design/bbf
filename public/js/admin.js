@@ -6989,6 +6989,91 @@ function bindLoanReviewUi() {
     }
 
     try {
+      // Prefer shared Cashier shortfall flow when available (staff dashboard scripts).
+      if (typeof window.beginLoanDisbursePayment === 'function') {
+        const result = await new Promise((resolve, reject) => {
+          let settled = false;
+          const settle = (value) => {
+            if (settled) return;
+            settled = true;
+            resolve(value || { completed: false, cancelled: true });
+          };
+          window.beginLoanDisbursePayment(loanId, {
+            messageEl,
+            disburseBody: {
+              paymentMethod,
+              transferReference: formData.get('transferReference') || '',
+              disbursementNote: formData.get('disbursementNote') || '',
+              fundingSource: 'bank',
+            },
+            onDone: (done) => settle(done || { completed: false, cancelled: true }),
+          }).then((outcome) => {
+            if (outcome?.completed) settle(outcome);
+          }).catch(reject);
+        });
+
+        if (!result?.completed) {
+          if (messageEl) {
+            messageEl.classList.add('error');
+            messageEl.textContent = result?.openLedger
+              ? 'Set the bank opening balance in Bank Ledger, then try Disburse again.'
+              : 'Book balance is short. Cover the deficit in the popup (advance or Emergency Fund), then disburse.';
+          }
+          return;
+        }
+
+        if (messageEl) {
+          messageEl.classList.remove('error');
+          messageEl.classList.add('success');
+          messageEl.textContent = `Transfer of ${formatMoney(Number(result.payload?.loan?.amount || 0), 2)} recorded. Member can now see it on their panel.`;
+        }
+
+        if (modal && !modal.classList.contains('hidden')) {
+          await openLoanReviewModal(loanId);
+        }
+
+        const profileModal = document.getElementById('memberProfileModal');
+        if (profileModal && !profileModal.classList.contains('hidden') && result.payload?.loan?.member) {
+          const memberId = result.payload.loan.member._id || result.payload.loan.member;
+          await openMemberProfile(memberId, { activeTab: 'loans' });
+        }
+
+        await loadLoanApplications();
+        await refreshLoanPortfolioData();
+        return;
+      }
+
+      // Admin panel without staff shortfall UI: still block direct disburse on shortfall.
+      const checkRes = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse-check`);
+      const check = await checkRes.json().catch(() => ({}));
+      if (!checkRes.ok) {
+        if (messageEl) {
+          messageEl.classList.add('error');
+          messageEl.textContent = check.error || 'Unable to verify book balance before disbursement.';
+        }
+        return;
+      }
+      const needsModal = (typeof window.loanFundingNeedsShortfallModal === 'function')
+        ? window.loanFundingNeedsShortfallModal(check)
+        : (check.canDisburseDirectly === false
+          || check.hasShortfall === true
+          || Number(check.shortfall || 0) > 0.009
+          || check.openingSet === false);
+      if (needsModal) {
+        if (messageEl) {
+          messageEl.classList.add('error');
+          messageEl.textContent = [
+            check.message || 'Insufficient book balance for this loan.',
+            `Required ${formatMoney(Number(check.requiredAmount || 0), 2)}.`,
+            `Book ${formatMoney(Number(check.bookBalance || 0), 2)}.`,
+            `Shortfall ${formatMoney(Number(check.shortfall || 0), 2)}.`,
+            `Emergency Fund ${formatMoney(Number(check.reserveBalance || 0), 2)}.`,
+            'Open the Cashier dashboard Approvals or Loans panel to cover the shortfall, then disburse.',
+          ].join(' ');
+        }
+        return;
+      }
+
       const response = await fetch(`/api/loans/admin/${loanId}/disburse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -7002,7 +7087,10 @@ function bindLoanReviewUi() {
       if (!response.ok) {
         if (messageEl) {
           messageEl.classList.add('error');
-          messageEl.textContent = data.error || 'Unable to disburse loan.';
+          const funding = data.funding;
+          messageEl.textContent = funding
+            ? `${data.error || 'Unable to disburse loan.'} Shortfall ${formatMoney(Number(funding.shortfall || 0), 2)} · Book ${formatMoney(Number(funding.bookBalance || 0), 2)} · Reserve ${formatMoney(Number(funding.reserveBalance || 0), 2)}. Use Cashier Disburse popup to cover.`
+            : (data.error || 'Unable to disburse loan.');
         }
         return;
       }
@@ -7028,7 +7116,7 @@ function bindLoanReviewUi() {
     } catch (error) {
       if (messageEl) {
         messageEl.classList.add('error');
-        messageEl.textContent = 'Unable to disburse loan.';
+        messageEl.textContent = error.message || 'Unable to disburse loan.';
       }
     }
   });

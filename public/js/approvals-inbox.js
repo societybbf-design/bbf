@@ -486,11 +486,16 @@
           return;
         }
 
-        const isLoanDisburse = (action.key === 'complete' || action.key === 'disburse')
-          && String(action.path || '').includes('/api/loans/admin/')
-          && String(action.path || '').includes('/disburse')
-          && !String(action.path || '').includes('disburse-cover')
-          && !String(action.path || '').includes('disburse-check');
+        const isLoanDisburse = (
+          item.type === 'loan_disbursement'
+          || (
+            (action.key === 'complete' || action.key === 'disburse')
+            && String(action.path || '').includes('/api/loans/admin/')
+            && String(action.path || '').includes('/disburse')
+            && !String(action.path || '').includes('disburse-cover')
+            && !String(action.path || '').includes('disburse-check')
+          )
+        );
 
         if (isLoanDisburse) {
           const pathMatch = String(action.path || '').match(/\/loans\/admin\/([^/]+)\/disburse/i);
@@ -506,7 +511,14 @@
           btn.disabled = true;
           setMessage(container, t('approvals.working', 'Checking book balance…'));
           try {
+            // Never fall through to bare executeAction / POST /disburse on shortfall.
             const result = await new Promise((resolve, reject) => {
+              let settled = false;
+              const settle = (value) => {
+                if (settled) return;
+                settled = true;
+                resolve(value || { completed: false, cancelled: true });
+              };
               window.beginLoanDisbursePayment(loanId, {
                 messageEl: document.getElementById('cashierLoanDisburseMessage'),
                 disburseBody: {
@@ -515,7 +527,11 @@
                   disbursementNote: action.body?.disbursementNote || 'Disbursed from Approvals inbox',
                   fundingSource: action.body?.fundingSource || 'bank',
                 },
-                onDone: (done) => resolve(done || { completed: false, cancelled: true }),
+                onDone: (done) => settle(done || { completed: false, cancelled: true }),
+              }).then((outcome) => {
+                // Direct disbursement finished inside beginLoanDisbursePayment.
+                if (outcome?.completed) settle(outcome);
+                // Shortfall intercept opened the modal — wait for onDone when cashier closes it.
               }).catch(reject);
             });
             if (result?.completed) {
