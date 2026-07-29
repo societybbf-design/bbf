@@ -4465,10 +4465,13 @@ function bindProfileLoanProcessing(container, memberId, refreshProfile) {
 
       if (messageEl) {
         messageEl.classList.add('success');
-        const remaining = Number(data.summary?.outstandingBalance || 0);
-        messageEl.textContent = remaining <= 0
-          ? `Payment of ${formatMoney(Number(data.repayment?.amount || payload.amount), 2)} recorded. Loan is fully cleared.`
-          : `Payment of ${formatMoney(Number(data.repayment?.amount || payload.amount), 2)} recorded. Remaining balance: ${formatMoney(remaining, 2)}.`;
+        messageEl.textContent = data.message
+          || (() => {
+            const remaining = Number(data.remainingDue ?? data.summary?.outstandingBalance ?? 0);
+            return remaining <= 0
+              ? `Payment of ${formatMoney(Number(data.amountPaid || data.repayment?.amount || payload.amount), 2)} recorded. Loan is fully cleared.`
+              : `Payment of ${formatMoney(Number(data.amountPaid || data.repayment?.amount || payload.amount), 2)} recorded. Remaining due: ${formatMoney(remaining, 2)}.`;
+          })();
       }
       form.reset();
       if (typeof refreshProfile === 'function') {
