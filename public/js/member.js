@@ -454,14 +454,16 @@ function buildLoanDecisionText(loan = {}) {
 }
 
 function buildLoanContractActions(loan = {}) {
-  if (!['approved', 'disbursed'].includes(loan.status) || !loan.contractPath) {
+  if (!['approved', 'disbursed', 'completed'].includes(loan.status)) {
     return '-';
   }
 
-  const downloadLink = `<a href="/api/loans/member/${loan._id}/contract" class="receipt-button" target="_blank" rel="noopener">${t('memberUi.downloadContract', 'Download')}</a>`;
+  const downloadLink = `<button type="button" class="receipt-button" data-loan-contract-download="${loan._id}" data-loan-contract-scope="member">${t('memberUi.downloadContract', 'Download')}</button>`;
   const signedStatus = loan.signedContractPath
     ? '<span class="status-badge status-completed">Signed copy submitted</span>'
-    : `<label class="signed-contract-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png" data-signed-contract-loan="${loan._id}" hidden /><span class="secondary-btn">${t('memberUi.uploadSigned', 'Upload Signed')}</span></label>`;
+    : (['approved', 'disbursed'].includes(loan.status)
+      ? `<label class="signed-contract-upload"><input type="file" accept=".pdf,.jpg,.jpeg,.png" data-signed-contract-loan="${loan._id}" hidden /><span class="secondary-btn">${t('memberUi.uploadSigned', 'Upload Signed')}</span></label>`
+      : '');
 
   return `${downloadLink} ${signedStatus}`;
 }
@@ -1292,7 +1294,7 @@ async function loadLoanDashboardSummary() {
         <p class="table-subtitle"><strong>Current status:</strong> ${activeLoan.status}</p>
         <p class="table-subtitle"><strong>Decision / note:</strong> ${buildLoanDecisionText(activeLoan)}</p>
         ${activeLoan.paymentMethod ? `<p class="table-subtitle"><strong>Payment method:</strong> ${formatPaymentMethodLabel(activeLoan.paymentMethod)}</p>` : ''}
-        ${activeLoan.contractPath ? `<p class="table-subtitle">${buildLoanContractActions(activeLoan)}</p>` : ''}
+        ${['approved', 'disbursed', 'completed'].includes(activeLoan.status) ? `<p class="table-subtitle">${buildLoanContractActions(activeLoan)}</p>` : ''}
       </div>
     ` : '';
 
@@ -1381,6 +1383,52 @@ function bindSignedContractUploads(container = document) {
     });
   });
 }
+
+async function downloadLoanContractPdf(button) {
+  const loanId = String(button?.dataset?.loanContractDownload || '').trim();
+  const scope = String(button?.dataset?.loanContractScope || 'member').trim();
+  if (!loanId) return;
+
+  const url = scope === 'admin'
+    ? `/api/loans/admin/${encodeURIComponent(loanId)}/contract`
+    : `/api/loans/member/${encodeURIComponent(loanId)}/contract`;
+
+  try {
+    if (window.PdfLanguage?.triggerDownload) {
+      await window.PdfLanguage.triggerDownload(button, url, {
+        skipLanguagePrompt: true,
+        filename: `loan-contract-${loanId}.pdf`,
+      });
+      return;
+    }
+
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/pdf,application/json' },
+      skipPasswordConfirm: true,
+    });
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (!response.ok || contentType.includes('application/json')) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Unable to download contract.');
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = `loan-contract-${loanId}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+  } catch (error) {
+    console.error('[loan-contract-download]', error);
+    window.PdfLanguage?.showError?.(error.message || 'Unable to download contract PDF.');
+    window.alert(error.message || 'Unable to download contract PDF.');
+  }
+}
+
+window.downloadLoanContractPdf = downloadLoanContractPdf;
 
 function renderLoanEligibilityUi(data = {}) {
   const savingsEl = document.getElementById('loanTotalSavings');
@@ -2195,6 +2243,13 @@ document.addEventListener('DOMContentLoaded', () => {
   bindLoanAndKycForms();
   bindMemberNotificationUi();
   bindMemberChatUi();
+
+  document.addEventListener('click', async (event) => {
+    const contractBtn = event.target.closest('[data-loan-contract-download]');
+    if (!contractBtn) return;
+    event.preventDefault();
+    await downloadLoanContractPdf(contractBtn);
+  });
 
   document.getElementById('memberApprovalsRefreshBtn')?.addEventListener('click', () => {
     void loadMemberApprovalsInbox();

@@ -505,23 +505,72 @@ async function getMemberLoanDashboardSummary(memberId) {
   };
 }
 
-async function getLoanContractFile(loanId) {
-  const loan = await LoanApplication.findById(loanId).lean();
-  if (!loan?.contractPath) {
-    const error = new Error('Loan contract not found.');
+async function getLoanContractFile(loanId, { regenerateIfMissing = true } = {}) {
+  let loan = await LoanApplication.findById(loanId)
+    .populate({ path: 'member', select: 'name email phone savings' });
+
+  if (!loan) {
+    const error = new Error('Loan application not found.');
     error.status = 404;
     throw error;
   }
 
-  const relativePath = loan.contractPath.replace(/^\/uploads\//, '');
-  const fullPath = path.join(__dirname, '..', 'uploads', relativePath);
-  if (!fs.existsSync(fullPath)) {
-    const error = new Error('Contract file is missing.');
+  const resolveExistingPath = (doc) => {
+    if (!doc?.contractPath) return null;
+    const relativePath = String(doc.contractPath).replace(/^\/uploads\//, '');
+    const fullPath = path.join(__dirname, '..', 'uploads', relativePath);
+    return fs.existsSync(fullPath) ? fullPath : null;
+  };
+
+  let fullPath = resolveExistingPath(loan);
+  if (fullPath) {
+    return { loan: loan.toObject ? loan.toObject() : loan, fullPath };
+  }
+
+  const canRegenerate = regenerateIfMissing
+    && ['approved', 'disbursed', 'completed'].includes(loan.status)
+    && !loan.autoRejected;
+
+  if (!canRegenerate) {
+    const error = new Error(
+      loan.contractPath
+        ? 'Contract file is missing and this loan cannot regenerate a contract.'
+        : 'Loan contract not found.'
+    );
     error.status = 404;
     throw error;
   }
 
-  return { loan, fullPath };
+  // Hostinger redeploys / missing uploads: rebuild the PDF from current loan data.
+  try {
+    const member = loan.member
+      || await User.findById(loan.member).select('name email phone savings');
+    if (!member) {
+      const error = new Error('Loan member not found; unable to regenerate contract.');
+      error.status = 404;
+      throw error;
+    }
+    await generateLoanContractForApplication(
+      loan,
+      member,
+      loan.reviewedBy || loan.disbursedBy || 'Admin'
+    );
+    await loan.save();
+  } catch (error) {
+    if (error.status) throw error;
+    const err = new Error(error.message || 'Unable to regenerate loan contract PDF.');
+    err.status = 500;
+    throw err;
+  }
+
+  fullPath = resolveExistingPath(loan);
+  if (!fullPath) {
+    const error = new Error('Contract file is missing after regeneration.');
+    error.status = 500;
+    throw error;
+  }
+
+  return { loan: loan.toObject ? loan.toObject() : loan, fullPath };
 }
 
 async function uploadSignedLoanContract(loanId, memberId, signedContractPath) {
