@@ -566,7 +566,7 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
 async function recordAdminLoanRepayment({
   memberId,
   amount,
-  repaymentType = 'installment',
+  repaymentType = 'partial',
   paymentMethod = 'cash',
   adminNote = '',
   reviewedBy = 'Admin',
@@ -591,9 +591,10 @@ async function recordAdminLoanRepayment({
     throw error;
   }
 
-  const normalizedAmount = Number(amount);
-  if (!normalizedAmount || normalizedAmount <= 0) {
-    const error = new Error('Payment amount must be greater than zero.');
+  const { parseLooseMoney } = require('./loanService');
+  const normalizedAmount = parseLooseMoney(amount);
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+    const error = new Error('Enter a valid payment amount greater than zero.');
     error.status = 400;
     throw error;
   }
@@ -601,11 +602,20 @@ async function recordAdminLoanRepayment({
   const outstandingBalance = getLoanOutstandingBalance(loan);
   const pendingRepaymentAmount = await getPendingRepaymentAmount(loan._id);
   const availableToPay = Math.max(0, outstandingBalance - pendingRepaymentAmount);
-  const normalizedType = repaymentType === 'full' ? 'full' : 'installment';
-  const finalAmount = normalizedType === 'full' ? availableToPay : normalizedAmount;
 
-  if (finalAmount <= 0 || finalAmount > availableToPay) {
-    const error = new Error(`Payment amount must be between ৳0.01 and ${formatMoney(availableToPay, 2)}.`);
+  const rawType = String(repaymentType || 'partial').toLowerCase().trim();
+  let normalizedType = 'partial';
+  if (rawType === 'full') normalizedType = 'full';
+  else if (rawType === 'installment') normalizedType = 'installment';
+  else normalizedType = 'partial';
+
+  // Full clears the loan; partial and installment both accept the cashier's typed amount.
+  const finalAmount = normalizedType === 'full' ? availableToPay : money2(normalizedAmount);
+
+  if (finalAmount <= 0 || finalAmount > availableToPay + 0.001) {
+    const error = new Error(
+      `Payment amount must be between ৳0.01 and ${formatMoney(availableToPay, 2)} (current remaining due).`
+    );
     error.status = 400;
     throw error;
   }
@@ -613,7 +623,7 @@ async function recordAdminLoanRepayment({
   const repayment = await LoanRepayment.create({
     member: memberId,
     loan: loan._id,
-    amount: finalAmount,
+    amount: money2(finalAmount),
     repaymentType: normalizedType,
     paymentMethod,
     adminNote: adminNote?.trim() || '',
@@ -621,23 +631,45 @@ async function recordAdminLoanRepayment({
     status: 'pending',
   });
 
-  await applyApprovedRepayment(repayment, loan, member, reviewedBy);
+  const applied = await applyApprovedRepayment(repayment, loan, member, reviewedBy);
+  const fundingSettlement = applied?.fundingSettlement || null;
 
   const summary = await getMemberOutstandingSummary(memberId);
-  const fundingBits = [];
-  if (Number(summary.fundingReserveOutstanding || 0) > 0 || Number(loan.fundingAdvanceAmount || 0) > 0) {
-    if (summary.fundingSourceLabel) {
-      fundingBits.push(`Funding source: ${summary.fundingSourceLabel}.`);
-    }
+  const settlementBits = [];
+  const advanceRefunded = money2(
+    (fundingSettlement?.settlements || []).reduce((sum, row) => sum + Number(row.refundedAmount || 0), 0)
+  );
+  if (advanceRefunded > 0.001) {
+    const lenders = (fundingSettlement.settlements || [])
+      .map((row) => row.lenderName)
+      .filter(Boolean)
+      .join(', ');
+    settlementBits.push(
+      `Refunded ${formatMoney(advanceRefunded, 2)} to lender advance${lenders ? ` (${lenders})` : ''}.`
+    );
   }
+  if (Number(fundingSettlement?.reserveReplenished || 0) > 0.001) {
+    settlementBits.push(
+      `Replenished Emergency / Reserve Fund ${formatMoney(fundingSettlement.reserveReplenished, 2)}.`
+    );
+  }
+
+  const remainingDue = Number(summary.outstandingBalance || 0);
+  const baseMessage = summary.hasOutstandingLoan
+    ? `Partial payment of ${formatMoney(money2(finalAmount), 2)} recorded. Remaining due ${formatMoney(remainingDue, 2)}.`
+    : `Payment of ${formatMoney(money2(finalAmount), 2)} recorded. Loan is now Completed / Paid.`;
+
   return {
-    repayment,
+    repayment: applied?.repayment || repayment,
     summary,
+    fundingSettlement,
+    advanceRefunded,
+    reserveReplenished: Number(fundingSettlement?.reserveReplenished || 0),
+    amountPaid: money2(finalAmount),
+    remainingDue,
     loanCleared: Boolean(summary.loanCleared || !summary.hasOutstandingLoan),
     displayStatus: summary.displayStatus,
-    message: summary.hasOutstandingLoan
-      ? `Payment recorded. Remaining balance ${formatMoney(Number(summary.outstandingBalance || 0), 2)}.${fundingBits.length ? ` ${fundingBits.join(' ')}` : ''}`
-      : 'Payment recorded. Loan status is now Completed / Paid. Any internal borrow or reserve funding was settled automatically.',
+    message: `${baseMessage}${settlementBits.length ? ` ${settlementBits.join(' ')}` : ''}`,
   };
 }
 

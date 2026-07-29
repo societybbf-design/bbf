@@ -20,7 +20,7 @@ const LoanRepaymentSchema = new mongoose.Schema({
   },
   repaymentType: {
     type: String,
-    enum: ['full', 'installment'],
+    enum: ['full', 'installment', 'partial'],
     default: 'installment',
   },
   paymentMethod: {
