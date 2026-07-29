@@ -77,6 +77,8 @@ router.post('/borrowings/:id/repay', requirePasswordConfirmation, async (req, re
       amount: req.body?.amount,
       recordedBy: req.session?.user?.name || 'Cashier',
       notes: req.body?.notes || '',
+      cashReceived: Boolean(req.body?.cashReceived),
+      skipBankCredit: Boolean(req.body?.skipBankCredit),
     });
     return res.json(result);
   } catch (error) {

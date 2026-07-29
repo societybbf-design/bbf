@@ -419,6 +419,17 @@ function buildLoanDisbursementReceivedHtml(loan = {}) {
         via <strong>${formatPaymentMethodLabel(loan.paymentMethod)}</strong>
         ${loan.disbursedAt ? ` on ${new Date(loan.disbursedAt).toLocaleString()}` : ''}.
       </p>
+      <p class="table-subtitle"><strong>Funding source:</strong> ${
+        loan.fundingSource === 'reserve'
+          ? 'Emergency / Reserve Fund'
+          : loan.fundingSource === 'advance'
+            ? `Internal borrow${loan.fundingLenderName ? ` (${loan.fundingLenderName})` : ''}`
+            : loan.fundingSource === 'mixed'
+              ? 'Mixed (book + advance/reserve cover)'
+              : (loan.disbursementNote && /reserve/i.test(loan.disbursementNote)
+                ? 'Emergency / Reserve Fund'
+                : 'Society book balance')
+      }</p>
       ${loan.disbursementReference ? `<p class="table-subtitle"><strong>Reference:</strong> ${loan.disbursementReference}</p>` : ''}
       ${loan.disbursementNote ? `<p class="table-subtitle"><strong>Note:</strong> ${loan.disbursementNote}</p>` : ''}
       ${loan.disbursedBy ? `<p class="table-subtitle"><strong>Processed by:</strong> ${loan.disbursedBy}</p>` : ''}
@@ -1585,6 +1596,7 @@ function buildOutstandingLoanHtml(summary = {}) {
     return `
       <p class="table-subtitle"><strong>Loan Completed / Paid.</strong> Your ${formatLoanTypeLabel(summary.loanType)} loan of ${formatMoney(Number(summary.originalAmount || 0), 2)} has been fully repaid.</p>
       <p class="table-subtitle">Total repaid: ${formatMoney(Number(summary.totalRepaid || 0), 2)}${summary.clearedAt ? ` — cleared on ${new Date(summary.clearedAt).toLocaleString()}.` : '.'}</p>
+      ${summary.fundingSourceLabel ? `<p class="table-subtitle">Funding source: ${summary.fundingSourceLabel}.</p>` : ''}
     `;
   }
 
@@ -1603,6 +1615,16 @@ function buildOutstandingLoanHtml(summary = {}) {
     </tr>
   `).join('');
 
+  const openBorrowRows = (summary.openBorrowings || [])
+    .filter((row) => Number(row.outstanding || 0) > 0)
+    .map((row) => `
+      <tr>
+        <td>${row.lenderName || 'Lender'}</td>
+        <td>${formatMoney(Number(row.outstanding || 0), 2)}</td>
+        <td>${row.status || 'open'}</td>
+      </tr>
+    `).join('');
+
   return `
     <div class="member-profile-meta">
       <span class="member-profile-meta-pill">${formatLoanTypeLabel(summary.loanType)} Loan</span>
@@ -1611,8 +1633,21 @@ function buildOutstandingLoanHtml(summary = {}) {
       <span class="member-profile-meta-pill">${summary.displayStatus || 'Active'}</span>
     </div>
     <p class="table-subtitle"><strong>Outstanding Loan:</strong> ${formatMoney(Number(summary.outstandingBalance || 0), 2)}</p>
+    ${summary.fundingSourceLabel ? `<p class="table-subtitle"><strong>Funded from:</strong> ${summary.fundingSourceLabel}${summary.fundingLenderName ? ` (${summary.fundingLenderName})` : ''}</p>` : ''}
+    ${Number(summary.fundingReserveOutstanding || 0) > 0
+      ? `<p class="table-subtitle">Emergency / Reserve still to replenish on repayment: <strong>${formatMoney(Number(summary.fundingReserveOutstanding), 2)}</strong></p>`
+      : ''}
     ${nextDue ? `<p class="table-subtitle">Next installment due: <strong>${new Date(nextDue).toLocaleDateString()}</strong>${summary.suggestedInstallment ? ` · suggested ${formatMoney(Number(summary.suggestedInstallment), 2)}` : ''}</p>` : ''}
-    <p class="table-subtitle">Pay at the Cashier desk — your balance and history update as soon as payment is recorded.</p>
+    <p class="table-subtitle"><strong>Your repayment obligation:</strong> coordinate payment with the Cashier. Recording payment updates your balance and settles any internal borrow or reserve funding automatically.</p>
+    ${openBorrowRows ? `
+      <div class="table-wrapper u-mt-1">
+        <p class="table-subtitle"><strong>Internal borrow still open (refunded to lenders as you repay):</strong></p>
+        <table class="data-table">
+          <thead><tr><th>Lender</th><th>Outstanding</th><th>Status</th></tr></thead>
+          <tbody>${openBorrowRows}</tbody>
+        </table>
+      </div>
+    ` : ''}
     ${scheduleRows ? `
       <div class="table-wrapper u-mt-1">
         <table class="data-table">

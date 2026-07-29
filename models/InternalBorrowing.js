@@ -17,6 +17,13 @@ const InternalBorrowingSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
+  /** When set, this borrow funded (or covered shortfall for) a member loan disbursement. */
+  loan: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LoanApplication',
+    default: null,
+    index: true,
+  },
   lender: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

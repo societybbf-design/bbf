@@ -1455,6 +1455,470 @@ window.beginCashierCompletePayment = beginCashierCompletePayment;
 window.openCashierPaymentShortfallModal = openCashierPaymentShortfallModal;
 window.ensureCashierPaymentShortfallModal = ensureCashierPaymentShortfallModal;
 
+/* -------------------------------------------------------------------------- */
+/* Loan disbursement shortfall modal (mirrors project payment shortfall flow) */
+/* -------------------------------------------------------------------------- */
+
+let loanDisburseShortfallState = {
+  loanId: null,
+  funding: null,
+  disburseBody: null,
+  onDone: null,
+};
+
+function ensureLoanDisburseShortfallModal() {
+  let modal = document.getElementById('loanDisburseShortfallModal');
+  if (modal && document.getElementById('loanDisburseShortfallContent')) {
+    modal.style.zIndex = '9000';
+    return modal;
+  }
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'loanDisburseShortfallModal';
+  modal.className = 'modal hidden';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'loanDisburseShortfallTitle');
+  modal.style.zIndex = '9000';
+  modal.innerHTML = `
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <div>
+          <h2 id="loanDisburseShortfallTitle">Disburse loan</h2>
+          <p class="table-subtitle" id="loanDisburseShortfallSubtitle">Check book balance, fix any shortfall, then disburse.</p>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="modal-close" id="loanDisburseShortfallClose" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <div id="loanDisburseShortfallContent" class="member-profile-content">
+        <p class="text-secondary">Checking funding…</p>
+      </div>
+      <p id="loanDisburseShortfallMessage" class="message"></p>
+      <div class="inline-actions u-mt-1" style="justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;">
+        <button type="button" class="secondary-btn" id="loanDisburseShortfallCancel">Cancel</button>
+        <button type="button" class="primary-btn" id="loanDisburseShortfallComplete" disabled>Disburse loan</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const stale = document.getElementById('loanDisburseShortfallModal');
+  if (stale) delete stale.dataset.bound;
+  bindLoanDisburseShortfallModal();
+  return modal;
+}
+
+function closeLoanDisburseShortfallModal(result = null) {
+  const modal = document.getElementById('loanDisburseShortfallModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = '';
+  }
+  const onDone = loanDisburseShortfallState.onDone;
+  loanDisburseShortfallState = { loanId: null, funding: null, disburseBody: null, onDone: null };
+  const msg = document.getElementById('loanDisburseShortfallMessage');
+  if (msg) {
+    msg.textContent = '';
+    msg.classList.remove('success', 'error');
+  }
+  if (typeof onDone === 'function') {
+    try { onDone(result); } catch (_) { /* ignore */ }
+  }
+}
+
+function setLoanDisburseShortfallMessage(text, isError = false) {
+  const msg = document.getElementById('loanDisburseShortfallMessage');
+  if (!msg) return;
+  msg.textContent = text || '';
+  msg.classList.toggle('error', Boolean(isError && text));
+  msg.classList.toggle('success', Boolean(!isError && text));
+}
+
+function renderLoanDisburseShortfallModal(funding) {
+  const content = document.getElementById('loanDisburseShortfallContent');
+  const completeBtn = document.getElementById('loanDisburseShortfallComplete');
+  const subtitle = document.getElementById('loanDisburseShortfallSubtitle');
+  const titleEl = document.getElementById('loanDisburseShortfallTitle');
+  if (!content) return;
+
+  loanDisburseShortfallState.funding = funding;
+  loanDisburseShortfallState.loanId = funding.loanId || funding.loan?._id || loanDisburseShortfallState.loanId;
+
+  const canFinish = Boolean(funding.canDisburseDirectly || funding.canCompleteDirectly);
+  const advances = Array.isArray(funding.advanceMembers) ? funding.advanceMembers : [];
+  const memberName = funding.member?.name || funding.loan?.member?.name || 'Member';
+  const shortfall = Number(funding.shortfall || 0);
+
+  if (titleEl) {
+    titleEl.textContent = canFinish ? 'Ready to disburse loan' : 'Loan shortfall — cover then disburse';
+  }
+  if (subtitle) {
+    subtitle.textContent = canFinish
+      ? 'Book balance is sufficient. Confirm below to disburse.'
+      : (!funding.openingSet
+        ? 'Bank opening balance is not set. Fix it in Bank Ledger, then try again.'
+        : 'Book balance is short. Cover the gap from advance or Emergency / Reserve Fund, then disburse.');
+  }
+
+  const lenderOptions = advances.length
+    ? advances.map((m) => `
+        <option value="${escapeHtml(String(m.id))}" data-advance="${Number(m.advanceBalance || 0)}">
+          ${escapeHtml(m.name || '')} — advance ${money(m.advanceBalance)}
+        </option>
+      `).join('')
+    : '<option value="">No members with advance balance</option>';
+
+  const statusBanner = canFinish
+    ? `<div class="panel-card u-mb-1" style="border-left:4px solid #059669;">
+         <p><strong>No funding problem.</strong> You can disburse this loan now.</p>
+       </div>`
+    : !funding.openingSet
+      ? `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
+           <p><strong>Bank opening balance is not set.</strong> Set it in Bank Ledger first.</p>
+           <p class="u-mt-1"><button type="button" class="secondary-btn" id="loanShortfallOpenLedger">Open Bank Ledger</button></p>
+         </div>`
+      : `<div class="panel-card u-mb-1" style="border-left:4px solid #d97706;">
+           <p><strong>Cannot disburse yet.</strong> ${escapeHtml(funding.message || 'Cover the shortfall below, then click Disburse loan.')}</p>
+         </div>`;
+
+  content.innerHTML = `
+    ${statusBanner}
+    <div class="panel-card u-mb-1">
+      <p><strong>Borrower:</strong> ${escapeHtml(memberName)}</p>
+      <p><strong>Loan type:</strong> ${escapeHtml(funding.loan?.loanType || '—')}</p>
+      <p><strong>Required amount:</strong> ${money(funding.requiredAmount)}</p>
+      <p><strong>Current book balance:</strong> ${money(funding.bookBalance)}</p>
+      <p><strong>Exact shortfall:</strong> <span class="${funding.hasShortfall ? 'message error' : 'message success'}">${money(funding.shortfall)}</span></p>
+      <p><strong>Emergency / Reserve Fund:</strong> ${money(funding.reserveBalance)}</p>
+      <p><strong>Opening balance set:</strong> ${funding.openingSet ? 'Yes' : 'No — set it in Bank Ledger first'}</p>
+      <p class="table-subtitle">${escapeHtml(funding.message || '')}</p>
+    </div>
+
+    ${!canFinish && funding.openingSet ? `
+    <div class="form-row-2 u-mt-1">
+      <div class="panel-card">
+        <h3>Internal borrow (from advance)</h3>
+        <p class="table-subtitle">Select a lender with advance balance to cover the shortfall into the book.</p>
+        <form id="loanShortfallAdvanceForm" class="add-member-form">
+          <div class="form-group">
+            <label>Lender (advance available)
+              <select name="lenderId" id="loanShortfallLender" required ${advances.length ? '' : 'disabled'}>
+                ${lenderOptions}
+              </select>
+            </label>
+          </div>
+          <div class="form-group">
+            <label>Amount (৳)
+              <input type="number" name="amount" id="loanShortfallAdvanceAmount" min="0.01" step="0.01"
+                value="${shortfall > 0 && advances.length ? Math.min(shortfall, Number(advances[0]?.advanceBalance || shortfall)).toFixed(2) : ''}"
+                ${advances.length ? 'required' : 'disabled'} />
+            </label>
+          </div>
+          <button type="submit" class="secondary-btn" ${advances.length ? '' : 'disabled'}>Apply advance cover</button>
+        </form>
+      </div>
+      <div class="panel-card">
+        <h3>Emergency / Reserve Fund</h3>
+        <p class="table-subtitle">Release reserve into the society book to cover this loan shortfall.</p>
+        <form id="loanShortfallReserveForm" class="add-member-form">
+          <div class="form-group">
+            <label>Amount (৳)
+              <input type="number" name="amount" min="0.01" step="0.01"
+                value="${shortfall > 0 ? Math.min(shortfall, Number(funding.reserveBalance || 0)).toFixed(2) : ''}"
+                ${Number(funding.reserveBalance || 0) > 0 ? 'required' : 'disabled'} />
+            </label>
+          </div>
+          <button type="submit" class="secondary-btn" ${Number(funding.reserveBalance || 0) > 0 ? '' : 'disabled'}>Apply reserve cover</button>
+        </form>
+      </div>
+    </div>
+    ` : ''}
+  `;
+
+  if (completeBtn) {
+    completeBtn.disabled = !canFinish;
+    completeBtn.textContent = canFinish
+      ? 'Disburse loan now'
+      : (!funding.openingSet
+        ? 'Disburse (set opening balance first)'
+        : 'Disburse (fix shortfall first)');
+  }
+
+  document.getElementById('loanShortfallOpenLedger')?.addEventListener('click', () => {
+    closeLoanDisburseShortfallModal({ completed: false, cancelled: true, openLedger: true });
+    const ledgerNav = document.querySelector('[data-staff-nav="ledger"]');
+    if (ledgerNav) ledgerNav.click();
+    else window.location.hash = 'ledger';
+  });
+
+  document.getElementById('loanShortfallLender')?.addEventListener('change', (event) => {
+    const selected = event.target.selectedOptions?.[0];
+    const advance = Number(selected?.dataset?.advance || 0);
+    const amountInput = document.getElementById('loanShortfallAdvanceAmount');
+    const cover = Number(loanDisburseShortfallState.funding?.shortfall || 0);
+    if (amountInput && cover > 0) {
+      amountInput.value = Math.min(cover, advance).toFixed(2);
+      amountInput.max = String(advance);
+    }
+  });
+
+  const postCover = async (url, body) => {
+    setLoanDisburseShortfallMessage('');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Unable to apply cover.');
+    setLoanDisburseShortfallMessage(data.message || 'Cover applied.', false);
+    renderLoanDisburseShortfallModal(data.funding || data);
+  };
+
+  document.getElementById('loanShortfallAdvanceForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const loanId = loanDisburseShortfallState.loanId;
+    const formData = new FormData(event.target);
+    try {
+      await postCover(`/api/loans/admin/${loanId}/disburse-cover-advance`, {
+        lenderId: formData.get('lenderId'),
+        amount: formData.get('amount'),
+      });
+    } catch (error) {
+      setLoanDisburseShortfallMessage(error.message, true);
+    }
+  });
+
+  document.getElementById('loanShortfallReserveForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const loanId = loanDisburseShortfallState.loanId;
+    const formData = new FormData(event.target);
+    try {
+      await postCover(`/api/loans/admin/${loanId}/disburse-cover-reserve`, {
+        amount: formData.get('amount'),
+      });
+    } catch (error) {
+      setLoanDisburseShortfallMessage(error.message, true);
+    }
+  });
+}
+
+async function executeLoanDisburse(loanId, body = {}, { messageEl = null } = {}) {
+  const res = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      paymentMethod: body.paymentMethod || 'bank_transfer',
+      transferReference: body.transferReference || '',
+      disbursementNote: body.disbursementNote || 'Disbursed after shortfall cover',
+      fundingSource: body.fundingSource || 'bank',
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = new Error(data.error || 'Unable to disburse loan.');
+    error.funding = data.funding || null;
+    throw error;
+  }
+  if (messageEl) {
+    messageEl.classList.remove('error');
+    messageEl.classList.add('success');
+    const sourceLabel = data.fundingSourceLabel
+      || (data.fundingSource === 'reserve' ? 'Emergency / Reserve Fund' : 'book balance');
+    messageEl.textContent = `Loan disbursed (${sourceLabel}).`
+      + (data.bookBalance != null ? ` Book now ${money(data.bookBalance)}.` : '')
+      + (data.reserveBalance != null ? ` Reserve now ${money(data.reserveBalance)}.` : '');
+  }
+  try {
+    invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue', 'reserve', 'funding']);
+    if (typeof loadLoansModule === 'function') await loadLoansModule();
+  } catch (_) { /* ignore refresh errors */ }
+  return data;
+}
+
+async function openLoanDisburseShortfallModal(loanId, {
+  onDone = null,
+  preloaded = null,
+  preloadedError = null,
+  disburseBody = null,
+} = {}) {
+  const modal = ensureLoanDisburseShortfallModal();
+  bindLoanDisburseShortfallModal();
+  const content = document.getElementById('loanDisburseShortfallContent');
+  if (!modal || !content) {
+    throw new Error('Loan disbursement popup could not be created. Refresh the page and try again.');
+  }
+
+  loanDisburseShortfallState.onDone = onDone;
+  loanDisburseShortfallState.loanId = String(loanId || '');
+  loanDisburseShortfallState.disburseBody = disburseBody || loanDisburseShortfallState.disburseBody || {
+    paymentMethod: 'bank_transfer',
+    disbursementNote: 'Disbursed from Approvals inbox',
+    fundingSource: 'bank',
+  };
+  content.innerHTML = '<p class="text-secondary">Checking book balance…</p>';
+  setLoanDisburseShortfallMessage('');
+  const titleEl = document.getElementById('loanDisburseShortfallTitle');
+  const subtitle = document.getElementById('loanDisburseShortfallSubtitle');
+  if (titleEl) titleEl.textContent = 'Disburse loan';
+  if (subtitle) subtitle.textContent = 'Checking book balance and cover options…';
+  const completeBtn = document.getElementById('loanDisburseShortfallComplete');
+  if (completeBtn) {
+    completeBtn.disabled = true;
+    completeBtn.textContent = 'Disburse loan';
+  }
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+
+  if (preloadedError) {
+    content.innerHTML = `<p class="message error">${escapeHtml(preloadedError)}</p>`;
+    return;
+  }
+  if (preloaded) {
+    renderLoanDisburseShortfallModal(preloaded);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse-check`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Unable to check loan funding.');
+    renderLoanDisburseShortfallModal(data);
+  } catch (error) {
+    content.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
+    setLoanDisburseShortfallMessage(error.message, true);
+  }
+}
+
+/**
+ * Conditional loan Disburse:
+ * - If book balance is enough, disburse directly.
+ * - Only open the interactive modal when a book shortfall (or missing opening) exists.
+ */
+async function beginLoanDisbursePayment(loanId, {
+  messageEl = null,
+  onDone = null,
+  disburseBody = null,
+} = {}) {
+  const id = String(loanId || '').trim();
+  if (!id || id === 'undefined' || id === 'null') {
+    throw new Error('Loan id is missing for Disburse.');
+  }
+
+  const body = {
+    paymentMethod: 'bank_transfer',
+    disbursementNote: 'Disbursed from Approvals inbox',
+    fundingSource: 'bank',
+    ...(disburseBody || {}),
+  };
+
+  // Fully from reserve: skip book shortfall modal (existing Loans panel option).
+  if (String(body.fundingSource || '').toLowerCase() === 'reserve') {
+    const payload = await executeLoanDisburse(id, body, { messageEl });
+    if (typeof onDone === 'function') {
+      try { onDone({ completed: true, payload }); } catch (_) { /* ignore */ }
+    }
+    return { completed: true, payload };
+  }
+
+  const finish = (result) => {
+    if (typeof onDone === 'function') {
+      try { onDone(result); } catch (_) { /* ignore */ }
+    }
+    return result;
+  };
+
+  const checkRes = await fetch(`/api/loans/admin/${encodeURIComponent(id)}/disburse-check`);
+  const check = await checkRes.json().catch(() => ({}));
+  if (!checkRes.ok) {
+    await openLoanDisburseShortfallModal(id, {
+      onDone,
+      disburseBody: body,
+      preloadedError: check.error || 'Unable to check loan disbursement funding.',
+    });
+    return null;
+  }
+
+  if (check.canDisburseDirectly || check.canCompleteDirectly) {
+    try {
+      const payload = await executeLoanDisburse(id, body, { messageEl });
+      return finish({ completed: true, payload });
+    } catch (error) {
+      if (error.funding && (error.funding.needsPopup || error.funding.hasShortfall)) {
+        await openLoanDisburseShortfallModal(id, {
+          onDone,
+          disburseBody: body,
+          preloaded: error.funding,
+        });
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  await openLoanDisburseShortfallModal(id, {
+    onDone,
+    disburseBody: body,
+    preloaded: check,
+  });
+  return null;
+}
+
+window.beginLoanDisbursePayment = beginLoanDisbursePayment;
+window.openLoanDisburseShortfallModal = openLoanDisburseShortfallModal;
+window.ensureLoanDisburseShortfallModal = ensureLoanDisburseShortfallModal;
+
+function bindLoanDisburseShortfallModal() {
+  const modal = document.getElementById('loanDisburseShortfallModal');
+  if (!modal || modal.dataset.bound === '1') return;
+  modal.dataset.bound = '1';
+
+  document.getElementById('loanDisburseShortfallClose')?.addEventListener('click', () => {
+    closeLoanDisburseShortfallModal({ completed: false, cancelled: true });
+  });
+  document.getElementById('loanDisburseShortfallCancel')?.addEventListener('click', () => {
+    closeLoanDisburseShortfallModal({ completed: false, cancelled: true });
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      closeLoanDisburseShortfallModal({ completed: false, cancelled: true });
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeLoanDisburseShortfallModal({ completed: false, cancelled: true });
+    }
+  });
+
+  document.getElementById('loanDisburseShortfallComplete')?.addEventListener('click', async () => {
+    const loanId = loanDisburseShortfallState.loanId;
+    if (!loanId) return;
+    const funding = loanDisburseShortfallState.funding;
+    if (!(funding?.canDisburseDirectly || funding?.canCompleteDirectly)) {
+      setLoanDisburseShortfallMessage('Cover the full shortfall before disbursing.', true);
+      return;
+    }
+    const completeBtn = document.getElementById('loanDisburseShortfallComplete');
+    if (completeBtn) completeBtn.disabled = true;
+    setLoanDisburseShortfallMessage('Disbursing loan…');
+    try {
+      const queueMsg = document.getElementById('cashierLoanDisburseMessage');
+      const approvalsMsg = document.querySelector('#staffApprovalsInbox [data-approvals-message], [data-approvals-inbox] [data-approvals-message]');
+      const payload = await executeLoanDisburse(loanId, loanDisburseShortfallState.disburseBody || {}, {
+        messageEl: queueMsg || approvalsMsg,
+      });
+      closeLoanDisburseShortfallModal({ completed: true, payload });
+    } catch (error) {
+      if (error.funding) {
+        renderLoanDisburseShortfallModal(error.funding);
+      }
+      setLoanDisburseShortfallMessage(error.message, true);
+      if (completeBtn) completeBtn.disabled = false;
+    }
+  });
+}
+
 function bindCashierPaymentShortfallModal() {
   const modal = document.getElementById('cashierPaymentShortfallModal');
   if (!modal || modal.dataset.bound === '1') return;
@@ -2251,7 +2715,10 @@ async function loadFundingModule() {
           const outstanding = Math.max(0, Number(b.amount || 0) - Number(b.amountSettled || 0));
           const lenderName = b.lenderName || b.lender?.name || 'lender';
           const borrowerName = b.borrowerName || b.borrower?.name || '—';
-          const projectLabel = b.investment?.investmentCode || b.note || '—';
+          const isLoanBorrow = Boolean(b.loan);
+          const projectLabel = isLoanBorrow
+            ? `Loan · ${b.loan?.loanType || 'member loan'}${b.note ? ` — ${b.note}` : ''}`
+            : (b.investment?.investmentCode || b.note || '—');
           const borrowingId = String(b._id || b.id || '');
           return `
             <tr data-borrowing-row="${escapeHtml(borrowingId)}">
@@ -2267,6 +2734,7 @@ async function loadFundingModule() {
                   data-outstanding="${outstanding}"
                   data-lender-name="${escapeHtml(lenderName)}"
                   data-borrower-name="${escapeHtml(borrowerName)}"
+                  data-loan-borrow="${isLoanBorrow ? '1' : '0'}"
                   ${!borrowingId || outstanding <= 0 ? 'disabled' : ''}>
                   Settle &amp; refund lender
                 </button>
@@ -2364,12 +2832,16 @@ async function settleBorrowingRepayment(button) {
 
   button.disabled = true;
   try {
+    const isLoanBorrow = String(button.dataset.loanBorrow || '') === '1';
     const res = await fetch(`/api/admin/funding/borrowings/${encodeURIComponent(id)}/repay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amount: outstanding > 0 ? outstanding : undefined,
-        notes: `Settled by cashier — refund to ${lenderName}`,
+        notes: isLoanBorrow
+          ? `Loan funding settle — refund to ${lenderName} (cash at desk)`
+          : `Settled by cashier — refund to ${lenderName}`,
+        cashReceived: isLoanBorrow ? true : undefined,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -3519,8 +3991,8 @@ function buildCashierDisburseCard(loan = {}) {
           <div class="form-group">
             <label>Funding source
               <select name="fundingSource" required>
-                <option value="reserve">Emergency / Reserve Fund</option>
-                <option value="bank">Society book balance</option>
+                <option value="bank" selected>Society book balance (shortfall popup if needed)</option>
+                <option value="reserve">Emergency / Reserve Fund (full amount)</option>
               </select>
             </label>
           </div>
@@ -3613,9 +4085,22 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
   if (statusEl) statusEl.textContent = summary.displayStatus || (summary.hasOutstandingLoan ? 'Active' : 'Completed / Paid');
   if (metaEl) {
     const nextDue = summary.nextDueDate || summary.schedule?.nextDueDate;
-    metaEl.textContent = `${name} · ${summary.loanType || 'general'} loan`
+    const fundingLabel = summary.fundingSourceLabel || '';
+    const borrowBits = (summary.openBorrowings || [])
+      .filter((row) => Number(row.outstanding || 0) > 0)
+      .map((row) => `${row.lenderName} ${money(row.outstanding)}`)
+      .slice(0, 3);
+    metaEl.innerHTML = `${escapeHtml(name)} · ${escapeHtml(summary.loanType || 'general')} loan`
       + (summary.disbursedAt ? ` · disbursed ${new Date(summary.disbursedAt).toLocaleDateString()}` : '')
-      + (nextDue && summary.hasOutstandingLoan ? ` · next due ${new Date(nextDue).toLocaleDateString()}` : '');
+      + (nextDue && summary.hasOutstandingLoan ? ` · next due ${new Date(nextDue).toLocaleDateString()}` : '')
+      + (fundingLabel ? `<br><strong>Funding source:</strong> ${escapeHtml(fundingLabel)}` : '')
+      + (summary.fundingLenderName ? ` · lender(s): ${escapeHtml(summary.fundingLenderName)}` : '')
+      + (Number(summary.fundingReserveOutstanding || 0) > 0
+        ? ` · reserve still to replenish: ${money(summary.fundingReserveOutstanding)}`
+        : '')
+      + (borrowBits.length
+        ? `<br><span class="table-subtitle">Open internal borrow to refund on repayment: ${escapeHtml(borrowBits.join(', '))}</span>`
+        : '');
   }
 
   if (memberIdInput) memberIdInput.value = memberMeta.memberId || '';
@@ -3638,6 +4123,10 @@ function renderCashierLoanRepayDetail(summary, memberMeta = {}) {
       hint.textContent = `Available to collect now: ${money(remaining)}`
         + (summary.suggestedInstallment
           ? ` · Suggested installment: ${money(summary.suggestedInstallment)}`
+          : '')
+        + ((summary.openBorrowings || []).some((r) => Number(r.outstanding || 0) > 0)
+          || Number(summary.fundingReserveOutstanding || 0) > 0
+          ? ' · Recording payment will auto-refund lenders / replenish reserve.'
           : '');
     }
   }
@@ -3912,35 +4401,52 @@ function bindCashierLoansUi() {
     const loanId = form.dataset.loanId;
     const msg = form.querySelector('.cashier-loan-disburse-msg');
     const formData = new FormData(form);
-    if (msg) msg.textContent = '';
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = '';
+    }
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
     try {
-      const response = await fetch(`/api/loans/admin/${loanId}/disburse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentMethod: formData.get('paymentMethod'),
-          transferReference: formData.get('transferReference'),
-          disbursementNote: formData.get('disbursementNote'),
-          fundingSource: formData.get('fundingSource') || 'reserve',
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to disburse loan.');
-      if (msg) {
-        msg.classList.add('success');
-        const sourceLabel = data.fundingSource === 'reserve' ? 'Emergency / Reserve Fund' : 'book balance';
-        msg.textContent = `Loan disbursed from ${sourceLabel}.`
-          + (data.reserveBalance != null ? ` Reserve now ${money(data.reserveBalance)}.` : '')
-          + (data.bookBalance != null ? ` Book balance now ${money(data.bookBalance)}.` : '');
+      if (typeof beginLoanDisbursePayment !== 'function' && typeof window.beginLoanDisbursePayment !== 'function') {
+        throw new Error('Loan disbursement popup is not loaded. Hard-refresh and try again.');
       }
-      invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue', 'reserve']);
-      await loadLoansModule();
-      markStaffViewCache?.('loans');
+      const begin = window.beginLoanDisbursePayment || beginLoanDisbursePayment;
+      const result = await new Promise((resolve, reject) => {
+        begin(loanId, {
+          messageEl: msg,
+          disburseBody: {
+            paymentMethod: formData.get('paymentMethod'),
+            transferReference: formData.get('transferReference'),
+            disbursementNote: formData.get('disbursementNote'),
+            fundingSource: formData.get('fundingSource') || 'bank',
+          },
+          onDone: (done) => resolve(done || { completed: false, cancelled: true }),
+        }).catch(reject);
+      });
+      if (result?.completed) {
+        if (msg) {
+          msg.classList.add('success');
+          if (!msg.textContent) {
+            msg.textContent = 'Loan disbursed.';
+          }
+        }
+        invalidateStaffViewCache?.(['loans', 'home', 'ledger', 'queue', 'reserve', 'funding']);
+        await loadLoansModule();
+        markStaffViewCache?.('loans');
+      } else if (msg) {
+        msg.textContent = result?.openLedger
+          ? 'Set the bank opening balance in Bank Ledger, then try Disburse again.'
+          : 'Disburse closed. Cover any shortfall in the popup, then try again.';
+      }
     } catch (error) {
       if (msg) {
         msg.classList.remove('success');
+        msg.classList.add('error');
         msg.textContent = error.message;
       }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 

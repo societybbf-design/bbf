@@ -486,6 +486,61 @@
           return;
         }
 
+        const isLoanDisburse = (action.key === 'complete' || action.key === 'disburse')
+          && String(action.path || '').includes('/api/loans/admin/')
+          && String(action.path || '').includes('/disburse')
+          && !String(action.path || '').includes('disburse-cover')
+          && !String(action.path || '').includes('disburse-check');
+
+        if (isLoanDisburse) {
+          const pathMatch = String(action.path || '').match(/\/loans\/admin\/([^/]+)\/disburse/i);
+          const loanId = String(pathMatch?.[1] || item.entityId || '').trim();
+          if (!loanId) {
+            setMessage(container, t('approvals.missingLoan', 'Loan id missing for Disburse.'), true);
+            return;
+          }
+          if (typeof window.beginLoanDisbursePayment !== 'function') {
+            setMessage(container, t('approvals.loanDisburseUiMissing', 'Loan disbursement popup is not loaded. Hard-refresh the page (Ctrl+Shift+R) and try again.'), true);
+            return;
+          }
+          btn.disabled = true;
+          setMessage(container, t('approvals.working', 'Checking book balance…'));
+          try {
+            const result = await new Promise((resolve, reject) => {
+              window.beginLoanDisbursePayment(loanId, {
+                messageEl: document.getElementById('cashierLoanDisburseMessage'),
+                disburseBody: {
+                  ...(action.body || {}),
+                  paymentMethod: action.body?.paymentMethod || 'bank_transfer',
+                  disbursementNote: action.body?.disbursementNote || 'Disbursed from Approvals inbox',
+                  fundingSource: action.body?.fundingSource || 'bank',
+                },
+                onDone: (done) => resolve(done || { completed: false, cancelled: true }),
+              }).catch(reject);
+            });
+            if (result?.completed) {
+              setMessage(container, t('approvals.loanDisbursed', 'Loan disbursed.'));
+              if (typeof options.onActionComplete === 'function') {
+                await options.onActionComplete(action, item);
+              } else {
+                await loadAndRender(container.id || container.getAttribute('id'), options);
+              }
+            } else {
+              setMessage(
+                container,
+                result?.openLedger
+                  ? t('approvals.openLedgerHint', 'Set the bank opening balance in Bank Ledger, then try Disburse again.')
+                  : t('approvals.loanPendingFix', 'Disburse popup closed. Fix any shortfall and try Disburse again.')
+              );
+              btn.disabled = false;
+            }
+          } catch (error) {
+            setMessage(container, error.message || t('approvals.actionFailed', 'Unable to complete this approval action.'), true);
+            btn.disabled = false;
+          }
+          return;
+        }
+
         const confirmLabel = action.key === 'reject'
           ? t('approvals.confirmReject', 'Reject this request?')
           : t('approvals.confirmAccept', 'Accept this request?');
