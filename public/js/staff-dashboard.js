@@ -246,6 +246,7 @@ function navItemHtml({ titleKey, icon, active = false, panel = 'home' }) {
 const PANEL_I18N_KEYS = {
   home: 'nav.dashboard',
   approvals: 'nav.approvals',
+  'approval-tracking': 'nav.approvalTracking',
   members: 'nav.members',
   ledger: 'nav.bankLedger',
   audit: 'nav.transactionAudit',
@@ -595,6 +596,8 @@ async function loadViewData(viewId) {
       return loadInvestmentsModule();
     case 'approvals':
       return loadStaffApprovalsInbox();
+    case 'approval-tracking':
+      return loadStaffApprovalTracking();
     default:
       return undefined;
   }
@@ -606,6 +609,183 @@ async function loadStaffApprovalsInbox() {
     badgeSelector: '[data-staff-nav="approvals"]',
     onNavigate: (panel) => showStaffView(panel),
   });
+}
+
+function formatApprovalContactBits(person = {}) {
+  const bits = [];
+  if (person.email) bits.push(person.email);
+  if (person.phone) bits.push(person.phone);
+  return bits.length ? ` · ${bits.map((bit) => escapeHtml(bit)).join(' · ')}` : '';
+}
+
+function renderLoanApprovalTrackingCard(loan) {
+  const breakdown = loan.approvalBreakdown || {};
+  const awaitingCeo = loan.awaiting === 'CEO';
+  const progressLabel = awaitingCeo
+    ? '0 / 1 CEO approved'
+    : 'CEO approved · awaiting Cashier disbursement';
+  const approvedList = (breakdown.approved || []).map((row) => `
+    <li class="approval-track-person approved">
+      <strong>${escapeHtml(row.name || row.role || 'Approver')}</strong>
+      <span>${row.approvedAt ? new Date(row.approvedAt).toLocaleString() : 'Approved'}</span>
+    </li>
+  `).join('') || '<li class="approval-track-empty">None yet</li>';
+  const pendingList = (breakdown.pending || []).map((row) => `
+    <li class="approval-track-person pending">
+      <strong>${escapeHtml(row.name || row.role || 'Pending')}</strong>
+      <span>Not yet approved — contact to move this forward</span>
+    </li>
+  `).join('') || '<li class="approval-track-empty">No one pending</li>';
+
+  return `
+    <article class="approval-track-card" data-loan-id="${escapeHtml(loan.id)}">
+      <div class="approval-track-card-head">
+        <div>
+          <h4>${escapeHtml(loan.memberName || 'Member')}</h4>
+          <p class="table-subtitle">
+            ${escapeHtml(loan.loanType || 'general')} loan · ${money(loan.amount)}
+            ${formatApprovalContactBits({ email: loan.memberEmail, phone: loan.memberPhone })}
+          </p>
+        </div>
+        <div class="approval-track-progress">
+          <span class="status-badge ${awaitingCeo ? 'status-pending' : 'status-completed'}">${escapeHtml(progressLabel)}</span>
+          <span class="table-subtitle">Awaiting: <strong>${escapeHtml(loan.awaiting)}</strong></span>
+        </div>
+      </div>
+      <div class="approval-track-columns">
+        <div>
+          <h5>Approved</h5>
+          <ul>${approvedList}</ul>
+        </div>
+        <div>
+          <h5>Not yet approved</h5>
+          <ul>${pendingList}</ul>
+        </div>
+      </div>
+      <p class="table-subtitle">
+        Submitted ${loan.createdAt ? new Date(loan.createdAt).toLocaleString() : '—'}
+        ${loan.reviewedBy ? ` · Reviewed by ${escapeHtml(loan.reviewedBy)}` : ''}
+        ${loan.approvedAt ? ` · ${new Date(loan.approvedAt).toLocaleString()}` : ''}
+      </p>
+    </article>
+  `;
+}
+
+function renderProjectApprovalTrackingCard(project) {
+  const tracking = project.approvalTracking || {};
+  const approvedCount = Number(tracking.approvedCount || 0);
+  const pendingCount = Number(tracking.pendingCount || 0);
+  const total = Number(tracking.totalMembers || 0);
+  const approvedList = (tracking.approvedMembers || []).map((m) => `
+    <li class="approval-track-person approved">
+      <strong>${escapeHtml(m.name || 'Member')}</strong>
+      <span>
+        ${m.approvedAt ? new Date(m.approvedAt).toLocaleString() : 'Approved'}
+        ${m.isProxied ? ` · proxy${m.proxiedByName ? ` by ${escapeHtml(m.proxiedByName)}` : ''}` : ''}
+      </span>
+    </li>
+  `).join('') || '<li class="approval-track-empty">None yet</li>';
+  const pendingList = (tracking.pendingMembers || []).map((m) => `
+    <li class="approval-track-person pending">
+      <strong>${escapeHtml(m.name || 'Member')}</strong>
+      <span>${m.email ? escapeHtml(m.email) : 'Contact to request approval'}</span>
+    </li>
+  `).join('') || '<li class="approval-track-empty">Everyone approved</li>';
+
+  return `
+    <article class="approval-track-card" data-project-id="${escapeHtml(project.id)}">
+      <div class="approval-track-card-head">
+        <div>
+          <h4>${escapeHtml(project.investmentCode || 'Project')} · ${escapeHtml(project.investorName || 'Investor')}</h4>
+          <p class="table-subtitle">
+            ${escapeHtml(project.investmentType || 'Investment')} · ${money(project.amount)}
+            · ${escapeHtml(project.displayStatus || project.status || '')}
+          </p>
+        </div>
+        <div class="approval-track-progress">
+          <span class="status-badge ${tracking.allApproved ? 'status-completed' : 'status-pending'}">
+            ${approvedCount} approved · ${pendingCount} remaining
+          </span>
+          <span class="table-subtitle">${approvedCount} / ${total} members · Awaiting: <strong>${escapeHtml(project.awaiting)}</strong></span>
+        </div>
+      </div>
+      <details class="approval-track-details">
+        <summary>View who approved / who to contact</summary>
+        <div class="approval-track-columns">
+          <div>
+            <h5>Approved (${approvedCount})</h5>
+            <ul>${approvedList}</ul>
+          </div>
+          <div>
+            <h5>Not yet approved (${pendingCount})</h5>
+            <ul>${pendingList}</ul>
+          </div>
+        </div>
+      </details>
+    </article>
+  `;
+}
+
+async function loadStaffApprovalTracking({ force = false } = {}) {
+  const loansEl = document.getElementById('approvalTrackingLoansList');
+  const projectsEl = document.getElementById('approvalTrackingProjectsList');
+  const messageEl = document.getElementById('approvalTrackingMessage');
+  if (!loansEl || !projectsEl) return;
+
+  if (messageEl) {
+    messageEl.textContent = '';
+    messageEl.classList.remove('success', 'error');
+  }
+  if (force || !loansEl.querySelector('.approval-track-card')) {
+    loansEl.innerHTML = '<p class="text-secondary">Loading…</p>';
+    projectsEl.innerHTML = '<p class="text-secondary">Loading…</p>';
+  }
+
+  try {
+    const response = await fetch('/api/approvals/tracking');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load approval tracking.');
+
+    const summary = data.summary || {};
+    const setCount = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(Number(value || 0));
+    };
+    setCount('approvalTrackLoanCeoCount', summary.loansPendingCeo);
+    setCount('approvalTrackLoanCashierCount', summary.loansAwaitingCashier);
+    setCount('approvalTrackProjectMemberCount', summary.projectsPendingMembers);
+    setCount('approvalTrackProjectCashierCount', summary.projectsAwaitingCashier);
+
+    const generatedAt = document.getElementById('approvalTrackingGeneratedAt');
+    if (generatedAt) {
+      generatedAt.textContent = data.generatedAt
+        ? `Last refreshed ${new Date(data.generatedAt).toLocaleString()} · read-only`
+        : 'Read-only · cannot change approvals from this panel';
+    }
+
+    const loans = data.loans || {};
+    const loanCards = [
+      ...(loans.pendingCeo || []).map(renderLoanApprovalTrackingCard),
+      ...(loans.awaitingCashier || []).map(renderLoanApprovalTrackingCard),
+    ];
+    loansEl.innerHTML = loanCards.length
+      ? loanCards.join('')
+      : '<p class="text-secondary">No open loan requests awaiting CEO or Cashier right now.</p>';
+
+    const projects = data.projects || [];
+    projectsEl.innerHTML = projects.length
+      ? projects.map(renderProjectApprovalTrackingCard).join('')
+      : '<p class="text-secondary">No projects awaiting member approval or Cashier payment right now.</p>';
+
+    markStaffViewCache('approval-tracking');
+  } catch (error) {
+    loansEl.innerHTML = '';
+    projectsEl.innerHTML = '';
+    if (messageEl) {
+      messageEl.classList.add('error');
+      messageEl.textContent = error.message || 'Unable to load approval tracking.';
+    }
+  }
 }
 
 async function refreshStaffApprovalsBadge() {
@@ -5385,7 +5565,7 @@ async function init() {
       || permissions.has('can_view_reports');
 
     const moduleCount = features.length
-      + 1 // Approvals is always available
+      + 2 // Approvals + Approval Tracking always available for staff
       + (canManageLedger ? 3 : 0) // ledger + audit + reserve
       + (showTracking ? 1 : 0)
       + (showQueue ? 1 : 0)
@@ -5411,6 +5591,7 @@ async function init() {
     navParts.push(`<p class="nav-section-label" data-i18n="nav.section.overview">${window.I18n?.t('nav.section.overview', 'Overview')}</p>`);
     pushNav({ icon: '🏠', active: true, panel: 'home' });
     pushNav({ icon: '✅', panel: 'approvals', titleKey: 'nav.approvals' });
+    pushNav({ icon: '📡', panel: 'approval-tracking', titleKey: 'nav.approvalTracking' });
 
     navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
     if (canManageLedger) pushNav({ icon: '🏛️', panel: 'ledger' });
@@ -5492,6 +5673,10 @@ async function init() {
     document.getElementById('staffApprovalsRefreshBtn')?.addEventListener('click', () => {
       invalidateStaffViewCache(['approvals']);
       void loadStaffApprovalsInbox();
+    });
+    document.getElementById('staffApprovalTrackingRefreshBtn')?.addEventListener('click', () => {
+      invalidateStaffViewCache(['approval-tracking']);
+      void loadStaffApprovalTracking({ force: true });
     });
   } catch (error) {
     document.getElementById('dashMessage').textContent = t('staffUi.unableLoadDashboard', 'Unable to load dashboard.');

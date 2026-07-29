@@ -44,6 +44,7 @@
     "chat": "Chat",
     "cashierTracking": "Cashier Tracking",
     "approvals": "Approvals",
+    "approvalTracking": "Approval Tracking",
     "emergencyReserve": "Emergency / Reserve Fund"
   },
   "approvals": {

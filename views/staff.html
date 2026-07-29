@@ -1319,6 +1319,43 @@
           <div id="staffApprovalsInbox"></div>
         </div>
 
+        <div class="panel-card hidden" data-staff-view="approval-tracking" id="moduleApprovalTracking">
+          <div class="panel-card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+            <div>
+              <h2>Approval Tracking</h2>
+              <p class="text-secondary">
+                Read-only view of who has approved and who is still pending. Use this list to contact pending members or the CEO so loans and projects can move forward — you cannot change approvals here.
+              </p>
+            </div>
+            <button type="button" class="secondary-btn" id="staffApprovalTrackingRefreshBtn">Refresh</button>
+          </div>
+
+          <div class="stats-grid u-mb-1" id="approvalTrackingSummary">
+            <div class="stat-card"><h3 id="approvalTrackLoanCeoCount">0</h3><p>Loans awaiting CEO</p></div>
+            <div class="stat-card"><h3 id="approvalTrackLoanCashierCount">0</h3><p>Loans ready to disburse</p></div>
+            <div class="stat-card"><h3 id="approvalTrackProjectMemberCount">0</h3><p>Projects awaiting members</p></div>
+            <div class="stat-card"><h3 id="approvalTrackProjectCashierCount">0</h3><p>Projects ready to pay</p></div>
+          </div>
+          <p class="table-subtitle" id="approvalTrackingGeneratedAt"></p>
+          <p id="approvalTrackingMessage" class="message"></p>
+
+          <section class="approval-tracking-section u-mb-1">
+            <h3>Loan requests</h3>
+            <p class="text-secondary">Member → CEO approval → Cashier disbursement. Contact the CEO if a loan is still pending review.</p>
+            <div id="approvalTrackingLoansList">
+              <p class="text-secondary">Loading…</p>
+            </div>
+          </section>
+
+          <section class="approval-tracking-section">
+            <h3>Projects / investments</h3>
+            <p class="text-secondary">CEO creates the project → all eligible members must approve → Cashier pays. Expand a row to see who approved and who to contact.</p>
+            <div id="approvalTrackingProjectsList">
+              <p class="text-secondary">Loading…</p>
+            </div>
+          </section>
+        </div>
+
         <div class="panel-card hidden" data-staff-view="investments" id="moduleInvestments">
           <div class="panel-card-header">
             <h2>Investments</h2>
