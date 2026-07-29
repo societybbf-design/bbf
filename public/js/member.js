@@ -3,6 +3,15 @@ function t(key, fallback) {
   return window.I18n?.t?.(key, fallback) ?? fallback;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function translateStatus(value) {
   const raw = String(value || '').trim();
   const key = raw.toLowerCase().replace(/\s+/g, '_');
@@ -1639,27 +1648,47 @@ function formatRepaymentStatusBadge(status = 'pending') {
   return '<span class="status-badge status-pending">Pending</span>';
 }
 
-function buildOutstandingLoanHtml(summary = {}) {
-  if (summary.loanCleared) {
-    return `
-      <p class="table-subtitle"><strong>Loan Completed / Paid.</strong> Your ${formatLoanTypeLabel(summary.loanType)} loan of ${formatMoney(Number(summary.originalAmount || 0), 2)} has been fully repaid.</p>
-      <p class="table-subtitle">Total repaid: ${formatMoney(Number(summary.totalRepaid || 0), 2)}${summary.clearedAt ? ` — cleared on ${new Date(summary.clearedAt).toLocaleString()}.` : '.'}</p>
-      ${summary.fundingSourceLabel ? `<p class="table-subtitle">Funding source: ${summary.fundingSourceLabel}.</p>` : ''}
-    `;
+function formatInstallmentScheduleBadge(status = 'upcoming') {
+  const raw = String(status || '').toLowerCase();
+  if (raw === 'paid') {
+    return '<span class="status-badge member-loan-status member-loan-status-paid" title="This installment is fully paid">Paid</span>';
   }
+  if (raw === 'due' || raw === 'partial' || raw === 'active') {
+    return '<span class="status-badge member-loan-status member-loan-status-active" title="This installment is currently due or partially paid">Active</span>';
+  }
+  return '<span class="status-badge member-loan-status member-loan-status-pending" title="This installment is upcoming">Pending</span>';
+}
 
-  if (!summary.hasOutstandingLoan) {
-    return '<p class="table-subtitle">You have no outstanding loan balance right now.</p>';
+function buildOutstandingLoanHtml(summary = {}) {
+  const original = formatMoney(Number(summary.originalAmount || 0), 2);
+  const repaid = formatMoney(Number(summary.totalRepaid || 0), 2);
+  const outstanding = formatMoney(Number(summary.outstandingBalance || 0), 2);
+  const fundingLabel = summary.fundingSourceLabel
+    || (summary.fundingLenderName
+      ? `Internal borrow (${summary.fundingLenderName})`
+      : '—');
+  const fundingDetail = summary.fundingLenderName && summary.fundingSourceLabel
+    && !String(summary.fundingSourceLabel).includes(summary.fundingLenderName)
+    ? ` · ${summary.fundingLenderName}`
+    : '';
+
+  if (!summary.hasOutstandingLoan && !summary.loanCleared) {
+    return `
+      <div class="member-loan-tracking empty">
+        <p class="table-subtitle">You have no active or recently completed loan to track right now.</p>
+      </div>
+    `;
   }
 
   const schedule = summary.schedule || {};
   const nextDue = summary.nextDueDate || schedule.nextDueDate;
-  const scheduleRows = (schedule.rows || []).slice(0, 6).map((row) => `
-    <tr>
-      <td>${row.period}</td>
-      <td>${row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—'}</td>
-      <td>${formatMoney(Number(row.amount || 0), 2)}</td>
-      <td>${row.status === 'paid' ? 'Paid' : row.status === 'due' ? 'Due now' : row.status === 'partial' ? 'Partial' : 'Upcoming'}</td>
+  const rows = Array.isArray(schedule.rows) ? schedule.rows : [];
+  const scheduleRows = rows.map((row) => `
+    <tr class="member-loan-schedule-row member-loan-schedule-${escapeHtml(String(row.status || 'upcoming'))}">
+      <td data-label="Installment #">${row.period}</td>
+      <td data-label="Due Date">${row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—'}</td>
+      <td data-label="Amount Due">${formatMoney(Number(row.amount || 0), 2)}</td>
+      <td data-label="Status">${formatInstallmentScheduleBadge(row.status)}</td>
     </tr>
   `).join('');
 
@@ -1667,43 +1696,79 @@ function buildOutstandingLoanHtml(summary = {}) {
     .filter((row) => Number(row.outstanding || 0) > 0)
     .map((row) => `
       <tr>
-        <td>${row.lenderName || 'Lender'}</td>
+        <td>${escapeHtml(row.lenderName || 'Lender')}</td>
         <td>${formatMoney(Number(row.outstanding || 0), 2)}</td>
-        <td>${row.status || 'open'}</td>
+        <td>${formatInstallmentScheduleBadge(row.status === 'partial' ? 'partial' : 'active')}</td>
       </tr>
     `).join('');
 
+  const statusNote = summary.loanCleared
+    ? `<p class="table-subtitle member-loan-tracking-note"><strong>Loan Completed / Paid.</strong>${summary.clearedAt ? ` Cleared on ${new Date(summary.clearedAt).toLocaleString()}.` : ''} Visit the Cashier desk for any future loan questions.</p>`
+    : `<p class="table-subtitle member-loan-tracking-note">Pay at the Cashier desk. Your balances and installment status update automatically after payment is recorded.${nextDue ? ` Next due: <strong>${new Date(nextDue).toLocaleDateString()}</strong>${summary.suggestedInstallment ? ` · suggested ${formatMoney(Number(summary.suggestedInstallment), 2)}` : ''}.` : ''}</p>`;
+
   return `
-    <div class="member-profile-meta">
-      <span class="member-profile-meta-pill">${formatLoanTypeLabel(summary.loanType)} Loan</span>
-      <span class="member-profile-meta-pill">Original: ${formatMoney(Number(summary.originalAmount || 0), 2)}</span>
-      <span class="member-profile-meta-pill">Repaid: ${formatMoney(Number(summary.totalRepaid || 0), 2)}</span>
-      <span class="member-profile-meta-pill">${summary.displayStatus || 'Active'}</span>
+    <div class="member-loan-tracking">
+      <div class="stats-grid member-loan-summary-grid u-mb-1">
+        <div class="stat-card member-loan-summary-card">
+          <h3>${original}</h3>
+          <p>Total Loan Amount</p>
+        </div>
+        <div class="stat-card member-loan-summary-card">
+          <h3>${repaid}</h3>
+          <p>Total Repaid</p>
+        </div>
+        <div class="stat-card member-loan-summary-card member-loan-summary-due">
+          <h3>${outstanding}</h3>
+          <p>Outstanding Balance (Due)</p>
+        </div>
+        <div class="stat-card member-loan-summary-card member-loan-summary-funding">
+          <h3 class="member-loan-funding-value">${escapeHtml(fundingLabel)}</h3>
+          <p>Funding Source${fundingDetail ? `<span class="member-loan-funding-detail">${escapeHtml(fundingDetail)}</span>` : ''}</p>
+        </div>
+      </div>
+
+      ${statusNote}
+
+      ${Number(summary.fundingReserveOutstanding || 0) > 0
+        ? `<p class="table-subtitle">Emergency / Reserve still to replenish as you repay: <strong>${formatMoney(Number(summary.fundingReserveOutstanding), 2)}</strong></p>`
+        : ''}
+
+      ${openBorrowRows ? `
+        <div class="table-wrapper u-mt-1 member-loan-borrow-table">
+          <p class="table-subtitle"><strong>Internal borrow still open</strong> (refunded to lenders as you repay)</p>
+          <table class="data-table table-cards">
+            <thead>
+              <tr>
+                <th>Lender</th>
+                <th>Outstanding</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>${openBorrowRows}</tbody>
+          </table>
+        </div>
+      ` : ''}
+
+      <div class="table-wrapper u-mt-1 member-loan-schedule-table">
+        <div class="member-loan-schedule-header">
+          <h3>Installment Schedule</h3>
+          <p class="table-subtitle">Track each installment’s due date and payment status.</p>
+        </div>
+        <table class="data-table table-cards member-loan-installment-table">
+          <thead>
+            <tr>
+              <th>Installment #</th>
+              <th>Due Date</th>
+              <th>Amount Due</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${scheduleRows || '<tr><td colspan="4">No installment schedule available yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <p class="table-subtitle"><strong>Outstanding Loan:</strong> ${formatMoney(Number(summary.outstandingBalance || 0), 2)}</p>
-    ${summary.fundingSourceLabel ? `<p class="table-subtitle"><strong>Funded from:</strong> ${summary.fundingSourceLabel}${summary.fundingLenderName ? ` (${summary.fundingLenderName})` : ''}</p>` : ''}
-    ${Number(summary.fundingReserveOutstanding || 0) > 0
-      ? `<p class="table-subtitle">Emergency / Reserve still to replenish on repayment: <strong>${formatMoney(Number(summary.fundingReserveOutstanding), 2)}</strong></p>`
-      : ''}
-    ${nextDue ? `<p class="table-subtitle">Next installment due: <strong>${new Date(nextDue).toLocaleDateString()}</strong>${summary.suggestedInstallment ? ` · suggested ${formatMoney(Number(summary.suggestedInstallment), 2)}` : ''}</p>` : ''}
-    <p class="table-subtitle"><strong>Your repayment obligation:</strong> coordinate payment with the Cashier. Recording payment updates your balance and settles any internal borrow or reserve funding automatically.</p>
-    ${openBorrowRows ? `
-      <div class="table-wrapper u-mt-1">
-        <p class="table-subtitle"><strong>Internal borrow still open (refunded to lenders as you repay):</strong></p>
-        <table class="data-table">
-          <thead><tr><th>Lender</th><th>Outstanding</th><th>Status</th></tr></thead>
-          <tbody>${openBorrowRows}</tbody>
-        </table>
-      </div>
-    ` : ''}
-    ${scheduleRows ? `
-      <div class="table-wrapper u-mt-1">
-        <table class="data-table">
-          <thead><tr><th>#</th><th>Due</th><th>Amount</th><th>Status</th></tr></thead>
-          <tbody>${scheduleRows}</tbody>
-        </table>
-      </div>
-    ` : ''}
   `;
 }
 

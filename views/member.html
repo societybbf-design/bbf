@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260714notify2" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260729loantrack1" />
   <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
   <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
@@ -263,11 +263,11 @@
         <div class="member-profile-section-header">
           <div>
             <h2 data-i18n="memberUi.loanPaymentStatus">Loan Payment Status</h2>
-            <p class="table-subtitle" data-i18n="memberUi.loanPaymentHelp">Payments are recorded manually by admin at the society office.</p>
+            <p class="table-subtitle" data-i18n="memberUi.loanPaymentHelp">See your original loan, amount repaid, outstanding balance, funding source, and installment schedule.</p>
           </div>
           <button type="button" class="primary-btn" id="goToLoansPageBtn" data-i18n="memberUi.viewLoans">View Loans</button>
         </div>
-        <div id="dashboardOutstandingLoanContent">
+        <div id="dashboardOutstandingLoanContent" class="member-loan-tracking-host">
           <p class="table-subtitle">Loading outstanding loan...</p>
         </div>
       </section>
@@ -527,9 +527,9 @@
         </section>
 
         <section class="panel-card card-form-wide" id="loanRepaymentPanel">
-          <h2>Loan Payment</h2>
-          <p class="table-subtitle">Visit the Cashier desk to pay installments or clear the full balance. Your outstanding amount and history update automatically after payment is recorded.</p>
-          <div id="loanOutstandingSummary" class="loan-dashboard-highlight">
+          <h2>Loan Tracking</h2>
+          <p class="table-subtitle">Review your loan summary and installment schedule. Pay at the Cashier desk — balances update automatically after payment is recorded.</p>
+          <div id="loanOutstandingSummary" class="loan-dashboard-highlight member-loan-tracking-host">
             <p class="table-subtitle">Loading outstanding loan...</p>
           </div>
           <div class="member-manual-payment-note panel-card">
