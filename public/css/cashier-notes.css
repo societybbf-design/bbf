@@ -1,0 +1,284 @@
+/* Floating Cashier Notes & Task Checklist */
+
+.cashier-notes-fab {
+  position: fixed;
+  z-index: 8500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.7rem 0.95rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #fff;
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.35);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+  right: 1.1rem;
+  bottom: 5.5rem;
+  left: auto;
+  top: auto;
+}
+
+.cashier-notes-fab.is-left {
+  right: auto;
+  left: 1.1rem;
+}
+
+.cashier-notes-fab.is-right {
+  left: auto;
+  right: 1.1rem;
+}
+
+.cashier-notes-fab:hover,
+.cashier-notes-fab:focus-visible {
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.45);
+  outline: none;
+}
+
+.cashier-notes-fab.is-dragging {
+  cursor: grabbing;
+  opacity: 0.92;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+}
+
+.cashier-notes-fab-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.cashier-notes-fab-label {
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+}
+
+.cashier-notes-fab-badge {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cashier-notes-modal {
+  z-index: 9000;
+}
+
+.cashier-notes-modal-content {
+  width: min(560px, calc(100vw - 1.5rem));
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  animation: cashierNotesModalIn 0.22s ease;
+}
+
+@keyframes cashierNotesModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.cashier-notes-modal-body {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.cashier-notes-section {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+}
+
+.cashier-notes-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.cashier-notes-section-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.cashier-notes-save-status {
+  font-size: 0.78rem;
+  color: #059669;
+  font-weight: 600;
+}
+
+.cashier-notes-save-status.is-saving {
+  color: #2563eb;
+}
+
+.cashier-notes-save-status.is-error {
+  color: #b45309;
+}
+
+.cashier-notes-textarea {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  border: 1px solid var(--border, #dbe3f0);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  font: inherit;
+  line-height: 1.45;
+  background: var(--bg-input, #f8fafc);
+  color: var(--text-primary, #0f172a);
+}
+
+.cashier-notes-textarea:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.28);
+  border-color: #60a5fa;
+}
+
+.cashier-notes-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.cashier-notes-add-row input {
+  border: 1px solid var(--border, #dbe3f0);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  background: var(--bg-input, #f8fafc);
+  color: var(--text-primary, #0f172a);
+}
+
+.cashier-notes-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.cashier-notes-empty {
+  color: var(--text-secondary, #64748b);
+  font-size: 0.9rem;
+  padding: 0.35rem 0;
+}
+
+.cashier-notes-task {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 10px;
+  background: var(--bg-body-start, #f8fafc);
+  border: 1px solid transparent;
+}
+
+.cashier-notes-task:hover {
+  border-color: var(--border, #e2e8f0);
+}
+
+.cashier-notes-task-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  flex: 1;
+  cursor: pointer;
+  margin: 0;
+}
+
+.cashier-notes-task-check {
+  margin-top: 0.2rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #2563eb;
+}
+
+.cashier-notes-task-text {
+  line-height: 1.35;
+  color: var(--text-primary, #0f172a);
+}
+
+.cashier-notes-task.is-done .cashier-notes-task-text {
+  text-decoration: line-through;
+  color: var(--text-secondary, #64748b);
+}
+
+.cashier-notes-task-delete {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 6px;
+}
+
+.cashier-notes-task-delete:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.cashier-notes-task-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cashier-notes-hint {
+  margin: 0.85rem 0 0;
+}
+
+html[data-theme="dark"] .cashier-notes-fab {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .cashier-notes-section {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+html[data-theme="dark"] .cashier-notes-textarea,
+html[data-theme="dark"] .cashier-notes-add-row input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+html[data-theme="dark"] .cashier-notes-task {
+  background: #0f172a;
+}
+
+@media (max-width: 720px) {
+  .cashier-notes-fab {
+    bottom: 5.75rem;
+    padding: 0.65rem 0.8rem;
+  }
+
+  .cashier-notes-fab-label {
+    display: none;
+  }
+
+  .cashier-notes-modal-content {
+    width: min(100vw - 0.75rem, 560px);
+    max-height: 92vh;
+  }
+}
