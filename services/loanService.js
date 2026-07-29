@@ -12,6 +12,28 @@ const { sendSms } = require('./smsService');
 const LOAN_LIMIT_RATIO = 0.8;
 const PAYMENT_METHODS = ['cash', 'bank_transfer', 'mobile_banking', 'check', 'other'];
 
+/** Parse amounts that may use comma decimals (e.g. 17716,67) or thousand separators. */
+function parseLooseMoney(value) {
+  if (value == null || value === '') return NaN;
+  if (typeof value === 'number') return Number(Number(value).toFixed(2));
+  let raw = String(value).trim();
+  if (!raw) return NaN;
+  raw = raw.replace(/[^\d,.-]/g, '');
+  if (raw.includes(',') && raw.includes('.')) {
+    // Assume the last separator is the decimal mark.
+    if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) {
+      raw = raw.replace(/\./g, '').replace(',', '.');
+    } else {
+      raw = raw.replace(/,/g, '');
+    }
+  } else if (raw.includes(',')) {
+    raw = raw.replace(',', '.');
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return NaN;
+  return Number(n.toFixed(2));
+}
+
 function saveLoanContractFile(loanId, pdfBuffer) {
   const contractsDir = path.join(__dirname, '..', 'uploads', 'contracts');
   if (!fs.existsSync(contractsDir)) {
@@ -849,7 +871,7 @@ async function coverLoanDisbursementFromAdvance({
 
   const payAmount = amount == null || amount === ''
     ? snapshot.shortfall
-    : Number(Number(amount).toFixed(2));
+    : parseLooseMoney(amount);
   if (!(payAmount > 0)) {
     const error = new Error('Cover amount must be greater than zero.');
     error.status = 400;
@@ -970,7 +992,7 @@ async function coverLoanDisbursementFromReserve({
 
   const payAmount = amount == null || amount === ''
     ? Math.min(snapshot.shortfall, snapshot.reserveBalance)
-    : Number(Number(amount).toFixed(2));
+    : parseLooseMoney(amount);
   if (!(payAmount > 0)) {
     const error = new Error('Cover amount must be greater than zero.');
     error.status = 400;
@@ -1257,6 +1279,7 @@ module.exports = {
   coverLoanDisbursementFromAdvance,
   coverLoanDisbursementFromReserve,
   resolveLoanFundingSourceLabel,
+  parseLooseMoney,
   disburseLoanApplication,
   formatPaymentMethodLabel,
   getAllLoanTakers,
