@@ -1223,30 +1223,12 @@
 
             <div id="cashierLoanRepayDetail" class="cashier-loan-repay-detail hidden">
               <div class="stats-grid u-mb-1">
-                <div class="stat-card"><h3 id="cashierLoanDetailOriginal">৳0</h3><p>Total loan</p></div>
-                <div class="stat-card"><h3 id="cashierLoanDetailPaid">৳0</h3><p>Paid so far</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailOriginal">৳0</h3><p>Total loan amount</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailPaid">৳0</h3><p>Total paid so far</p></div>
                 <div class="stat-card"><h3 id="cashierLoanDetailRemaining">৳0</h3><p>Remaining due</p></div>
-                <div class="stat-card"><h3 id="cashierLoanDetailStatus">—</h3><p>Loan status</p></div>
+                <div class="stat-card"><h3 id="cashierLoanDetailFunding" class="cashier-loan-funding-value">—</h3><p>Funding source</p></div>
               </div>
               <p class="table-subtitle" id="cashierLoanDetailMeta">Select a borrower to load loan details.</p>
-
-              <h4>Installment schedule</h4>
-              <div class="table-wrapper u-mb-1">
-                <table class="data-table table-cards">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Due date</th>
-                      <th>Installment</th>
-                      <th>Paid</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="cashierLoanScheduleBody">
-                    <tr><td colspan="5">No schedule loaded.</td></tr>
-                  </tbody>
-                </table>
-              </div>
 
               <form id="cashierLoanRepaymentForm" class="add-member-form">
                 <input type="hidden" name="memberId" id="cashierLoanRepayMemberId" value="" />
@@ -1255,7 +1237,6 @@
                     <label>Payment type
                       <select name="repaymentType" id="cashierLoanRepayType">
                         <option value="partial" selected>Partial / custom amount</option>
-                        <option value="installment">Suggested installment</option>
                         <option value="full">Full payment (clear loan)</option>
                       </select>
                     </label>

@@ -20,8 +20,9 @@ const LoanRepaymentSchema = new mongoose.Schema({
   },
   repaymentType: {
     type: String,
+    // 'installment' retained only for legacy documents; new writes use full | partial.
     enum: ['full', 'installment', 'partial'],
-    default: 'installment',
+    default: 'partial',
   },
   paymentMethod: {
     type: String,
