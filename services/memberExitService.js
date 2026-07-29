@@ -264,6 +264,7 @@ async function initiateMemberExit({
     message: `Exit for ${member.name} (${formatMoney(preview.settlementAmount, 2)}) is waiting for the departing member to approve.`,
     relatedId: exitRequest._id,
     relatedModel: 'MemberExitRequest',
+    targetRoles: ['ceo'],
   });
 
   return {
@@ -372,6 +373,7 @@ async function approveExitByDepartingMember(exitRequestId, memberId, { proxy = n
     message: `${exitRequest.departingMemberName} approved exit. Waiting for ${eligibleIds.length} remaining member approval(s).`,
     relatedId: exitRequest._id,
     relatedModel: 'MemberExitRequest',
+    targetRoles: ['ceo'],
   });
 
   return {
@@ -403,6 +405,7 @@ async function rejectExitByDepartingMember(exitRequestId, memberId, reason = '')
     message: `${exitRequest.departingMemberName} rejected the exit request.`,
     relatedId: exitRequest._id,
     relatedModel: 'MemberExitRequest',
+    targetRoles: ['ceo'],
   });
 
   return {
@@ -465,6 +468,7 @@ async function approveExitByMember(exitRequestId, memberId, { proxy = null } = {
       message: `Exit for ${exitRequest.departingMemberName} (${formatMoney(exitRequest.settlementAmount, 2)}) is ready for Cashier disbursement.`,
       relatedId: exitRequest._id,
       relatedModel: 'MemberExitRequest',
+      targetRoles: ['cashier'],
     });
   }
 
@@ -622,6 +626,7 @@ async function completeCashierMemberExit(exitRequestId, {
       message: `Cashier completed exit payout for ${removed.name || member.name}: ${formatMoney(settlement, 2)}. Shares redistributed to remaining members.`,
       relatedId: exitRequest._id,
       relatedModel: 'MemberExitRequest',
+      targetRoles: ['ceo'],
     });
 
     return {

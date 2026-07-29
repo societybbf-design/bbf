@@ -163,16 +163,18 @@
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
-        <button type="button" class="notification-bell-btn" id="adminNotificationBtn" data-i18n-title="common.viewNotifications" title="View Notifications" data-i18n-aria-label="common.viewNotifications" aria-label="View Notifications">
-          🔔 <span class="notification-badge hidden" id="adminNotificationBadge">0</span>
-        </button>
-        <div id="adminNotificationPanel" class="notification-panel hidden" hidden>
-          <div class="notification-panel-header">
-            <strong data-i18n="common.notifications">Notifications</strong>
-            <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
-          </div>
-          <div id="adminNotificationList" class="notification-list">
-            <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
+        <div class="notification-menu">
+          <button type="button" class="notification-bell-btn" id="adminNotificationBtn" data-i18n-title="common.viewNotifications" title="View Notifications" data-i18n-aria-label="common.viewNotifications" aria-label="View Notifications">
+            🔔 <span class="notification-badge hidden" id="adminNotificationBadge">0</span>
+          </button>
+          <div id="adminNotificationPanel" class="notification-panel hidden" hidden>
+            <div class="notification-panel-header">
+              <strong data-i18n="common.notifications">Notifications</strong>
+              <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
+            </div>
+            <div id="adminNotificationList" class="notification-list">
+              <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
+            </div>
           </div>
         </div>
         <div class="search-wrapper">
@@ -1568,26 +1570,37 @@
 
       <section class="page-section" data-page-section="messages">
         <section class="panel-card">
-          <h2 data-i18n="admin.sections.memberMessages">Member Messages</h2>
-          <p class="table-subtitle">Chat directly with members. Select a conversation on the left, then reply on the right.</p>
+          <h2 data-i18n="admin.sections.memberMessages">Messages</h2>
+          <p class="table-subtitle">Chat with members or staff (Cashiers / employees). Select a recipient on the left, then reply on the right.</p>
         </section>
         <div class="chat-page-layout">
           <aside class="panel-card chat-inbox-panel">
             <div class="member-profile-section-header">
               <div>
                 <h3 data-i18n="admin.sections.inbox">Inbox</h3>
-                <p class="table-subtitle">Recent conversations</p>
+                <p class="table-subtitle">Members and staff</p>
               </div>
               <button type="button" class="secondary-btn" id="refreshAdminChatInboxBtn" data-i18n="admin.buttons.refresh">Refresh</button>
             </div>
+            <div class="chat-directory-tabs" role="tablist">
+              <button type="button" class="secondary-btn active" data-admin-chat-tab="members" id="adminChatTabMembers">Members</button>
+              <button type="button" class="secondary-btn" data-admin-chat-tab="staff" id="adminChatTabStaff">Staff</button>
+            </div>
+            <div class="chat-recipient-bar">
+              <label for="adminChatRecipientSelect">Select recipient</label>
+              <select id="adminChatRecipientSelect" class="chat-recipient-select">
+                <option value="">Choose who to message…</option>
+              </select>
+            </div>
+            <input type="search" id="adminChatSearch" class="chat-member-search" placeholder="Search recipients…" />
             <div class="chat-inbox-list" id="adminChatInboxList">
               <p class="table-subtitle">Loading conversations...</p>
             </div>
           </aside>
           <section class="panel-card chat-thread-panel">
             <div id="adminChatThreadHeader" class="chat-thread-header">
-              <h3 data-i18n="admin.sections.selectMemberChat">Select a member</h3>
-              <p class="table-subtitle">Choose a conversation from the inbox to start chatting.</p>
+              <h3 data-i18n="admin.sections.selectMemberChat">Select a recipient</h3>
+              <p class="table-subtitle">Choose a member or staff colleague to start chatting.</p>
             </div>
             <div class="chat-thread" id="adminChatThread" aria-live="polite">
               <p class="table-subtitle chat-empty-state">No conversation selected.</p>
@@ -1600,7 +1613,7 @@
               <button type="button" class="modal-close" id="adminChatReplyClear" aria-label="Cancel reply">&times;</button>
             </div>
             <form class="chat-compose-form hidden" id="adminChatComposeForm">
-              <textarea data-i18n-placeholder="adminUi.typeMessageToMember" name="body" rows="3" maxlength="2000" placeholder="Type your message to the member..."></textarea>
+              <textarea data-i18n-placeholder="adminUi.typeMessageToMember" name="body" rows="3" maxlength="2000" placeholder="Type your message..."></textarea>
               <div class="chat-compose-actions">
                 <label data-i18n="admin.forms.attach" class="secondary-btn chat-attach-btn">
                 Attach

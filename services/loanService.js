@@ -292,6 +292,7 @@ async function createLoanApplication({
     message: `${member.name} requested a ${normalizedType} loan of ${formatMoney(normalizedAmount, 2)}. Awaiting CEO approval before Cashier disbursement. Reason: ${reason.trim()}`,
     relatedId: loan._id,
     relatedModel: 'LoanApplication',
+    targetRoles: ['ceo'],
   });
 
   if (process.env.ADMIN_ALERT_EMAIL) {
@@ -723,6 +724,7 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
       message: `${member?.name || 'Member'}'s ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was approved and is ready for Cashier payout.`,
       relatedId: loan._id,
       relatedModel: 'LoanApplication',
+      targetRoles: ['cashier'],
     });
   }
 

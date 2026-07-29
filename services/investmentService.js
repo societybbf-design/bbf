@@ -722,6 +722,7 @@ async function createSocietyInvestment({
     message: `Awaiting approval from ${eligibleMembers.length} members.`,
     relatedId: investment._id,
     relatedModel: 'Investment',
+    targetRoles: ['ceo'],
   });
 
   return {
@@ -901,6 +902,7 @@ async function approveInvestmentByMember(investmentId, memberId, { proxy = null 
       message: `All ${trackingBeforeSave.totalMembers} members approved. Awaiting cashier payment.`,
       relatedId: investment._id,
       relatedModel: 'Investment',
+      targetRoles: ['cashier'],
     });
   }
 
@@ -1674,6 +1676,7 @@ async function completeCashierPayment(investmentId, {
     message: `Cashier completed society payout of ${formatMoney(societyFundingAmount, 2)} to ${receiver.name}.${investment.externalAmount > 0 ? ` External share ${formatMoney(Number(investment.externalAmount), 2)} still needs recording if not already received.` : ''}`,
     relatedId: investment._id,
     relatedModel: 'Investment',
+    targetRoles: ['ceo'],
   });
 
   return {

@@ -258,6 +258,7 @@ async function createLoanRepaymentRequest({
     message: `${member.name} submitted a ${normalizedType} repayment of ${formatMoney(finalAmount, 2)} for outstanding loan ${formatMoney(outstandingBalance, 2)}.`,
     relatedId: repayment._id,
     relatedModel: 'LoanRepayment',
+    targetRoles: ['ceo', 'cashier'],
   });
 
   await notifyMemberByEmailAndSms(member, {

@@ -1423,6 +1423,7 @@ async function loadAdminProfile() {
     }
 
     window.adminSessionUser = data.user;
+    adminSessionUserId = String(data.user.id || data.user._id || '');
 
     const roleLabel = role.replace(/_/g, ' ');
     adminName.textContent = data.user.name || (fullAccess ? 'CEO' : roleLabel);
@@ -4493,7 +4494,13 @@ function bindMemberProfileInteractions(container, memberId, refreshProfile, acti
 
 const chatPollTimers = new Map();
 let activeAdminChatMemberId = null;
+let activeAdminChatPeerId = null;
+let activeAdminChatPeerName = '';
+let adminChatMode = 'members'; // members | staff
+let adminChatMemberDirectory = [];
+let adminChatStaffDirectory = [];
 let adminChatReplyTo = null;
+let adminSessionUserId = '';
 
 function escapeChatHtml(value = '') {
   return window.SocietyChat?.escapeChatHtml(value) || String(value)
@@ -4523,10 +4530,11 @@ function setAdminReplyTarget(target = null) {
   if (previewEl) previewEl.textContent = target.preview || '';
 }
 
-function renderChatMessages(threadEl, messages = [], viewerRole = 'admin') {
+function renderChatMessages(threadEl, messages = [], viewerRole = 'admin', options = {}) {
   if (window.SocietyChat) {
     window.SocietyChat.renderChatMessages(threadEl, messages, viewerRole, {
       onReplyClick: setAdminReplyTarget,
+      ...options,
     });
     return;
   }
@@ -4583,6 +4591,15 @@ async function fetchAdminMemberChat(memberId) {
   return data.messages || [];
 }
 
+async function fetchAdminStaffChat(userId) {
+  const response = await fetch(`/api/admin/chat/staff/${userId}/messages`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Unable to load staff messages.');
+  }
+  return data.messages || [];
+}
+
 async function sendAdminChatMessage(memberId, { body = '', replyTo = null, files = [] } = {}) {
   const response = await fetch(`/api/admin/chat/members/${memberId}/messages`, {
     method: 'POST',
@@ -4592,6 +4609,19 @@ async function sendAdminChatMessage(memberId, { body = '', replyTo = null, files
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || 'Unable to send message.');
+  }
+  return data.message;
+}
+
+async function sendAdminStaffChatMessage(userId, { body = '', replyTo = null, files = [] } = {}) {
+  const response = await fetch(`/api/admin/chat/staff/${userId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body, replyTo, files }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Unable to send staff message.');
   }
   return data.message;
 }
@@ -4683,46 +4713,108 @@ function bindProfileChat(container, memberId, activeTab = 'overview') {
   }
 }
 
-async function loadAdminChatInbox(selectedMemberId = activeAdminChatMemberId) {
+function setAdminChatTab(mode = 'members') {
+  adminChatMode = mode === 'staff' ? 'staff' : 'members';
+  document.querySelectorAll('[data-admin-chat-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.adminChatTab === adminChatMode);
+  });
+  renderAdminChatDirectory();
+}
+
+function syncAdminRecipientSelect(filter = '') {
+  const select = document.getElementById('adminChatRecipientSelect');
+  if (!select) return;
+  const term = String(filter || '').trim().toLowerCase();
+  const rows = (adminChatMode === 'staff' ? adminChatStaffDirectory : adminChatMemberDirectory).filter((row) => {
+    const name = adminChatMode === 'staff' ? (row.user?.name || '') : (row.member?.name || '');
+    const email = adminChatMode === 'staff' ? (row.user?.email || '') : (row.member?.email || '');
+    const role = row.user?.roleLabel || '';
+    if (!term) return true;
+    return `${name} ${email} ${role}`.toLowerCase().includes(term);
+  });
+  const previous = select.value;
+  select.innerHTML = `<option value="">Choose who to message…</option>${rows.map((row) => {
+    const id = String(adminChatMode === 'staff' ? row.userId : row.memberId);
+    const name = adminChatMode === 'staff'
+      ? `${row.user?.name || 'Staff'}${row.user?.roleLabel ? ` (${row.user.roleLabel})` : ''}`
+      : (row.member?.name || 'Member');
+    return `<option value="${escapeChatHtml(id)}" data-name="${escapeChatHtml(name)}">${escapeChatHtml(name)}</option>`;
+  }).join('')}`;
+  if (previous && [...select.options].some((opt) => opt.value === previous)) {
+    select.value = previous;
+  } else if (activeAdminChatPeerId) {
+    select.value = String(activeAdminChatPeerId);
+  }
+}
+
+function renderAdminChatDirectory(selectedPeerId = activeAdminChatPeerId) {
   const list = document.getElementById('adminChatInboxList');
-  if (!list) {
+  if (!list) return;
+  const term = String(document.getElementById('adminChatSearch')?.value || '').trim().toLowerCase();
+  const source = adminChatMode === 'staff' ? adminChatStaffDirectory : adminChatMemberDirectory;
+  const rows = source.filter((row) => {
+    const name = adminChatMode === 'staff' ? (row.user?.name || '') : (row.member?.name || '');
+    const email = adminChatMode === 'staff' ? (row.user?.email || '') : (row.member?.email || '');
+    const role = row.user?.roleLabel || '';
+    if (!term) return true;
+    return `${name} ${email} ${role}`.toLowerCase().includes(term);
+  });
+
+  syncAdminRecipientSelect(term);
+
+  if (!rows.length) {
+    list.innerHTML = `<p class="table-subtitle">No ${adminChatMode === 'staff' ? 'staff' : 'member'} recipients found.</p>`;
     return;
   }
 
+  list.innerHTML = rows.map((entry) => {
+    const id = String(adminChatMode === 'staff' ? entry.userId : entry.memberId);
+    const name = adminChatMode === 'staff' ? (entry.user?.name || 'Staff') : (entry.member?.name || 'Member');
+    const meta = adminChatMode === 'staff' ? (entry.user?.roleLabel || 'Staff') : 'Member';
+    const last = entry.lastMessage || {};
+    const preview = window.SocietyChat?.lastMessagePreview(last) || last.body || 'Start a conversation';
+    const isActive = selectedPeerId && String(selectedPeerId) === id;
+    return `
+      <button type="button" class="chat-inbox-item ${isActive ? 'active' : ''}" data-chat-inbox-peer="${escapeChatHtml(id)}" data-chat-mode="${escapeHtml(adminChatMode)}">
+        <div class="chat-inbox-item-head">
+          <strong>${escapeChatHtml(name)}</strong>
+          ${entry.unreadCount ? `<span class="chat-unread-badge">${entry.unreadCount}</span>` : ''}
+        </div>
+        <p class="chat-inbox-preview">${escapeChatHtml(meta)} · ${escapeChatHtml(preview)}</p>
+        <small>${formatChatTimestamp(last.createdAt)}</small>
+      </button>
+    `;
+  }).join('');
+}
+
+async function loadAdminChatInbox(selectedPeerId = activeAdminChatPeerId) {
+  const list = document.getElementById('adminChatInboxList');
+  if (!list) return;
+
   try {
-    const response = await fetch('/api/admin/chat/inbox');
-    const data = await response.json();
-    const inbox = data.inbox || [];
-
-    if (!inbox.length) {
-      list.innerHTML = '<p class="table-subtitle">No conversations yet. Open a member profile or wait for a member message.</p>';
-      return;
-    }
-
-    list.innerHTML = inbox.map((entry) => {
-      const member = entry.member || {};
-      const last = entry.lastMessage || {};
-      const preview = window.SocietyChat?.lastMessagePreview(last) || last.body || 'No messages yet';
-      const isActive = selectedMemberId && String(selectedMemberId) === String(entry.memberId);
-      return `
-        <button type="button" class="chat-inbox-item ${isActive ? 'active' : ''}" data-chat-inbox-member="${entry.memberId}">
-          <div class="chat-inbox-item-head">
-            <strong>${escapeChatHtml(member.name || 'Member')}</strong>
-            ${entry.unreadCount ? `<span class="chat-unread-badge">${entry.unreadCount}</span>` : ''}
-          </div>
-          <p class="chat-inbox-preview">${escapeChatHtml(preview)}</p>
-          <small>${formatChatTimestamp(last.createdAt)}</small>
-        </button>
-      `;
-    }).join('');
+    const [membersRes, staffRes] = await Promise.all([
+      fetch('/api/admin/chat/directory'),
+      fetch('/api/admin/chat/staff-directory'),
+    ]);
+    const membersData = await membersRes.json();
+    const staffData = await staffRes.json();
+    if (!membersRes.ok) throw new Error(membersData.error || 'Unable to load member directory.');
+    if (!staffRes.ok) throw new Error(staffData.error || 'Unable to load staff directory.');
+    adminChatMemberDirectory = membersData.directory || [];
+    adminChatStaffDirectory = staffData.directory || [];
+    renderAdminChatDirectory(selectedPeerId);
   } catch (error) {
-    list.innerHTML = '<p class="table-subtitle">Unable to load inbox.</p>';
+    list.innerHTML = `<p class="table-subtitle">${escapeChatHtml(error.message || 'Unable to load inbox.')}</p>`;
   }
 }
 
 async function openAdminChatConversation(memberId, memberName = 'Member') {
+  adminChatMode = 'members';
   activeAdminChatMemberId = memberId;
+  activeAdminChatPeerId = memberId;
+  activeAdminChatPeerName = memberName;
   setAdminReplyTarget(null);
+  setAdminChatTab('members');
   const header = document.getElementById('adminChatThreadHeader');
   const thread = document.getElementById('adminChatThread');
   const form = document.getElementById('adminChatComposeForm');
@@ -4735,7 +4827,8 @@ async function openAdminChatConversation(memberId, memberName = 'Member') {
   }
   if (form) {
     form.classList.remove('hidden');
-    form.dataset.memberId = memberId;
+    form.dataset.peerId = memberId;
+    form.dataset.chatMode = 'members';
   }
 
   await loadAdminChatInbox(memberId);
@@ -4750,12 +4843,54 @@ async function openAdminChatConversation(memberId, memberName = 'Member') {
   }
 
   startChatPolling('admin-page', async () => {
-    if (!activeAdminChatMemberId) {
-      return;
-    }
-    const messages = await fetchAdminMemberChat(activeAdminChatMemberId);
+    if (!activeAdminChatPeerId || adminChatMode !== 'members') return;
+    const messages = await fetchAdminMemberChat(activeAdminChatPeerId);
     renderChatMessages(document.getElementById('adminChatThread'), messages, 'admin');
-    await loadAdminChatInbox(activeAdminChatMemberId);
+    await loadAdminChatInbox(activeAdminChatPeerId);
+  });
+}
+
+async function openAdminStaffChatConversation(userId, userName = 'Staff') {
+  adminChatMode = 'staff';
+  activeAdminChatMemberId = null;
+  activeAdminChatPeerId = userId;
+  activeAdminChatPeerName = userName;
+  setAdminReplyTarget(null);
+  setAdminChatTab('staff');
+  const header = document.getElementById('adminChatThreadHeader');
+  const thread = document.getElementById('adminChatThread');
+  const form = document.getElementById('adminChatComposeForm');
+
+  if (header) {
+    header.innerHTML = `
+      <h3>${escapeChatHtml(userName)}</h3>
+      <p class="table-subtitle">Staff messenger · live updates</p>
+    `;
+  }
+  if (form) {
+    form.classList.remove('hidden');
+    form.dataset.peerId = userId;
+    form.dataset.chatMode = 'staff';
+  }
+
+  await loadAdminChatInbox(userId);
+
+  try {
+    const messages = await fetchAdminStaffChat(userId);
+    renderChatMessages(thread, messages, 'admin', { viewerUserId: adminSessionUserId });
+  } catch (error) {
+    if (thread) {
+      thread.innerHTML = '<p class="table-subtitle chat-empty-state">Unable to load messages.</p>';
+    }
+  }
+
+  startChatPolling('admin-page', async () => {
+    if (!activeAdminChatPeerId || adminChatMode !== 'staff') return;
+    const messages = await fetchAdminStaffChat(activeAdminChatPeerId);
+    renderChatMessages(document.getElementById('adminChatThread'), messages, 'admin', {
+      viewerUserId: adminSessionUserId,
+    });
+    await loadAdminChatInbox(activeAdminChatPeerId);
   });
 }
 
@@ -4763,26 +4898,71 @@ function bindAdminMessagesPage() {
   const inboxList = document.getElementById('adminChatInboxList');
   const composeForm = document.getElementById('adminChatComposeForm');
   const refreshBtn = document.getElementById('refreshAdminChatInboxBtn');
+  const search = document.getElementById('adminChatSearch');
+  const recipientSelect = document.getElementById('adminChatRecipientSelect');
 
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-      void loadAdminChatInbox(activeAdminChatMemberId);
-    });
-  }
-
-  if (inboxList) {
-    inboxList.addEventListener('click', async (event) => {
-      const item = event.target.closest('[data-chat-inbox-member]');
-      if (!item) {
-        return;
+  document.querySelectorAll('[data-admin-chat-tab]').forEach((btn) => {
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      activeAdminChatPeerId = null;
+      activeAdminChatMemberId = null;
+      setAdminChatTab(btn.dataset.adminChatTab);
+      const header = document.getElementById('adminChatThreadHeader');
+      const thread = document.getElementById('adminChatThread');
+      if (header) {
+        header.innerHTML = `<h3>Select a recipient</h3><p class="table-subtitle">Choose someone from ${adminChatMode === 'staff' ? 'staff' : 'members'}.</p>`;
       }
-      const memberId = item.dataset.chatInboxMember;
-      const memberName = item.querySelector('strong')?.textContent || 'Member';
-      await openAdminChatConversation(memberId, memberName);
+      if (thread) thread.innerHTML = '<p class="table-subtitle chat-empty-state">No conversation selected.</p>';
+      composeForm?.classList.add('hidden');
+      stopChatPolling('admin-page');
+    });
+  });
+
+  if (recipientSelect && recipientSelect.dataset.bound !== '1') {
+    recipientSelect.dataset.bound = '1';
+    recipientSelect.addEventListener('change', () => {
+      const option = recipientSelect.selectedOptions?.[0];
+      if (!recipientSelect.value || !option) return;
+      const name = option.dataset.name || option.textContent || 'Recipient';
+      if (adminChatMode === 'staff') {
+        void openAdminStaffChatConversation(recipientSelect.value, name);
+      } else {
+        void openAdminChatConversation(recipientSelect.value, name);
+      }
     });
   }
 
-  if (composeForm) {
+  if (search && search.dataset.bound !== '1') {
+    search.dataset.bound = '1';
+    search.addEventListener('input', () => renderAdminChatDirectory(activeAdminChatPeerId));
+  }
+
+  if (refreshBtn && refreshBtn.dataset.bound !== '1') {
+    refreshBtn.dataset.bound = '1';
+    refreshBtn.addEventListener('click', () => {
+      void loadAdminChatInbox(activeAdminChatPeerId);
+    });
+  }
+
+  if (inboxList && inboxList.dataset.bound !== '1') {
+    inboxList.dataset.bound = '1';
+    inboxList.addEventListener('click', async (event) => {
+      const item = event.target.closest('[data-chat-inbox-peer]');
+      if (!item) return;
+      const peerId = item.dataset.chatInboxPeer;
+      const mode = item.dataset.chatMode || adminChatMode;
+      const peerName = item.querySelector('strong')?.textContent || 'Recipient';
+      if (mode === 'staff') {
+        await openAdminStaffChatConversation(peerId, peerName);
+      } else {
+        await openAdminChatConversation(peerId, peerName);
+      }
+    });
+  }
+
+  if (composeForm && composeForm.dataset.bound !== '1') {
+    composeForm.dataset.bound = '1';
     const filesInput = document.getElementById('adminChatFiles');
     const fileLabel = document.getElementById('adminChatFileLabel');
     document.getElementById('adminChatReplyClear')?.addEventListener('click', () => setAdminReplyTarget(null));
@@ -4793,13 +4973,12 @@ function bindAdminMessagesPage() {
 
     composeForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const memberId = composeForm.dataset.memberId || activeAdminChatMemberId;
+      const peerId = composeForm.dataset.peerId || activeAdminChatPeerId;
+      const mode = composeForm.dataset.chatMode || adminChatMode;
       const messageEl = composeForm.querySelector('.chat-compose-message');
       const body = composeForm.body?.value?.trim() || '';
 
-      if (!memberId) {
-        return;
-      }
+      if (!peerId) return;
 
       if (messageEl) {
         messageEl.textContent = '';
@@ -4817,15 +4996,33 @@ function bindAdminMessagesPage() {
           }
           return;
         }
-        await sendAdminChatMessage(memberId, {
-          body,
-          replyTo: adminChatReplyTo?.id || null,
-          files,
-        });
-        composeForm.reset();
-        if (fileLabel) fileLabel.textContent = '';
-        setAdminReplyTarget(null);
-        await openAdminChatConversation(memberId, document.getElementById('adminChatThreadHeader')?.querySelector('h3')?.textContent || 'Member');
+        if (mode === 'staff') {
+          await sendAdminStaffChatMessage(peerId, {
+            body,
+            replyTo: adminChatReplyTo?.id || null,
+            files,
+          });
+          composeForm.reset();
+          if (fileLabel) fileLabel.textContent = '';
+          setAdminReplyTarget(null);
+          await openAdminStaffChatConversation(
+            peerId,
+            document.getElementById('adminChatThreadHeader')?.querySelector('h3')?.textContent || 'Staff'
+          );
+        } else {
+          await sendAdminChatMessage(peerId, {
+            body,
+            replyTo: adminChatReplyTo?.id || null,
+            files,
+          });
+          composeForm.reset();
+          if (fileLabel) fileLabel.textContent = '';
+          setAdminReplyTarget(null);
+          await openAdminChatConversation(
+            peerId,
+            document.getElementById('adminChatThreadHeader')?.querySelector('h3')?.textContent || 'Member'
+          );
+        }
         if (messageEl) {
           messageEl.classList.add('success');
           messageEl.textContent = t('adminUi.messageSent', 'Message sent.');

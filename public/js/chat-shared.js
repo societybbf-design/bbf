@@ -70,10 +70,13 @@
 
     const previousScrollBottom = threadEl.scrollHeight - threadEl.scrollTop;
     const wasNearBottom = previousScrollBottom < threadEl.clientHeight + 80;
+    const viewerUserId = options.viewerUserId ? String(options.viewerUserId) : '';
 
     threadEl.innerHTML = messages.map((message) => {
       const id = message.id || message._id;
-      const isOwn = message.senderRole === viewerRole;
+      const isOwn = viewerUserId
+        ? String(message.senderId || '') === viewerUserId
+        : message.senderRole === viewerRole;
       const body = message.body && message.body !== 'Shared an attachment'
         ? `<p class="chat-bubble-body">${escapeChatHtml(message.body)}</p>`
         : (message.attachments?.length ? '' : `<p class="chat-bubble-body">${escapeChatHtml(message.body || '')}</p>`);

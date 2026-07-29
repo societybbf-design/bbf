@@ -173,6 +173,7 @@ async function recordExternalInvestment({
     message: `${formatMoney(received, 2)} received from ${investment.investorName || 'investor'} (${investment.investorOwnershipPct}% ownership).`,
     relatedId: investment._id,
     relatedModel: 'Investment',
+    targetRoles: ['ceo', 'cashier'],
   });
 
   return {
@@ -440,6 +441,7 @@ async function liquidateProject({
     message: `Sale settled. Net ${formatMoney(netProceeds, 2)}. Ledger locked.`,
     relatedId: investment._id,
     relatedModel: 'Investment',
+    targetRoles: ['ceo', 'cashier'],
   });
 
   if (investment.investor) {

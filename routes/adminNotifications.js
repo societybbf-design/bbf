@@ -11,9 +11,10 @@ router.use(requireAuth, requirePermission('can_manage_chat', 'can_manage_members
 
 router.get('/', async (req, res) => {
   try {
+    const user = req.session.user;
     const [notifications, unreadCount] = await Promise.all([
-      getAdminNotifications(),
-      getUnreadNotificationCount(),
+      getAdminNotifications(user),
+      getUnreadNotificationCount(user),
     ]);
     return res.json({ notifications, unreadCount });
   } catch (error) {
@@ -23,7 +24,7 @@ router.get('/', async (req, res) => {
 
 router.patch('/read-all', async (req, res) => {
   try {
-    await markAllNotificationsRead();
+    await markAllNotificationsRead(req.session.user);
     return res.json({ success: true });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to mark notifications as read.' });
@@ -32,7 +33,7 @@ router.patch('/read-all', async (req, res) => {
 
 router.patch('/:id/read', async (req, res) => {
   try {
-    const notification = await markNotificationRead(req.params.id);
+    const notification = await markNotificationRead(req.params.id, req.session.user);
     if (!notification) {
       return res.status(404).json({ error: 'Notification not found.' });
     }

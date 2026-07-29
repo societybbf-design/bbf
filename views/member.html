@@ -111,16 +111,18 @@
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
-        <button type="button" class="notification-bell-btn" id="memberNotificationBtn" title="View Notifications" aria-label="View Notifications">
-          🔔 <span class="notification-badge hidden" id="memberNotificationBadge">0</span>
-        </button>
-        <div id="memberNotificationPanel" class="notification-panel hidden" hidden>
-          <div class="notification-panel-header">
-            <strong data-i18n="common.notifications">Notifications</strong>
-            <button type="button" class="secondary-btn" id="markAllMemberNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
-          </div>
-          <div id="memberNotificationList" class="notification-list">
-            <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
+        <div class="notification-menu">
+          <button type="button" class="notification-bell-btn" id="memberNotificationBtn" title="View Notifications" aria-label="View Notifications">
+            🔔 <span class="notification-badge hidden" id="memberNotificationBadge">0</span>
+          </button>
+          <div id="memberNotificationPanel" class="notification-panel hidden" hidden>
+            <div class="notification-panel-header">
+              <strong data-i18n="common.notifications">Notifications</strong>
+              <button type="button" class="secondary-btn" id="markAllMemberNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
+            </div>
+            <div id="memberNotificationList" class="notification-list">
+              <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
+            </div>
           </div>
         </div>
         <div class="user-profile" title="Profile">

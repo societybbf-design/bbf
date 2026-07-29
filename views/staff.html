@@ -1010,26 +1010,36 @@
         <div class="panel-card hidden" data-staff-view="chat" id="moduleChat">
           <div class="panel-card-header">
             <h2>Messenger</h2>
-            <p class="text-secondary">Chat with members in real time. Send text, images, documents, and reply to specific messages.</p>
+            <p class="text-secondary">Message members or staff (CEO / employees). Send text, images, documents, and reply to specific messages.</p>
           </div>
           <div class="chat-page-layout">
-            <aside class="chat-inbox-panel">
+            <aside class="chat-inbox-panel panel-card">
               <div class="member-profile-section-header">
                 <div>
-                  <h3>Members</h3>
-                  <p class="table-subtitle">Select a member to open their thread</p>
+                  <h3>Recipients</h3>
+                  <p class="table-subtitle">Choose a member or staff colleague</p>
                 </div>
                 <button type="button" class="secondary-btn" id="cashierChatRefreshBtn" data-i18n="common.refresh">Refresh</button>
               </div>
-              <input data-i18n-placeholder="staffUi.searchMembers" type="search" id="cashierChatSearch" class="chat-member-search" placeholder="Search members…" />
+              <div class="chat-directory-tabs" role="tablist">
+                <button type="button" class="secondary-btn active" data-cashier-chat-tab="members" id="cashierChatTabMembers">Members</button>
+                <button type="button" class="secondary-btn" data-cashier-chat-tab="staff" id="cashierChatTabStaff">Staff</button>
+              </div>
+              <div class="chat-recipient-bar">
+                <label for="cashierChatRecipientSelect">Select recipient</label>
+                <select id="cashierChatRecipientSelect" class="chat-recipient-select">
+                  <option value="">Choose who to message…</option>
+                </select>
+              </div>
+              <input data-i18n-placeholder="staffUi.searchMembers" type="search" id="cashierChatSearch" class="chat-member-search" placeholder="Search recipients…" />
               <div class="chat-inbox-list" id="cashierChatInboxList">
-                <p class="table-subtitle">Loading members…</p>
+                <p class="table-subtitle">Loading recipients…</p>
               </div>
             </aside>
-            <section class="chat-thread-panel">
+            <section class="chat-thread-panel panel-card">
               <div id="cashierChatThreadHeader" class="chat-thread-header">
-                <h3>Select a member</h3>
-                <p class="table-subtitle">Choose someone from the list to start chatting.</p>
+                <h3>Select a recipient</h3>
+                <p class="table-subtitle">Choose a member or staff user to start chatting.</p>
               </div>
               <div class="chat-thread" id="cashierChatThread" aria-live="polite">
                 <p class="table-subtitle chat-empty-state">No conversation selected.</p>

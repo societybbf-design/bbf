@@ -24,6 +24,7 @@ async function submitKycProfile(memberId, profile = {}) {
     message: `${member.name} submitted KYC details for review.`,
     relatedId: member._id,
     relatedModel: 'User',
+    targetRoles: ['ceo'],
   });
 
   return member;
@@ -60,6 +61,7 @@ async function addKycDocuments(memberId, files = [], documentType = 'other') {
     message: `${member.name} uploaded ${documents.length} KYC document(s).`,
     relatedId: member._id,
     relatedModel: 'User',
+    targetRoles: ['ceo'],
   });
 
   return documents;
