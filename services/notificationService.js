@@ -338,7 +338,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text(`Name: ${member.name || 'N/A'}`);
     doc.text(`Email: ${member.email || 'N/A'}`);
     doc.text(`Phone: ${member.phone || 'N/A'}`);
-    writePdfLabeledMoney(doc, 'Savings at Application: ', Number(loan.memberSavingsAtApply || member.savings || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Total deposits at application: ', Number(loan.memberSavingsAtApply || 0), { digits: 2 });
     doc.moveDown(1);
 
     doc.fontSize(14).fillColor('#111827').text('Loan Terms', { underline: true });
@@ -347,7 +347,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.text(`Loan Type: ${loanType}`);
     writePdfLabeledMoney(doc, 'Loan Amount: ', amount, { digits: 2 });
     doc.text(`Purpose: ${loan.reason || 'N/A'}`);
-    writePdfLabeledMoney(doc, 'Maximum Eligible (80% of savings): ', Number(loan.maxEligibleAmount || 0), { digits: 2 });
+    writePdfLabeledMoney(doc, 'Maximum Eligible (80% of total deposits): ', Number(loan.maxEligibleAmount || 0), { digits: 2 });
     doc.moveDown(1);
 
     doc.fontSize(14).fillColor('#111827').text('Witness', { underline: true });
@@ -363,7 +363,7 @@ function createLoanContractPdf(loan, member, adminName = 'Admin') {
     doc.moveDown(0.5);
     doc.fontSize(11).fillColor('#374151');
     doc.text('1. The borrower agrees to repay the loan amount according to the cooperative society rules through flexible repayments recorded by the Cashier.');
-    doc.text('2. The loan was approved within the 80% savings eligibility limit of the cooperative.');
+    doc.text('2. The loan was approved within the 80% total-deposit eligibility limit of the cooperative.');
     doc.text('3. The borrower confirms that all information and supporting documents provided are accurate.');
     doc.text('4. Failure to repay may result in deductions from savings or other actions per society bylaws.');
     doc.text('5. This contract becomes effective upon approval and disbursement by the society administration.');
