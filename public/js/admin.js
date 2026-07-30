@@ -4124,6 +4124,88 @@ function applyDepositFormSettings() {
   });
 }
 
+async function loadYearTargetPlan(year) {
+  const body = document.getElementById('yearTargetPlanBody');
+  const select = document.getElementById('yearTargetPlanYear');
+  const planYear = year || select?.value || String(new Date().getFullYear());
+  if (select && !select.options.length) {
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 1; y <= currentYear + 2; y += 1) {
+      const opt = document.createElement('option');
+      opt.value = String(y);
+      opt.textContent = String(y);
+      if (y === currentYear) opt.selected = true;
+      select.appendChild(opt);
+    }
+  }
+  if (select && !select.value) select.value = planYear;
+  if (!body) return;
+  try {
+    const response = await fetch(`/api/admin/monthly-targets/year/${encodeURIComponent(planYear)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load year plan.');
+    body.innerHTML = (data.months || []).map((row) => `
+      <tr>
+        <td>${escapeCeoHtml(row.monthLabel || row.yearMonth)}</td>
+        <td>
+          <input type="number" min="0" step="0.01" data-year-month="${escapeCeoHtml(row.yearMonth)}"
+            value="${row.configured ? Number(row.amount).toFixed(2) : (row.amount != null ? Number(row.amount).toFixed(2) : '')}"
+            placeholder="—" style="max-width:9rem" />
+        </td>
+        <td>${row.configured ? 'Saved' : (row.source === 'env_fallback' ? 'Env fallback' : 'Not set')}</td>
+      </tr>
+    `).join('');
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="3">${escapeCeoHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function saveYearTargetPlan() {
+  const select = document.getElementById('yearTargetPlanYear');
+  const msg = document.getElementById('yearTargetPlanMessage');
+  const year = select?.value || String(new Date().getFullYear());
+  const months = [];
+  document.querySelectorAll('#yearTargetPlanBody [data-year-month]').forEach((input) => {
+    const val = String(input.value || '').trim();
+    if (!val) return;
+    months.push({ yearMonth: input.dataset.yearMonth, amount: val });
+  });
+  try {
+    const response = await fetch(`/api/admin/monthly-targets/year/${encodeURIComponent(year)}/bulk`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ months }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save year plan.');
+    if (msg) {
+      msg.classList.add('success');
+      msg.textContent = data.message || 'Year plan saved.';
+    }
+    await loadMonthlyTargetsUi();
+    await loadYearTargetPlan(year);
+    await fetchSummary();
+  } catch (error) {
+    if (msg) {
+      msg.classList.remove('success');
+      msg.textContent = error.message;
+    }
+  }
+}
+
+function bindYearTargetPlanUi() {
+  document.getElementById('yearTargetPlanReloadBtn')?.addEventListener('click', () => {
+    void loadYearTargetPlan();
+  });
+  document.getElementById('yearTargetPlanSaveBtn')?.addEventListener('click', () => {
+    void saveYearTargetPlan();
+  });
+  document.getElementById('yearTargetPlanYear')?.addEventListener('change', () => {
+    void loadYearTargetPlan();
+  });
+  void loadYearTargetPlan();
+}
+
 async function loadMonthlyTargetsUi() {
   const box = document.getElementById('activeMonthTargetBox');
   const body = document.getElementById('monthlyTargetsBody');
@@ -7781,6 +7863,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bindAdminMessagesPage();
   bindMonthlyContributionDashboard();
   bindMonthlyTargetForm();
+  bindYearTargetPlanUi();
   bindInvestorPmNavigation();
   renderMembersDirectory([], true);
 

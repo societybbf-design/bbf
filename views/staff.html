@@ -780,7 +780,7 @@
         <div class="panel-card hidden" data-staff-view="deposits" id="moduleDeposits">
           <div class="panel-card-header">
             <h2>Deposits</h2>
-            <p class="text-secondary">Record member deposits against this month’s fixed target. Extra → Advance; shortfall → unpaid dues. Each deposit instantly credits the central bank book balance.</p>
+            <p class="text-secondary">Record member payments with smart split across lenders, project dues, loan, monthly target, and advance. Each payment credits the bank once.</p>
           </div>
           <div class="stats-grid u-mb-1">
             <div class="stat-card"><h3 id="cashierDepositsBookBalance">—</h3><p>Live bank book balance</p></div>
@@ -819,11 +819,12 @@
                 </label>
               </div>
             </div>
-            <p class="text-secondary" id="cashierDepositHint">Enter any amount. Surplus above the month target is credited to Advance.</p>
+            <p class="text-secondary" id="cashierDepositHint">Smart payment splits across internal lenders, project/emergency dues, loan, this month’s fixed target, then Advance surplus.</p>
             <div id="cashierDepositSplitPreview" class="panel-card u-mb-1" hidden>
+              <p class="table-subtitle" style="margin:0"><strong>Smart allocation preview</strong></p>
               <p class="table-subtitle" style="margin:0" id="cashierDepositSplitPreviewText"></p>
             </div>
-            <button type="submit" class="primary-btn">Record deposit</button>
+            <button type="submit" class="primary-btn">Record smart payment</button>
             <p id="cashierDepositMessage" class="message"></p>
             <p id="cashierDepositReceipt" class="u-mt-1"></p>
           </form>

@@ -36,6 +36,7 @@ const brandingRoutes = require('./routes/branding');
 const { ensureOrganizationSettings } = require('./services/organizationSettingsService');
 const { seedDefaultUsers } = require('./services/seedService');
 const { ensureDefaultInvestmentTypes } = require('./services/investmentTypeService');
+const { startScheduledJobs, stopScheduledJobs } = require('./services/scheduledJobsService');
 const { isFullAccessRole, isDeveloperRole, canAccessDeveloperModule, dashboardPathForRole } = require('./services/rbac');
 
 require('dotenv').config();
@@ -442,6 +443,7 @@ async function shutdown(signal) {
   forceTimer.unref?.();
 
   try {
+    stopScheduledJobs();
     if (httpServer) {
       await new Promise((resolve) => httpServer.close(resolve));
     }
@@ -471,6 +473,7 @@ async function bootstrap() {
     await connectMongo();
     buildApp(createSessionStore());
     await listen();
+    startScheduledJobs();
   } catch (error) {
     console.error('[bootstrap] failed to start server:', error.message || error);
     console.error('[bootstrap] check NODE_ENV / MONGO_URI / SESSION_SECRET / PORT, then retry.');

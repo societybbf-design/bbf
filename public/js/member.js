@@ -623,6 +623,12 @@ async function loadFinancialData(userId) {
       if (duesAlert) {
         if (data.duesAlert?.isOverdue) {
           duesAlert.innerHTML = `<div class="status-fail">${data.duesAlert.message}</div>`;
+        } else if (data.currentMonthStatus?.targetAmount != null) {
+          const cms = data.currentMonthStatus;
+          const unpaid = Number(cms.unpaidAmount || 0);
+          duesAlert.innerHTML = unpaid > 0
+            ? `<div class="status-warn">${cms.monthLabel || cms.yearMonth} target: ${formatMoney(Number(cms.targetAmount), 2)} · paid ${formatMoney(Number(cms.paidAmount || 0), 2)} · due ${formatMoney(unpaid, 2)} (deadline 15th; auto-deduct from Advance if funded)</div>`
+            : `<div class="status-pass">${cms.monthLabel || cms.yearMonth} target ${formatMoney(Number(cms.targetAmount), 2)} — paid in full.</div>`;
         } else {
           duesAlert.innerHTML = '<div class="status-pass">Your dues are up to date.</div>';
         }

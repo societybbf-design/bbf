@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { getDuesAlert } = require('../services/memberService');
 
-test('getDuesAlert flags overdue dues after the 10th without a monthly deposit', async () => {
+test('getDuesAlert flags overdue dues after the 15th without a monthly deposit', async () => {
   const result = await getDuesAlert({
     deposits: [{ createdAt: new Date('2026-06-20') }],
-  }, new Date('2026-07-12'));
+  }, new Date('2026-07-16'));
 
   assert.equal(result.isOverdue, true);
   assert.match(result.message, /overdue/i);

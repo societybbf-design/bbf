@@ -58,6 +58,11 @@ const MonthlyContributionDueSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  /** When the monthly due was satisfied via automatic advance deduction (1st–15th). */
+  autoDeductedAt: {
+    type: Date,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

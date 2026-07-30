@@ -170,6 +170,9 @@ router.get('/financial', async (req, res) => {
     const latestShare = profitHistory[0];
     const monthlyProfit = latestShare?.amount || 0;
     const duesAlert = await getDuesAlert({ deposits, memberId }, new Date());
+    const { getMemberProfileData } = require('../services/memberService');
+    const profileSnapshot = await getMemberProfileData(memberId).catch(() => null);
+    const currentMonthStatus = profileSnapshot?.currentMonthStatus || null;
     const { getMemberReserveShare } = require('../services/emergencyReserveService');
     const { listInternalBorrowings } = require('../services/advanceBorrowingService');
     const [reserveShare, openBorrowings] = await Promise.all([
@@ -199,6 +202,7 @@ router.get('/financial', async (req, res) => {
       withdrawalRequests,
       refunds,
       duesAlert,
+      currentMonthStatus,
       notices,
       member: publicMemberProfile(member),
     });

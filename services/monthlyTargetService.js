@@ -349,6 +349,103 @@ async function getActiveMonthTarget() {
   return getTargetForMonth(yearMonthFromDate());
 }
 
+/**
+ * Build a 12-month plan for a calendar year (configured + env fallback hints).
+ */
+async function listTargetsForYear(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y) || y < 2000 || y > 2100) {
+    const error = new Error('Year must be between 2000 and 2100.');
+    error.status = 400;
+    throw error;
+  }
+
+  const prefix = `${y}-`;
+  const configured = await MonthlyContributionTarget.find({
+    yearMonth: { $regex: `^${prefix}` },
+  }).lean();
+  const byMonth = new Map(configured.map((row) => [row.yearMonth, row]));
+  const envFallback = getMonthlyContributionAmount();
+
+  const months = [];
+  for (let m = 1; m <= 12; m += 1) {
+    const yearMonth = `${y}-${String(m).padStart(2, '0')}`;
+    const { monthLabel } = parseYearMonth(yearMonth);
+    const doc = byMonth.get(yearMonth);
+    if (doc) {
+      months.push({
+        yearMonth,
+        monthLabel,
+        amount: money(doc.amount),
+        notes: doc.notes || '',
+        setBy: doc.setBy || '',
+        setAt: doc.setAt || doc.updatedAt,
+        configured: true,
+        source: 'configured',
+      });
+    } else {
+      months.push({
+        yearMonth,
+        monthLabel,
+        amount: envFallback != null ? money(envFallback) : null,
+        notes: envFallback != null ? 'Env fallback (not saved)' : '',
+        setBy: '',
+        setAt: null,
+        configured: false,
+        source: envFallback != null ? 'env_fallback' : 'none',
+      });
+    }
+  }
+
+  return { year: y, months };
+}
+
+/**
+ * Bulk upsert month targets for a calendar year.
+ * `months` is an array of { yearMonth, amount, notes? } or { month, amount }.
+ */
+async function bulkUpsertTargets({
+  year,
+  months = [],
+  setBy = 'Admin',
+  syncDues = true,
+} = {}) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) {
+    const error = new Error('Year is required.');
+    error.status = 400;
+    throw error;
+  }
+  if (!Array.isArray(months) || !months.length) {
+    const error = new Error('Provide at least one month amount.');
+    error.status = 400;
+    throw error;
+  }
+
+  const saved = [];
+  for (const row of months) {
+    const yearMonth = row.yearMonth
+      || `${y}-${String(Number(row.month)).padStart(2, '0')}`;
+    if (row.amount === '' || row.amount === null || row.amount === undefined) {
+      continue;
+    }
+    const result = await upsertTarget({
+      yearMonth,
+      amount: row.amount,
+      notes: row.notes || '',
+      setBy,
+      syncDues,
+    });
+    saved.push(result.target);
+  }
+
+  return {
+    year: y,
+    saved,
+    count: saved.length,
+  };
+}
+
 module.exports = {
   money,
   yearMonthFromDate,
@@ -356,6 +453,8 @@ module.exports = {
   getTargetForMonth,
   getActiveMonthTarget,
   listTargets,
+  listTargetsForYear,
+  bulkUpsertTargets,
   upsertTarget,
   syncMonthDues,
   getOrCreateMemberDue,
