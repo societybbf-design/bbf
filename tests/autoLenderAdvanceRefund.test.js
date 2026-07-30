@@ -24,14 +24,14 @@ test('flexible availability uses savings + advance without arbitrary blocks', ()
 });
 
 test('settlement instantly credits lender advance and notifies with portfolio link', () => {
-  assert.match(serviceJs, /lender\.advanceBalance = money\(Number\(lender\.advanceBalance \|\| 0\) \+ payAmount\)/);
+  assert.match(serviceJs, /\$inc:\s*\{\s*advanceBalance:\s*payAmount\s*\}/);
   assert.match(serviceJs, /async function notifyLenderAdvanceRefund/);
   assert.match(serviceJs, /Your funded amount of/);
   assert.match(serviceJs, /has been successfully returned and added to your Advance Balance/);
   assert.match(serviceJs, /link:\s*'portfolio'/);
   assert.match(serviceJs, /relatedModel:\s*'InternalBorrowing'/);
   assert.match(serviceJs, /createMemberNotification/);
-  assert.match(serviceJs, /type:\s*'borrow_repayment'/);
+  assert.match(serviceJs, /type:\s*'deposit'/);
 });
 
 test('loan repayment auto-settles funding with skipBankCredit to avoid double bank credit', () => {

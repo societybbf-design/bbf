@@ -162,13 +162,17 @@ async function upsertTarget({
   };
 }
 
-async function getOrCreateMemberDue(member, yearMonth, expectedAmount) {
+async function getOrCreateMemberDue(member, yearMonth, expectedAmount, { session = null } = {}) {
+  const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
   const { yearMonth: key } = parseYearMonth(yearMonth);
   const expected = money(expectedAmount);
-  let due = await MonthlyContributionDue.findOne({ member: member._id, yearMonth: key });
+  let due = await bindSession(
+    MonthlyContributionDue.findOne({ member: member._id, yearMonth: key }),
+    session
+  );
 
   if (!due) {
-    due = await MonthlyContributionDue.create({
+    due = await createWithSession(MonthlyContributionDue, {
       member: member._id,
       memberName: member.name || '',
       yearMonth: key,
@@ -177,7 +181,7 @@ async function getOrCreateMemberDue(member, yearMonth, expectedAmount) {
       unpaidAmount: expected,
       surplusToAdvance: 0,
       status: dueStatus(expected, 0),
-    });
+    }, session);
     return due;
   }
 
@@ -189,7 +193,7 @@ async function getOrCreateMemberDue(member, yearMonth, expectedAmount) {
       ? 'settled'
       : dueStatus(expected, due.paidAmount);
     due.memberName = member.name || due.memberName;
-    await due.save();
+    await due.save(sessionOpt(session));
   }
 
   return due;
@@ -275,7 +279,9 @@ async function applyDepositToMonthlyDue({
   member,
   amount,
   yearMonth = yearMonthFromDate(),
+  session = null,
 } = {}) {
+  const { sessionOpt } = require('./mongoTransaction');
   const total = money(amount);
   const target = await getTargetForMonth(yearMonth);
 
@@ -291,7 +297,7 @@ async function applyDepositToMonthlyDue({
     };
   }
 
-  const due = await getOrCreateMemberDue(member, target.yearMonth, target.amount);
+  const due = await getOrCreateMemberDue(member, target.yearMonth, target.amount, { session });
   const remaining = money(Math.max(0, money(due.expectedAmount) - money(due.paidAmount)));
   const split = computeMonthlyDepositSplit(total, remaining, target.amount);
 
@@ -300,7 +306,7 @@ async function applyDepositToMonthlyDue({
   due.surplusToAdvance = money(money(due.surplusToAdvance) + split.surplus);
   due.status = dueStatus(due.expectedAmount, due.paidAmount);
   due.memberName = member.name || due.memberName;
-  await due.save();
+  await due.save(sessionOpt(session));
 
   return {
     yearMonth: target.yearMonth,

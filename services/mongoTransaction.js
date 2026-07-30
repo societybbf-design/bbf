@@ -52,8 +52,33 @@ async function withMongoTransaction(work) {
   }
 }
 
+/** Attach a Mongo session to a query when present. */
+function bindSession(query, session) {
+  if (session && query && typeof query.session === 'function') {
+    return query.session(session);
+  }
+  return query;
+}
+
+/** Options object fragment for findOneAndUpdate / updateOne / etc. */
+function sessionOpt(session, extra = {}) {
+  return session ? { ...extra, session } : { ...extra };
+}
+
+/** Create one document, optionally inside a transaction session. */
+async function createWithSession(Model, doc, session) {
+  if (session) {
+    const created = await Model.create([doc], { session });
+    return Array.isArray(created) ? created[0] : created;
+  }
+  return Model.create(doc);
+}
+
 module.exports = {
   withMongoTransaction,
   isTransactionUnsupportedError,
   transactionsLikelySupported,
+  bindSession,
+  sessionOpt,
+  createWithSession,
 };

@@ -7,6 +7,7 @@ const Investment = require('../models/Investment');
 const { creditInbound, tryCredit } = require('./bankLedgerService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
+const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
 
 function money(value) {
   return Number((Number(value) || 0).toFixed(2));
@@ -50,26 +51,36 @@ async function getActiveMembers() {
  * Record an advance (surplus) deposit — credits advanceBalance + bank ledger.
  */
 async function saveAdvanceDeposit(memberId, amount, options = {}) {
+  const session = options.session || null;
   const normalized = money(amount);
   if (!(normalized > 0)) {
     throw httpError('Advance amount must be greater than zero.');
   }
 
-  const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
+  const member = await bindSession(
+    User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } }),
+    session
+  );
   if (!member) {
     throw httpError('Member not found.', 404);
   }
 
-  const deposit = await Deposit.create({
+  const deposit = await createWithSession(Deposit, {
     member: member._id,
     amount: normalized,
     type: 'advance',
     notes: options.notes || 'Advance / surplus deposit',
     recordedBy: options.recordedBy || '',
-  });
+  }, session);
 
-  member.advanceBalance = money(Number(member.advanceBalance || 0) + normalized);
-  await member.save();
+  const updatedMember = await User.findOneAndUpdate(
+    { _id: member._id, role: 'member', status: { $ne: 'deleted' } },
+    { $inc: { advanceBalance: normalized } },
+    sessionOpt(session, { new: true })
+  );
+  if (!updatedMember) {
+    throw httpError('Unable to update member advance balance.', 409);
+  }
 
   let bankLedger = null;
   if (!options.skipBankCredit) {
@@ -79,14 +90,15 @@ async function saveAdvanceDeposit(memberId, amount, options = {}) {
       amount: normalized,
       referenceType: 'Deposit',
       referenceId: deposit._id,
-      note: `Advance deposit: ${member.name}`,
+      note: `Advance deposit: ${updatedMember.name}`,
       createdBy: options.recordedBy || 'Cashier',
+      session,
     });
   }
 
   return {
     deposit,
-    member,
+    member: updatedMember,
     bankLedger,
     bookBalance: bankLedger?.ledger?.bookBalance ?? null,
   };
@@ -292,8 +304,10 @@ async function settleInternalBorrowing(borrowingId, {
   notes = '',
   cashReceived = false,
   skipBankCredit = false,
+  skipNotifications = false,
+  session = null,
 } = {}) {
-  const borrowing = await InternalBorrowing.findById(borrowingId);
+  const borrowing = await bindSession(InternalBorrowing.findById(borrowingId), session);
   if (!borrowing) {
     throw httpError('Internal borrowing not found.', 404);
   }
@@ -314,8 +328,8 @@ async function settleInternalBorrowing(borrowingId, {
   }
 
   const [lender, borrower] = await Promise.all([
-    User.findById(borrowing.lender),
-    User.findById(borrowing.borrower),
+    bindSession(User.findById(borrowing.lender), session),
+    bindSession(User.findById(borrowing.borrower), session),
   ]);
   if (!lender || !borrower) {
     throw httpError('Lender or borrower account missing.', 404);
@@ -340,13 +354,25 @@ async function settleInternalBorrowing(borrowingId, {
     deductedFromSavings = money(Math.min(borrowerSavingsBefore, left));
     left = money(left - deductedFromSavings);
     deductedFromAdvance = money(Math.min(borrowerAdvanceBefore, left));
-    borrower.savings = money(borrowerSavingsBefore - deductedFromSavings);
-    borrower.advanceBalance = money(borrowerAdvanceBefore - deductedFromAdvance);
-    await borrower.save();
+    const updatedBorrower = await User.findOneAndUpdate(
+      { _id: borrower._id },
+      {
+        $inc: {
+          ...(deductedFromSavings > 0 ? { savings: -deductedFromSavings } : {}),
+          ...(deductedFromAdvance > 0 ? { advanceBalance: -deductedFromAdvance } : {}),
+        },
+      },
+      sessionOpt(session, { new: true })
+    );
+    if (!updatedBorrower) {
+      throw httpError('Unable to update borrower balances.', 409);
+    }
+    borrower.savings = updatedBorrower.savings;
+    borrower.advanceBalance = updatedBorrower.advanceBalance;
   }
 
   const fundingLabel = await resolveFundingContextLabel(borrowing);
-  const deposit = await Deposit.create({
+  const deposit = await createWithSession(Deposit, {
     member: borrower._id,
     amount: payAmount,
     type: 'borrow_repayment',
@@ -355,7 +381,7 @@ async function settleInternalBorrowing(borrowingId, {
         + ` (borrowing ${borrowing._id})`
         + `${cashReceived ? ' · cash at desk' : ` · from savings ${formatMoney(deductedFromSavings, 2)} / advance ${formatMoney(deductedFromAdvance, 2)}`}`,
     recordedBy,
-  });
+  }, session);
 
   // Cash-in: society bank ledger increases (skipped when cash already booked via loan_repayment).
   let bankLedger = null;
@@ -368,8 +394,10 @@ async function settleInternalBorrowing(borrowingId, {
         referenceId: borrowing._id,
         note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name} · ${fundingLabel}`,
         createdBy: recordedBy,
+        session,
       });
     } catch (error) {
+      if (session) throw error;
       // Fall back to soft credit so lender refund still proceeds if ledger is mid-setup.
       bankLedger = await tryCredit({
         type: 'deposit',
@@ -387,8 +415,15 @@ async function settleInternalBorrowing(borrowingId, {
 
   // Instantly restore the original lender's advance balance.
   const lenderAdvanceBefore = money(lender.advanceBalance);
-  lender.advanceBalance = money(Number(lender.advanceBalance || 0) + payAmount);
-  await lender.save();
+  const updatedLender = await User.findOneAndUpdate(
+    { _id: lender._id },
+    { $inc: { advanceBalance: payAmount } },
+    sessionOpt(session, { new: true })
+  );
+  if (!updatedLender) {
+    throw httpError('Unable to refund lender advance balance.', 409);
+  }
+  lender.advanceBalance = updatedLender.advanceBalance;
 
   borrowing.amountSettled = money(Number(borrowing.amountSettled || 0) + payAmount);
   borrowing.repaymentDeposit = deposit._id;
@@ -399,16 +434,22 @@ async function settleInternalBorrowing(borrowingId, {
   } else {
     borrowing.status = 'partial';
   }
-  await borrowing.save();
+  await borrowing.save(sessionOpt(session));
 
   if (borrowing.contribution) {
-    const contribution = await InvestmentContribution.findById(borrowing.contribution);
+    const contribution = await bindSession(
+      InvestmentContribution.findById(borrowing.contribution),
+      session
+    );
     if (contribution && borrowing.status === 'settled') {
-      const openOthers = await InternalBorrowing.countDocuments({
-        contribution: contribution._id,
-        status: { $in: ['open', 'partial'] },
-        _id: { $ne: borrowing._id },
-      });
+      const openOthers = await bindSession(
+        InternalBorrowing.countDocuments({
+          contribution: contribution._id,
+          status: { $in: ['open', 'partial'] },
+          _id: { $ne: borrowing._id },
+        }),
+        session
+      );
       const stillUnpaid = contributionRemainingDue(contribution) > 0.001;
       if (!openOthers && !stillUnpaid) {
         contribution.status = 'settled';
@@ -418,7 +459,7 @@ async function settleInternalBorrowing(borrowingId, {
       } else {
         contribution.status = 'covered_by_borrow';
       }
-      await contribution.save();
+      await contribution.save(sessionOpt(session));
     }
   }
 
@@ -431,21 +472,24 @@ async function settleInternalBorrowing(borrowingId, {
         status: { $in: ['unpaid', 'covered_by_borrow'] },
         unpaidAmount: { $lte: 0.001 },
       },
-      { $set: { status: 'settled', unpaidAmount: 0 } }
+      { $set: { status: 'settled', unpaidAmount: 0 } },
+      sessionOpt(session)
     );
   }
 
-  try {
-    await notifyLenderAdvanceRefund({
-      lender,
-      borrower,
-      payAmount,
-      fundingLabel,
-      borrowingId: borrowing._id,
-      lenderAdvanceAfter: lender.advanceBalance,
-    });
-  } catch (error) {
-    console.warn('[advanceBorrowing] lender refund notification failed:', error.message);
+  if (!skipNotifications && !session) {
+    try {
+      await notifyLenderAdvanceRefund({
+        lender,
+        borrower,
+        payAmount,
+        fundingLabel,
+        borrowingId: borrowing._id,
+        lenderAdvanceAfter: lender.advanceBalance,
+      });
+    } catch (error) {
+      console.warn('[advanceBorrowing] lender refund notification failed:', error.message);
+    }
   }
 
   return {
@@ -476,6 +520,7 @@ async function settleInternalBorrowing(borrowingId, {
     fullySettled: borrowing.status === 'settled',
     bookBalance: bankLedger?.ledger?.bookBalance ?? null,
     cashReceived: Boolean(cashReceived),
+    notifyLender: Boolean(skipNotifications || session),
   };
 }
 
@@ -488,9 +533,13 @@ async function repayUnpaidContribution(contributionId, {
   recordedBy = 'Cashier',
   notes = '',
   skipBankCredit = false,
+  skipNotifications = false,
+  session = null,
 } = {}) {
-  const contribution = await InvestmentContribution.findById(contributionId)
-    .populate('member', 'name email');
+  const contribution = await bindSession(
+    InvestmentContribution.findById(contributionId).populate('member', 'name email'),
+    session
+  );
   if (!contribution) {
     throw httpError('Contribution not found.', 404);
   }
@@ -501,7 +550,14 @@ async function repayUnpaidContribution(contributionId, {
 
   // If covered by borrow with no remaining unpaid share, repay via borrowing settlement instead
   if (contribution.borrowing && contribution.status === 'covered_by_borrow' && remainingDue <= 0.001) {
-    return settleInternalBorrowing(contribution.borrowing, { amount, recordedBy, notes });
+    return settleInternalBorrowing(contribution.borrowing, {
+      amount,
+      recordedBy,
+      notes,
+      skipBankCredit,
+      skipNotifications,
+      session,
+    });
   }
 
   const due = remainingDue;
@@ -515,41 +571,64 @@ async function repayUnpaidContribution(contributionId, {
     throw httpError(`Repayment exceeds unpaid due of ${formatMoney(due, 2)}.`);
   }
 
-  const member = await User.findById(contribution.member._id || contribution.member);
-  const deposit = await Deposit.create({
+  const memberId = contribution.member._id || contribution.member;
+  const member = await bindSession(User.findById(memberId), session);
+  if (!member) {
+    throw httpError('Member not found for contribution.', 404);
+  }
+
+  const deposit = await createWithSession(Deposit, {
     member: member._id,
     amount: payAmount,
     type: 'regular',
     notes: notes?.trim() || `Unpaid contribution repayment for investment ${contribution.investment}`,
     recordedBy,
-  });
+  }, session);
 
   // Paying dues: credit savings (they are catching up) + bank ledger
-  member.savings = money(Number(member.savings || 0) + payAmount);
-  await member.save();
+  const updatedMember = await User.findOneAndUpdate(
+    { _id: member._id },
+    { $inc: { savings: payAmount } },
+    sessionOpt(session, { new: true })
+  );
+  if (!updatedMember) {
+    throw httpError('Unable to update member savings for contribution repayment.', 409);
+  }
 
   let bankLedger = null;
   if (!skipBankCredit) {
-    bankLedger = await tryCredit({
-      type: 'deposit',
-      amount: payAmount,
-      referenceType: 'InvestmentContribution',
-      referenceId: contribution._id,
-      note: `Unpaid contribution repayment: ${member.name}`,
-      createdBy: recordedBy,
-    });
+    if (session) {
+      bankLedger = await creditInbound({
+        type: 'deposit',
+        amount: payAmount,
+        referenceType: 'InvestmentContribution',
+        referenceId: contribution._id,
+        note: `Unpaid contribution repayment: ${updatedMember.name}`,
+        createdBy: recordedBy,
+        session,
+      });
+    } else {
+      bankLedger = await tryCredit({
+        type: 'deposit',
+        amount: payAmount,
+        referenceType: 'InvestmentContribution',
+        referenceId: contribution._id,
+        note: `Unpaid contribution repayment: ${updatedMember.name}`,
+        createdBy: recordedBy,
+      });
+    }
   }
 
   contribution.unpaidAmount = money(Math.max(0, due - payAmount));
   contribution.paidFromSavings = money(Number(contribution.paidFromSavings || 0) + payAmount);
   contribution.status = contribution.unpaidAmount > 0.001 ? 'unpaid' : 'settled';
-  await contribution.save();
+  await contribution.save(sessionOpt(session));
 
   return {
     contribution,
     deposit,
     bankLedger,
-    member,
+    member: updatedMember,
   };
 }
 

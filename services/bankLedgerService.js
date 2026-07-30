@@ -1,5 +1,6 @@
 const BankLedger = require('../models/BankLedger');
 const BankLedgerEntry = require('../models/BankLedgerEntry');
+const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
 
 function money(value) {
   return Number((Number(value) || 0).toFixed(2));
@@ -11,14 +12,17 @@ function httpError(message, status = 400) {
   return error;
 }
 
-async function ensureLedger() {
-  let ledger = await BankLedger.findOne({ key: BankLedger.LEDGER_KEY });
+async function ensureLedger(session = null) {
+  let ledger = await bindSession(
+    BankLedger.findOne({ key: BankLedger.LEDGER_KEY }),
+    session
+  );
   if (!ledger) {
-    ledger = await BankLedger.create({
+    ledger = await createWithSession(BankLedger, {
       key: BankLedger.LEDGER_KEY,
       openingBalance: null,
       bookBalance: 0,
-    });
+    }, session);
   }
   return ledger;
 }
@@ -95,7 +99,7 @@ async function assertOpeningSet(ledger) {
  * If opening was never set, bootstrap it to the current book balance (usually 0)
  * so the first deposit still updates Book Balance in real time.
  */
-async function ensureOpeningForInboundCash(ledger, createdBy = 'System') {
+async function ensureOpeningForInboundCash(ledger, createdBy = 'System', session = null) {
   if (ledger.openingBalance !== null && ledger.openingBalance !== undefined) {
     return ledger;
   }
@@ -106,7 +110,7 @@ async function ensureOpeningForInboundCash(ledger, createdBy = 'System') {
   if (ledger.bookBalance == null) {
     ledger.bookBalance = seed;
   }
-  await ledger.save();
+  await ledger.save(sessionOpt(session));
   return ledger;
 }
 
@@ -121,6 +125,7 @@ async function postEntry({
   paymentChannel = '',
   paymentReference = '',
   allowWithoutOpening = false,
+  session = null,
 }) {
   const normalized = money(amount);
   if (!(normalized > 0)) {
@@ -130,9 +135,9 @@ async function postEntry({
     throw httpError('Invalid ledger direction.');
   }
 
-  let ledger = await ensureLedger();
+  let ledger = await ensureLedger(session);
   if (allowWithoutOpening && direction === 'credit') {
-    ledger = await ensureOpeningForInboundCash(ledger, createdBy);
+    ledger = await ensureOpeningForInboundCash(ledger, createdBy, session);
   } else {
     await assertOpeningSet(ledger);
   }
@@ -146,7 +151,7 @@ async function postEntry({
         $inc: { bookBalance: normalized },
         $set: { updatedAt: new Date() },
       },
-      { new: true }
+      sessionOpt(session, { new: true })
     );
   } else {
     updatedLedger = await BankLedger.findOneAndUpdate(
@@ -158,7 +163,7 @@ async function postEntry({
         $inc: { bookBalance: -normalized },
         $set: { updatedAt: new Date() },
       },
-      { new: true }
+      sessionOpt(session, { new: true })
     );
     if (!updatedLedger) {
       throw httpError('Insufficient bank ledger balance for this debit.', 400);
@@ -169,28 +174,27 @@ async function postEntry({
     throw httpError('Bank ledger is unavailable.', 500);
   }
 
-  // Keep non-negative after floating-point noise.
-  if (updatedLedger.bookBalance < 0) {
-    updatedLedger.bookBalance = 0;
-    await updatedLedger.save();
-  } else {
-    updatedLedger.bookBalance = money(updatedLedger.bookBalance);
-  }
-
-  const entry = await BankLedgerEntry.create({
+  const balanceAfter = Math.max(0, money(updatedLedger.bookBalance));
+  const entry = await createWithSession(BankLedgerEntry, {
     type,
     direction,
     amount: normalized,
-    balanceAfter: money(updatedLedger.bookBalance),
+    balanceAfter,
     referenceType,
     referenceId,
     note,
     createdBy,
     paymentChannel: paymentChannel || '',
     paymentReference: paymentReference || '',
-  });
+  }, session);
 
-  return { ledger: reconciliationState(updatedLedger), entry };
+  return {
+    ledger: reconciliationState({
+      ...updatedLedger.toObject?.() || updatedLedger,
+      bookBalance: balanceAfter,
+    }),
+    entry,
+  };
 }
 
 async function credit(params) {

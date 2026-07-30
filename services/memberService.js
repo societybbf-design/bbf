@@ -69,8 +69,13 @@ async function getDuesAlert(memberData = {}, now = new Date()) {
 async function saveDeposit(memberId, amount, options = {}) {
   const { normalizePaymentChannel } = require('./paymentChannelService');
   const { generateReceiptNumber } = require('./receiptService');
+  const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
+  const session = options.session || null;
 
-  const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
+  const member = await bindSession(
+    User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } }),
+    session
+  );
   if (!member) {
     const error = new Error('Member not found.');
     error.status = 404;
@@ -94,7 +99,7 @@ async function saveDeposit(memberId, amount, options = {}) {
   const recordedBy = options.recordedBy || '';
   const paymentMethod = normalizePaymentChannel(options.paymentMethod);
   const paymentReference = options.paymentReference?.trim() || '';
-  const receiptNumber = await generateReceiptNumber();
+  const receiptNumber = await generateReceiptNumber('DEP', { session });
   const depositExtras = {
     paymentMethod,
     paymentReference,
@@ -112,6 +117,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       member,
       amount: total,
       yearMonth,
+      session,
     });
     towardTarget = monthlySplit.towardTarget;
     surplus = monthlySplit.surplus;
@@ -139,7 +145,7 @@ async function saveDeposit(memberId, amount, options = {}) {
 
   if (depositType === 'regular') {
     if (towardTarget > 0) {
-      deposit = await Deposit.create({
+      deposit = await createWithSession(Deposit, {
         member: member._id,
         amount: towardTarget,
         type: 'regular',
@@ -149,15 +155,15 @@ async function saveDeposit(memberId, amount, options = {}) {
         notes: regularNotes,
         recordedBy,
         ...depositExtras,
-      });
+      }, session);
       savingsInc = money(savingsInc + towardTarget);
     }
 
     if (surplus > 0) {
       const advanceReceiptNumber = towardTarget > 0
-        ? await generateReceiptNumber()
+        ? await generateReceiptNumber('DEP', { session })
         : receiptNumber;
-      advanceDeposit = await Deposit.create({
+      advanceDeposit = await createWithSession(Deposit, {
         member: member._id,
         amount: surplus,
         type: 'advance',
@@ -170,13 +176,13 @@ async function saveDeposit(memberId, amount, options = {}) {
         paymentMethod,
         paymentReference,
         receiptNumber: advanceReceiptNumber,
-      });
+      }, session);
       advanceInc = money(advanceInc + surplus);
     }
 
     // No target configured: entire amount to savings as a single regular deposit
     if (!monthlySplit?.splitApplied && !deposit) {
-      deposit = await Deposit.create({
+      deposit = await createWithSession(Deposit, {
         member: member._id,
         amount: total,
         type: 'regular',
@@ -184,11 +190,11 @@ async function saveDeposit(memberId, amount, options = {}) {
         notes: notesBase,
         recordedBy,
         ...depositExtras,
-      });
+      }, session);
       savingsInc = money(total);
     }
   } else if (depositType === 'advance') {
-    deposit = await Deposit.create({
+    deposit = await createWithSession(Deposit, {
       member: member._id,
       amount: total,
       type: 'advance',
@@ -196,10 +202,10 @@ async function saveDeposit(memberId, amount, options = {}) {
       notes: notesBase || 'Advance / surplus deposit',
       recordedBy,
       ...depositExtras,
-    });
+    }, session);
     advanceInc = money(total);
   } else {
-    deposit = await Deposit.create({
+    deposit = await createWithSession(Deposit, {
       member: member._id,
       amount: total,
       type: depositType,
@@ -207,7 +213,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       notes: notesBase,
       recordedBy,
       ...depositExtras,
-    });
+    }, session);
     savingsInc = money(total);
   }
 
@@ -220,7 +226,7 @@ async function saveDeposit(memberId, amount, options = {}) {
         ...(advanceInc > 0 ? { advanceBalance: advanceInc } : {}),
       },
     },
-    { new: true }
+    sessionOpt(session, { new: true })
   );
 
   if (!updatedMember) {
@@ -247,26 +253,31 @@ async function saveDeposit(memberId, amount, options = {}) {
         createdBy: recordedBy || 'Admin',
         paymentChannel: paymentMethod,
         paymentReference,
+        session,
       });
     } catch (error) {
       console.error('[saveDeposit] bank ledger credit failed:', error.message);
-      // Member balances already moved — surface a hard error so cashiers do not assume the bank book is correct.
+      // Inside a transaction this aborts the whole payment; outside, warn not to resubmit blindly.
       const wrapped = new Error(
-        `Deposit recorded for the member, but bank ledger credit failed: ${error.message}. Do not resubmit; reconcile the ledger.`
+        session
+          ? `Bank ledger credit failed during deposit transaction: ${error.message}`
+          : `Deposit recorded for the member, but bank ledger credit failed: ${error.message}. Do not resubmit; reconcile the ledger.`
       );
       wrapped.status = error.status || 500;
-      wrapped.partialDeposit = {
-        deposit: deposit || advanceDeposit,
-        regularDeposit: deposit || null,
-        advanceDeposit: advanceDeposit || null,
-        member: updatedMember,
-      };
+      if (!session) {
+        wrapped.partialDeposit = {
+          deposit: deposit || advanceDeposit,
+          regularDeposit: deposit || null,
+          advanceDeposit: advanceDeposit || null,
+          member: updatedMember,
+        };
+      }
       throw wrapped;
     }
   }
 
   const primaryDeposit = deposit || advanceDeposit;
-  if (!options.skipBankCredit) {
+  if (!options.skipBankCredit && !session) {
     void (async () => {
     try {
       const { notifyDepositRecorded } = require('./financialNotificationService');
