@@ -188,6 +188,11 @@ async function previewSmartMemberPayment({ memberId, amount, yearMonth = yearMon
  * Apply a single cashier deposit across project/emergency internal dues, monthly target, and advance.
  * Formal loan repayments are never applied here — use the Loans module.
  * Credits the bank ledger once for the full cash amount.
+ *
+ * All deposit / repay / settle / ledger writes run inside withMongoTransaction so a mid-loop
+ * failure rolls back dues, savings, borrowings, deposits, and the bank book together.
+ * On standalone MongoDB (no replica set), withMongoTransaction falls back to non-transactional
+ * execution — same sequential path, without multi-document atomicity.
  */
 async function applySmartMemberPayment({
   memberId,
@@ -208,80 +213,121 @@ async function applySmartMemberPayment({
   if (!member) throw httpError('Member not found.', 404);
   if (member.status !== 'active') throw httpError('Only active members can receive payments.', 400);
 
-  const { settleInternalBorrowing } = require('./advanceBorrowingService');
-  const { repayUnpaidContribution } = require('./advanceBorrowingService');
+  const { settleInternalBorrowing, repayUnpaidContribution, saveAdvanceDeposit, notifyLenderAdvanceRefund } = require('./advanceBorrowingService');
   const { saveDeposit } = require('./memberService');
-  const { saveAdvanceDeposit } = require('./advanceBorrowingService');
   const { creditInbound } = require('./bankLedgerService');
+  const { withMongoTransaction, bindSession } = require('./mongoTransaction');
 
-  const applied = [];
-  let monthlyResult = null;
-  let advanceResult = null;
-
-  for (const leg of plan.allocations) {
-    if (leg.kind === 'internal_borrowing') {
-      const settled = await settleInternalBorrowing(leg.borrowingId, {
-        amount: leg.amount,
-        recordedBy,
-        notes: notes || `Smart payment — refund lender (${leg.lenderName || 'lender'})`,
-        cashReceived: true,
-        skipBankCredit: true,
-      });
-      applied.push({ ...leg, result: settled });
-    } else if (leg.kind === 'unpaid_contribution') {
-      const repaid = await repayUnpaidContribution(leg.contributionId, {
-        amount: leg.amount,
-        recordedBy,
-        notes: notes || `Smart payment — project share`,
-        skipBankCredit: true,
-      });
-      applied.push({ ...leg, result: repaid });
-    } else if (leg.kind === 'monthly_deposit') {
-      monthlyResult = await saveDeposit(memberId, leg.amount, {
-        yearMonth: leg.yearMonth || yearMonth,
-        notes: notes || `Smart payment — monthly deposit ${leg.yearMonth || yearMonth}`,
-        recordedBy,
-        paymentMethod,
-        paymentReference,
-        actor,
-        ip,
-        skipBankCredit: true,
-        smartPaymentLeg: true,
-      });
-      applied.push({ ...leg, result: monthlyResult });
-    } else if (leg.kind === 'advance_surplus') {
-      advanceResult = await saveAdvanceDeposit(memberId, leg.amount, {
-        notes: notes || 'Smart payment — surplus to advance balance',
-        recordedBy,
-        skipBankCredit: true,
-      });
-      applied.push({ ...leg, result: advanceResult });
+  const result = await withMongoTransaction(async (session) => {
+    const memberInTxn = await bindSession(
+      User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } }),
+      session
+    );
+    if (!memberInTxn) throw httpError('Member not found.', 404);
+    if (memberInTxn.status !== 'active') {
+      throw httpError('Only active members can receive payments.', 400);
     }
-  }
 
-  // Fail hard — never silently skip the society bank book after cash was accepted.
-  let bankLedger;
-  try {
-    bankLedger = await creditInbound({
+    const applied = [];
+    let monthlyResult = null;
+    let advanceResult = null;
+
+    for (const leg of plan.allocations) {
+      if (leg.kind === 'internal_borrowing') {
+        const settled = await settleInternalBorrowing(leg.borrowingId, {
+          amount: leg.amount,
+          recordedBy,
+          notes: notes || `Smart payment — refund lender (${leg.lenderName || 'lender'})`,
+          cashReceived: true,
+          skipBankCredit: true,
+          skipNotifications: true,
+          session,
+        });
+        applied.push({ ...leg, result: settled });
+      } else if (leg.kind === 'unpaid_contribution') {
+        const repaid = await repayUnpaidContribution(leg.contributionId, {
+          amount: leg.amount,
+          recordedBy,
+          notes: notes || `Smart payment — project share`,
+          skipBankCredit: true,
+          skipNotifications: true,
+          session,
+        });
+        applied.push({ ...leg, result: repaid });
+      } else if (leg.kind === 'monthly_deposit') {
+        monthlyResult = await saveDeposit(memberId, leg.amount, {
+          yearMonth: leg.yearMonth || yearMonth,
+          notes: notes || `Smart payment — monthly deposit ${leg.yearMonth || yearMonth}`,
+          recordedBy,
+          paymentMethod,
+          paymentReference,
+          actor,
+          ip,
+          skipBankCredit: true,
+          smartPaymentLeg: true,
+          session,
+        });
+        applied.push({ ...leg, result: monthlyResult });
+      } else if (leg.kind === 'advance_surplus') {
+        advanceResult = await saveAdvanceDeposit(memberId, leg.amount, {
+          notes: notes || 'Smart payment — surplus to advance balance',
+          recordedBy,
+          skipBankCredit: true,
+          session,
+        });
+        applied.push({ ...leg, result: advanceResult });
+      }
+    }
+
+    // Single society bank credit for the full cashier cash amount (same session / rollback unit).
+    const bankLedger = await creditInbound({
       type: 'deposit',
       amount: total,
       referenceType: 'SmartMemberPayment',
       referenceId: memberId,
-      note: `Smart cashier payment from ${member.name} · ${plan.allocations.map((a) => `${a.label} ${formatMoney(a.amount, 2)}`).join(' · ')}`,
+      note: `Smart cashier payment from ${memberInTxn.name} · ${plan.allocations.map((a) => `${a.label} ${formatMoney(a.amount, 2)}`).join(' · ')}`,
       createdBy: recordedBy,
       paymentChannel: paymentMethod,
       paymentReference,
+      session,
     });
-  } catch (error) {
-    const wrapped = new Error(
-      `Payment legs were applied but bank ledger credit failed: ${error.message}. Do not resubmit without checking the ledger and member balances.`
-    );
-    wrapped.status = error.status || 500;
-    wrapped.cause = error;
-    throw wrapped;
+
+    const refreshedMember = await bindSession(User.findById(memberId), session);
+    return {
+      member: refreshedMember,
+      plan,
+      applied,
+      monthlyResult,
+      advanceResult,
+      bankLedger,
+      bookBalance: bankLedger?.ledger?.bookBalance ?? null,
+    };
+  });
+
+  // Post-commit side effects (must not run inside the transaction).
+  for (const item of result.applied || []) {
+    if (item.kind !== 'internal_borrowing' || !item.result?.notifyLender) continue;
+    const settled = item.result;
+    try {
+      const lenderDoc = settled.lender?.id
+        ? await User.findById(settled.lender.id).select('name email phone')
+        : null;
+      await notifyLenderAdvanceRefund({
+        lender: lenderDoc || { _id: settled.lender?.id, name: settled.lender?.name },
+        borrower: {
+          _id: settled.borrower?.id,
+          name: settled.borrower?.name,
+        },
+        payAmount: settled.settledAmount,
+        fundingLabel: settled.fundingLabel,
+        borrowingId: settled.borrowing?._id,
+        lenderAdvanceAfter: settled.lender?.advanceBalance,
+      });
+    } catch (error) {
+      console.warn('[smartRepayment] lender refund notification failed:', error.message);
+    }
   }
 
-  const refreshedMember = await User.findById(memberId);
   const messageParts = [];
   if (plan.summary.toLenders > 0) {
     messageParts.push(`refunded lenders ${formatMoney(plan.summary.toLenders, 2)}`);
@@ -297,16 +343,11 @@ async function applySmartMemberPayment({
   }
 
   return {
-    member: refreshedMember,
-    plan,
-    applied,
-    monthlyResult,
-    advanceResult,
-    bankLedger,
-    bookBalance: bankLedger?.ledger?.bookBalance ?? null,
+    ...result,
     message: messageParts.length
       ? `Smart payment recorded: ${messageParts.join(' · ')}.`
       : 'Smart payment recorded.',
+    transactional: true,
   };
 }
 

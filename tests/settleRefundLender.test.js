@@ -39,7 +39,7 @@ test('settlement service still auto-refunds lender advance on repayment', () => 
   assert.match(serviceJs, /Deducts from borrower Savings \+ Advance Balance/);
   assert.match(serviceJs, /deductedFromSavings = money\(Math\.min\(borrowerSavingsBefore, left\)\)/);
   assert.match(serviceJs, /deductedFromAdvance = money\(Math\.min\(borrowerAdvanceBefore, left\)\)/);
-  assert.match(serviceJs, /lender\.advanceBalance = money\(Number\(lender\.advanceBalance \|\| 0\) \+ payAmount\)/);
+  assert.match(serviceJs, /\$inc:\s*\{\s*advanceBalance:\s*payAmount\s*\}/);
   assert.match(serviceJs, /notifyLenderAdvanceRefund/);
   assert.match(serviceJs, /refundedAmount: payAmount/);
 });

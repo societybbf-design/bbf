@@ -88,7 +88,8 @@ test('bank ledger posts use atomic bookBalance increments', () => {
 
 test('smart payment and saveDeposit no longer soft-skip ledger credits', () => {
   assert.doesNotMatch(smartJs, /tryCredit\(/);
-  assert.match(smartJs, /bank ledger credit failed/);
+  assert.match(smartJs, /withMongoTransaction\(async \(session\) =>/);
+  assert.match(smartJs, /creditInbound\(\{[\s\S]*session,/);
   assert.match(memberService, /Do not resubmit; reconcile the ledger/);
 });
 
