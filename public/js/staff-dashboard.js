@@ -2624,6 +2624,63 @@ async function loadCashierExitQueue() {
   }
 }
 
+async function loadCashierYearTargetPlan(year) {
+  const body = document.getElementById('cashierYearTargetPlanBody');
+  const select = document.getElementById('cashierYearTargetPlanYear');
+  const planYear = year || select?.value || String(new Date().getFullYear());
+  if (select && !select.value) select.value = planYear;
+  if (!body) return;
+  try {
+    const res = await fetch(`/api/admin/monthly-targets/year/${encodeURIComponent(planYear)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unable to load year plan.');
+    body.innerHTML = (data.months || []).map((row) => `
+      <tr>
+        <td>${escapeHtml(row.monthLabel || row.yearMonth)}</td>
+        <td>
+          <input type="number" min="0" step="0.01" data-year-month="${escapeHtml(row.yearMonth)}"
+            value="${row.configured ? Number(row.amount).toFixed(2) : (row.amount != null ? Number(row.amount).toFixed(2) : '')}"
+            placeholder="—" style="max-width:9rem" />
+        </td>
+        <td>${row.configured ? 'Saved' : (row.source === 'env_fallback' ? 'Env fallback' : 'Not set')}</td>
+      </tr>
+    `).join('');
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="3">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function saveCashierYearTargetPlan() {
+  const select = document.getElementById('cashierYearTargetPlanYear');
+  const msg = document.getElementById('cashierYearTargetPlanMessage');
+  const year = select?.value || String(new Date().getFullYear());
+  const months = [];
+  document.querySelectorAll('#cashierYearTargetPlanBody [data-year-month]').forEach((input) => {
+    const val = String(input.value || '').trim();
+    if (!val) return;
+    months.push({ yearMonth: input.dataset.yearMonth, amount: val });
+  });
+  try {
+    const res = await fetch(`/api/admin/monthly-targets/year/${encodeURIComponent(year)}/bulk`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ months }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unable to save year plan.');
+    if (msg) {
+      msg.classList.add('success');
+      msg.textContent = data.message || 'Year plan saved.';
+    }
+    await loadDepositsModule();
+  } catch (error) {
+    if (msg) {
+      msg.classList.remove('success');
+      msg.textContent = error.message;
+    }
+  }
+}
+
 async function loadDepositsModule(options = {}) {
   const tbody = document.getElementById('cashierDepositsBody');
   const duesBody = document.getElementById('cashierMonthlyDuesBody');
@@ -2690,6 +2747,27 @@ async function loadDepositsModule(options = {}) {
             <button type="submit" class="secondary-btn">Save month target</button>
             <p id="cashierMonthTargetMessage" class="message"></p>
           </form>
+          <details class="u-mt-1" id="cashierYearTargetPlanDetails">
+            <summary><strong>Year plan — set each month’s target</strong></summary>
+            <div class="form-row-2 u-mt-1">
+              <div class="form-group">
+                <label>Year
+                  <select id="cashierYearTargetPlanYear"></select>
+                </label>
+              </div>
+              <div class="form-group" style="align-self:end">
+                <button type="button" class="secondary-btn" id="cashierYearTargetPlanReloadBtn">Reload</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table table-cards">
+                <thead><tr><th>Month</th><th>Target</th><th>Status</th></tr></thead>
+                <tbody id="cashierYearTargetPlanBody"><tr><td colspan="3">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <button type="button" class="secondary-btn u-mt-1" id="cashierYearTargetPlanSaveBtn">Save year plan</button>
+            <p id="cashierYearTargetPlanMessage" class="message"></p>
+          </details>
         `;
       } else {
         targetBox.innerHTML = `
@@ -2706,6 +2784,27 @@ async function loadDepositsModule(options = {}) {
             <button type="submit" class="secondary-btn">Save month target</button>
             <p id="cashierMonthTargetMessage" class="message"></p>
           </form>
+          <details class="u-mt-1" id="cashierYearTargetPlanDetails">
+            <summary><strong>Year plan — set each month’s target</strong></summary>
+            <div class="form-row-2 u-mt-1">
+              <div class="form-group">
+                <label>Year
+                  <select id="cashierYearTargetPlanYear"></select>
+                </label>
+              </div>
+              <div class="form-group" style="align-self:end">
+                <button type="button" class="secondary-btn" id="cashierYearTargetPlanReloadBtn">Reload</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table table-cards">
+                <thead><tr><th>Month</th><th>Target</th><th>Status</th></tr></thead>
+                <tbody id="cashierYearTargetPlanBody"><tr><td colspan="3">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <button type="button" class="secondary-btn u-mt-1" id="cashierYearTargetPlanSaveBtn">Save year plan</button>
+            <p id="cashierYearTargetPlanMessage" class="message"></p>
+          </details>
         `;
         const monthInput = targetBox.querySelector('[name="yearMonth"]');
         if (monthInput && !monthInput.value) {
@@ -2739,12 +2838,32 @@ async function loadDepositsModule(options = {}) {
           }
         }
       });
+
+      const yearSelect = document.getElementById('cashierYearTargetPlanYear');
+      if (yearSelect && !yearSelect.options.length) {
+        const currentYear = new Date().getFullYear();
+        for (let y = currentYear - 1; y <= currentYear + 2; y += 1) {
+          const opt = document.createElement('option');
+          opt.value = String(y);
+          opt.textContent = String(y);
+          if (y === currentYear) opt.selected = true;
+          yearSelect.appendChild(opt);
+        }
+      }
+      document.getElementById('cashierYearTargetPlanReloadBtn')?.addEventListener('click', () => {
+        void loadCashierYearTargetPlan();
+      });
+      document.getElementById('cashierYearTargetPlanSaveBtn')?.addEventListener('click', () => {
+        void saveCashierYearTargetPlan();
+      });
+      document.getElementById('cashierYearTargetPlanDetails')?.addEventListener('toggle', (event) => {
+        if (event.target.open) void loadCashierYearTargetPlan();
+      });
+      yearSelect?.addEventListener('change', () => void loadCashierYearTargetPlan());
     }
 
-    if (hint) {
-      hint.textContent = target.amount != null
-        ? `This month’s fixed target is ${money(target.amount)}. Amount up to the member’s remaining due → fixed deposit; any surplus automatically → Advance balance.`
-        : 'No month target set — full amount credits savings until a target is configured.';
+    if (hint && target.amount != null) {
+      hint.textContent = `Active month target: ${money(target.amount)}. Smart payment clears lenders, project dues, loan, then monthly target; surplus → Advance.`;
     }
     if (amountInput && target.amount != null && !amountInput.value) {
       amountInput.value = Number(target.amount).toFixed(2);
@@ -2792,6 +2911,7 @@ async function loadDepositsModule(options = {}) {
 let depositMonthTargetCache = null;
 let depositUnpaidDuesCache = [];
 let depositSplitPreviewBound = false;
+let smartPreviewTimer = null;
 
 function getMemberRemainingMonthlyDue(memberId) {
   if (!depositMonthTargetCache) return null;
@@ -2828,27 +2948,44 @@ function updateDepositSplitPreview() {
   if (!preview || !previewText) return;
 
   const amount = Number(amountInput?.value || 0);
-  if (!depositMonthTargetCache || !(amount > 0)) {
+  const memberId = memberSelect?.value || '';
+  if (!(amount > 0) || !memberId) {
     preview.hidden = true;
     previewText.textContent = '';
     return;
   }
 
-  const memberId = memberSelect?.value || '';
-  const remaining = getMemberRemainingMonthlyDue(memberId);
-  const split = computeClientDepositSplit(amount, remaining, depositMonthTargetCache.amount);
-  const monthLabel = depositMonthTargetCache.monthLabel || depositMonthTargetCache.yearMonth;
-
-  if (split.surplus > 0 && split.towardTarget > 0) {
-    previewText.textContent = `Will record ${money(split.towardTarget)} as fixed ${monthLabel} deposit + ${money(split.surplus)} → Advance balance.`;
-  } else if (split.surplus > 0) {
-    previewText.textContent = `Month target already covered — full ${money(split.surplus)} → Advance balance.`;
-  } else if (split.remainingUnpaid > 0) {
-    previewText.textContent = `Will record ${money(split.towardTarget)} toward fixed ${monthLabel} deposit · still due after this: ${money(split.remainingUnpaid)}.`;
-  } else {
-    previewText.textContent = `Will record ${money(split.towardTarget)} as fixed ${monthLabel} deposit (target covered).`;
-  }
-  preview.hidden = false;
+  clearTimeout(smartPreviewTimer);
+  smartPreviewTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(
+        `/api/admin/deposits/smart-payment/preview?memberId=${encodeURIComponent(memberId)}&amount=${encodeURIComponent(amount)}`
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Preview failed');
+      const parts = (data.plan?.allocations || []).map((row) => `${row.label}: ${money(row.amount)}`);
+      previewText.textContent = parts.length
+        ? parts.join(' · ')
+        : 'No liabilities — full amount → Advance balance.';
+      preview.hidden = false;
+    } catch (_error) {
+      if (!depositMonthTargetCache) {
+        preview.hidden = true;
+        return;
+      }
+      const remaining = getMemberRemainingMonthlyDue(memberId);
+      const split = computeClientDepositSplit(amount, remaining, depositMonthTargetCache.amount);
+      const monthLabel = depositMonthTargetCache.monthLabel || depositMonthTargetCache.yearMonth;
+      if (split.surplus > 0 && split.towardTarget > 0) {
+        previewText.textContent = `Monthly: ${money(split.towardTarget)} ${monthLabel} + ${money(split.surplus)} → Advance.`;
+      } else if (split.remainingUnpaid > 0) {
+        previewText.textContent = `Monthly: ${money(split.towardTarget)} toward ${monthLabel} · still due ${money(split.remainingUnpaid)}.`;
+      } else {
+        previewText.textContent = `Monthly: ${money(split.towardTarget)} toward ${monthLabel}.`;
+      }
+      preview.hidden = false;
+    }
+  }, 280);
 }
 
 function bindDepositSplitPreview() {
@@ -5560,7 +5697,7 @@ function bindModuleForms() {
       if (!response.ok) throw new Error(data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.'));
       if (msg) {
         msg.classList.add('success');
-        msg.textContent = data.message || 'Deposit recorded.';
+        msg.textContent = data.message || 'Smart payment recorded.';
       }
       if (receipt) {
         const links = [];

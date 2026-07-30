@@ -4,6 +4,10 @@ const Deposit = require('../models/Deposit');
 const { getAllDeposits } = require('../services/depositService');
 const { saveDeposit } = require('../services/memberService');
 const { getActiveMonthTarget, yearMonthFromDate } = require('../services/monthlyTargetService');
+const {
+  previewSmartMemberPayment,
+  applySmartMemberPayment,
+} = require('../services/smartRepaymentService');
 const { sendDepositReceipt, generateReceiptPdf } = require('../services/notificationService');
 const { paymentChannelLabel } = require('../services/paymentChannelService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
@@ -56,9 +60,74 @@ router.get('/:id/receipt', viewDeposits, async (req, res) => {
   }
 });
 
-router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
+router.get('/smart-payment/preview', recordDeposits, requireCashierRole, async (req, res) => {
+  try {
+    const { memberId, amount, yearMonth } = req.query;
+    if (!memberId || !amount) {
+      return res.status(400).json({ error: 'memberId and amount are required.' });
+    }
+    const preview = await previewSmartMemberPayment({
+      memberId,
+      amount: Number(amount),
+      yearMonth: yearMonth || yearMonthFromDate(),
+    });
+    return res.json(preview);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to preview smart payment.' });
+  }
+});
+
+router.post('/smart-payment', recordDeposits, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
   try {
     const { memberId, amount, yearMonth, notes, paymentMethod, paymentReference } = req.body;
+    if (!memberId || amount == null) {
+      return res.status(400).json({ error: 'Member and amount are required.' });
+    }
+    const numericAmount = Number(amount);
+    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ error: 'Deposit amount must be a positive number.' });
+    }
+
+    const result = await applySmartMemberPayment({
+      memberId,
+      amount: numericAmount,
+      yearMonth: yearMonth || yearMonthFromDate(),
+      notes: notes || '',
+      recordedBy: req.session?.user?.name || 'Cashier',
+      paymentMethod,
+      paymentReference,
+      actor: req.session?.user || null,
+      ip: clientIp(req),
+    });
+
+    let message = result.message || 'Smart payment recorded.';
+    if (result.bookBalance != null) {
+      message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+    }
+
+    return res.status(201).json({
+      ...result,
+      smartPayment: true,
+      message,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to record smart payment.',
+    });
+  }
+});
+
+router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const {
+      memberId,
+      amount,
+      yearMonth,
+      notes,
+      paymentMethod,
+      paymentReference,
+      smartSplit,
+    } = req.body;
     if (!memberId || typeof amount === 'undefined' || amount === null) {
       return res.status(400).json({ error: 'Member and amount are required.' });
     }
@@ -68,8 +137,33 @@ router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation
       return res.status(400).json({ error: 'Deposit amount must be a positive number.' });
     }
 
-    const target = await getActiveMonthTarget();
+    const useSmartSplit = smartSplit !== false;
     const applyMonth = yearMonth || yearMonthFromDate();
+
+    if (useSmartSplit) {
+      const result = await applySmartMemberPayment({
+        memberId,
+        amount: numericAmount,
+        yearMonth: applyMonth,
+        notes: notes || '',
+        recordedBy: req.session?.user?.name || 'Cashier',
+        paymentMethod,
+        paymentReference,
+        actor: req.session?.user || null,
+        ip: clientIp(req),
+      });
+      let message = result.message || 'Smart payment recorded.';
+      if (result.bookBalance != null) {
+        message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+      }
+      return res.status(201).json({
+        ...result,
+        smartPayment: true,
+        message,
+      });
+    }
+
+    const target = await getActiveMonthTarget();
 
     const result = await saveDeposit(memberId, numericAmount, {
       yearMonth: applyMonth,

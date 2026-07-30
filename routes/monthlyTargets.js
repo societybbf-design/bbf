@@ -4,12 +4,15 @@ const {
   getTargetForMonth,
   getActiveMonthTarget,
   listTargets,
+  listTargetsForYear,
+  bulkUpsertTargets,
   upsertTarget,
   syncMonthDues,
   listUnpaidMonthlyDues,
   yearMonthFromDate,
 } = require('../services/monthlyTargetService');
 const { getMonthlyContributionReport } = require('../services/monthlyContributionService');
+const { runMonthlyAutoDeductions } = require('../services/monthlyAutoDeductionService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 
 router.use(requireAuth, requirePermission('can_manage_deposits', 'can_manage_members', 'can_view_reports'));
@@ -54,6 +57,50 @@ router.get('/unpaid', async (req, res) => {
     return res.json({ yearMonth, target, dues });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to load unpaid monthly dues.' });
+  }
+});
+
+router.get('/year/:year', async (req, res) => {
+  try {
+    const plan = await listTargetsForYear(req.params.year);
+    const active = await getActiveMonthTarget();
+    return res.json({ ...plan, active });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load year plan.' });
+  }
+});
+
+router.put('/year/:year/bulk', writeTargets, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await bulkUpsertTargets({
+      year: req.params.year,
+      months: req.body?.months || [],
+      setBy: req.session?.user?.name || 'Admin',
+      syncDues: req.body?.syncDues !== false,
+    });
+    return res.json({
+      ...result,
+      message: `Saved ${result.count} month target(s) for ${result.year}.`,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to save year plan.' });
+  }
+});
+
+router.post('/run-auto-deduction', writeTargets, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await runMonthlyAutoDeductions({
+      asOf: req.body?.asOf ? new Date(req.body.asOf) : new Date(),
+      dryRun: Boolean(req.body?.dryRun),
+    });
+    return res.json({
+      ...result,
+      message: result.skipped
+        ? `Auto-deduction skipped: ${result.reason || 'no action'}.`
+        : `Processed ${result.processed} member(s); ${result.applied} auto-deducted.`,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to run auto-deduction.' });
   }
 });
 

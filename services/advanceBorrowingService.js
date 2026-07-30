@@ -70,15 +70,18 @@ async function saveAdvanceDeposit(memberId, amount, options = {}) {
   member.advanceBalance = money(Number(member.advanceBalance || 0) + normalized);
   await member.save();
 
-  const { creditDeposit } = require('./bankLedgerService');
-  const bankLedger = await creditDeposit({
-    type: 'deposit',
-    amount: normalized,
-    referenceType: 'Deposit',
-    referenceId: deposit._id,
-    note: `Advance deposit: ${member.name}`,
-    createdBy: options.recordedBy || 'Cashier',
-  });
+  let bankLedger = null;
+  if (!options.skipBankCredit) {
+    const { creditDeposit } = require('./bankLedgerService');
+    bankLedger = await creditDeposit({
+      type: 'deposit',
+      amount: normalized,
+      referenceType: 'Deposit',
+      referenceId: deposit._id,
+      note: `Advance deposit: ${member.name}`,
+      createdBy: options.recordedBy || 'Cashier',
+    });
+  }
 
   return {
     deposit,
@@ -483,6 +486,7 @@ async function repayUnpaidContribution(contributionId, {
   amount = null,
   recordedBy = 'Cashier',
   notes = '',
+  skipBankCredit = false,
 } = {}) {
   const contribution = await InvestmentContribution.findById(contributionId)
     .populate('member', 'name email');
@@ -523,14 +527,17 @@ async function repayUnpaidContribution(contributionId, {
   member.savings = money(Number(member.savings || 0) + payAmount);
   await member.save();
 
-  const bankLedger = await tryCredit({
-    type: 'deposit',
-    amount: payAmount,
-    referenceType: 'InvestmentContribution',
-    referenceId: contribution._id,
-    note: `Unpaid contribution repayment: ${member.name}`,
-    createdBy: recordedBy,
-  });
+  let bankLedger = null;
+  if (!skipBankCredit) {
+    bankLedger = await tryCredit({
+      type: 'deposit',
+      amount: payAmount,
+      referenceType: 'InvestmentContribution',
+      referenceId: contribution._id,
+      note: `Unpaid contribution repayment: ${member.name}`,
+      createdBy: recordedBy,
+    });
+  }
 
   contribution.unpaidAmount = money(Math.max(0, due - payAmount));
   contribution.paidFromSavings = money(Number(contribution.paidFromSavings || 0) + payAmount);

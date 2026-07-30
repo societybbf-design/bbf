@@ -17,7 +17,7 @@ function money(value) {
 }
 
 async function getDuesAlert(memberData = {}, now = new Date()) {
-  const dueDay = 10;
+  const dueDay = 15;
   const yearMonth = yearMonthFromDate(now);
   const memberId = memberData.memberId || memberData.member?._id || memberData._id;
 
@@ -231,29 +231,32 @@ async function saveDeposit(memberId, amount, options = {}) {
 
   let bankLedger = null;
   let ledgerWarning = null;
-  try {
-    const { creditDeposit } = require('./bankLedgerService');
-    bankLedger = await creditDeposit({
-      type: 'deposit',
-      amount: total,
-      referenceType: 'Deposit',
-      referenceId: (deposit || advanceDeposit)?._id,
-      note: surplus > 0 && towardTarget > 0
-        ? `Member deposit: ${updatedMember.name} (${yearMonth}) — ${formatMoney(towardTarget, 2)} fixed + ${formatMoney(surplus, 2)} advance`
-        : surplus > 0
-          ? `Member advance surplus: ${updatedMember.name} (${yearMonth})`
-          : `Member deposit: ${updatedMember.name} (${yearMonth})`,
-      createdBy: recordedBy || 'Admin',
-      paymentChannel: paymentMethod,
-      paymentReference,
-    });
-  } catch (error) {
-    console.error('[saveDeposit] bank ledger credit failed:', error.message);
-    ledgerWarning = error.message;
+  if (!options.skipBankCredit) {
+    try {
+      const { creditDeposit } = require('./bankLedgerService');
+      bankLedger = await creditDeposit({
+        type: 'deposit',
+        amount: total,
+        referenceType: 'Deposit',
+        referenceId: (deposit || advanceDeposit)?._id,
+        note: surplus > 0 && towardTarget > 0
+          ? `Member deposit: ${updatedMember.name} (${yearMonth}) — ${formatMoney(towardTarget, 2)} fixed + ${formatMoney(surplus, 2)} advance`
+          : surplus > 0
+            ? `Member advance surplus: ${updatedMember.name} (${yearMonth})`
+            : `Member deposit: ${updatedMember.name} (${yearMonth})`,
+        createdBy: recordedBy || 'Admin',
+        paymentChannel: paymentMethod,
+        paymentReference,
+      });
+    } catch (error) {
+      console.error('[saveDeposit] bank ledger credit failed:', error.message);
+      ledgerWarning = error.message;
+    }
   }
 
   const primaryDeposit = deposit || advanceDeposit;
-  void (async () => {
+  if (!options.skipBankCredit) {
+    void (async () => {
     try {
       const { notifyDepositRecorded } = require('./financialNotificationService');
       const { recordAdminActivity } = require('./activityLogService');
@@ -284,6 +287,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       console.warn('[saveDeposit] notification/audit failed:', notifyError.message);
     }
   })();
+  }
 
   return {
     deposit: primaryDeposit,

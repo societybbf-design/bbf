@@ -1801,7 +1801,7 @@
       <section class="page-section" data-page-section="settings">
       <section class="panel-card card-form-wide">
         <h2 data-i18n="admin.sections.monthWiseTarget">Month-wise fixed contribution target</h2>
-        <p class="table-subtitle">Set the mandatory deposit for each calendar month. Member deposits are recorded only by the Cashier. Amounts above the target go to Advance; shortfalls are unpaid dues.</p>
+        <p class="table-subtitle">Set the mandatory deposit for each calendar month (January–December can differ). Member deposits are recorded only by the Cashier. Amounts above the target go to Advance; shortfalls are unpaid dues until the 15th (auto-deduct from Advance when funded).</p>
         <form id="monthlyTargetForm" class="deposit-form">
           <div class="form-row-2">
             <div class="form-group">
@@ -1829,6 +1829,28 @@
         <div id="activeMonthTargetBox" class="panel-card u-mt-1">
           <p class="table-subtitle">Loading active month target…</p>
         </div>
+        <section class="panel-card u-mt-1" id="yearTargetPlanSection">
+          <h3>Year plan — month-by-month targets</h3>
+          <p class="table-subtitle">Set a different fixed amount for each month of the year. Leave blank to skip a month.</p>
+          <div class="form-row-2 u-mb-1">
+            <div class="form-group">
+              <label>Year
+                <select id="yearTargetPlanYear"></select>
+              </label>
+            </div>
+            <div class="form-group" style="align-self:end">
+              <button type="button" class="secondary-btn" id="yearTargetPlanReloadBtn">Reload year</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Month</th><th>Target (৳)</th><th>Status</th></tr></thead>
+              <tbody id="yearTargetPlanBody"><tr><td colspan="3">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <button type="button" class="primary-btn u-mt-1" id="yearTargetPlanSaveBtn">Save year plan</button>
+          <p id="yearTargetPlanMessage" class="message"></p>
+        </section>
         <div class="table-wrapper u-mt-1">
           <table class="data-table">
             <thead><tr><th data-i18n="table.month">Month</th><th data-i18n="table.target">Target</th><th data-i18n="table.setBy">Set by</th><th data-i18n="table.notes">Notes</th></tr></thead>

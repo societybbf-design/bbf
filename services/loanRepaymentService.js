@@ -381,7 +381,9 @@ async function settleLoanFundingOnRepayment(loan, repaymentAmount, reviewedBy = 
   };
 }
 
-async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Admin') {
+async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Admin', {
+  skipBankCredit = false,
+} = {}) {
   const outstandingBalance = getLoanOutstandingBalance(loan);
   const pendingOthers = await getPendingRepaymentAmount(loan._id, repayment._id);
   const availableToPay = Math.max(0, outstandingBalance - pendingOthers);
@@ -418,21 +420,23 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
   await repayment.save();
 
   let bankLedger = null;
-  try {
-    const { creditInbound } = require('./bankLedgerService');
-    bankLedger = await creditInbound({
-      type: 'loan_repayment',
-      amount: Number(repayment.amount),
-      referenceType: 'LoanRepayment',
-      referenceId: repayment._id,
-      note: `Loan repayment ${repayment.receiptNumber || repayment._id} · ${member?.name || 'member'}`,
-      createdBy: reviewedBy,
-      paymentChannel: repayment.paymentMethod === 'cash'
-        ? 'cash'
-        : (repayment.paymentMethod === 'bank_transfer' ? 'bank' : (repayment.paymentMethod === 'mobile_banking' ? 'mfs' : '')),
-    });
-  } catch (error) {
-    console.warn('[applyApprovedRepayment] ledger credit failed:', error.message);
+  if (!skipBankCredit) {
+    try {
+      const { creditInbound } = require('./bankLedgerService');
+      bankLedger = await creditInbound({
+        type: 'loan_repayment',
+        amount: Number(repayment.amount),
+        referenceType: 'LoanRepayment',
+        referenceId: repayment._id,
+        note: `Loan repayment ${repayment.receiptNumber || repayment._id} · ${member?.name || 'member'}`,
+        createdBy: reviewedBy,
+        paymentChannel: repayment.paymentMethod === 'cash'
+          ? 'cash'
+          : (repayment.paymentMethod === 'bank_transfer' ? 'bank' : (repayment.paymentMethod === 'mobile_banking' ? 'mfs' : '')),
+      });
+    } catch (error) {
+      console.warn('[applyApprovedRepayment] ledger credit failed:', error.message);
+    }
   }
 
   // Refund lenders / replenish reserve when this loan was funded via advance or reserve.
@@ -486,6 +490,7 @@ async function recordAdminLoanRepayment({
   paymentMethod = 'cash',
   adminNote = '',
   reviewedBy = 'Admin',
+  skipBankCredit = false,
 }) {
   const member = await User.findOne({ _id: memberId, role: 'member' });
   if (!member) {
@@ -545,7 +550,7 @@ async function recordAdminLoanRepayment({
     status: 'pending',
   });
 
-  const applied = await applyApprovedRepayment(repayment, loan, member, reviewedBy);
+  const applied = await applyApprovedRepayment(repayment, loan, member, reviewedBy, { skipBankCredit });
   const fundingSettlement = applied?.fundingSettlement || null;
 
   const summary = await getMemberOutstandingSummary(memberId);
