@@ -15,8 +15,8 @@ function computeNetProfitLoss({ saleAmount, totalInvestment, additionalCosts, ta
 }
 
 function outcomeFromNet(net) {
-  if (net > 0) return 'profit';
-  if (net < 0) return 'loss';
+  if (net > 0.001) return 'profit';
+  if (net < -0.001) return 'loss';
   return 'break_even';
 }
 
@@ -52,24 +52,9 @@ function projectLabelFor(investment) {
   return investment.investmentCode || 'Project';
 }
 
-async function nextSaleCode() {
-  const year = new Date().getFullYear();
-  const prefix = `SALE-${year}-`;
-  const latest = await Sale.findOne({ saleCode: { $regex: `^${prefix}` } })
-    .sort({ saleCode: -1 })
-    .select('saleCode')
-    .lean();
-
-  let seq = 1;
-  if (latest?.saleCode) {
-    const part = Number(String(latest.saleCode).split('-').pop());
-    if (Number.isFinite(part)) seq = part + 1;
-  }
-  return `${prefix}${String(seq).padStart(4, '0')}`;
-}
-
 /**
  * Auto-fetch historical investments for the project/property tied to an investment code.
+ * Active totals drive Sell Project net math; closed/sold history is included for transparency.
  */
 async function lookupProjectInvestments(investmentCode) {
   const investment = await getInvestmentByCode(investmentCode);
@@ -82,7 +67,7 @@ async function lookupProjectInvestments(investmentCode) {
   const filter = buildProjectFilter(investment);
   const related = await Investment.find(filter)
     .sort({ createdAt: 1 })
-    .select('investmentCode amount status location sector investorName partner createdAt');
+    .select('investmentCode amount status location sector investorName partner createdAt societyOwnershipPct investorOwnershipPct');
 
   const lines = related.map((item) => ({
     investment: item._id,
@@ -92,7 +77,11 @@ async function lookupProjectInvestments(investmentCode) {
     createdAt: item.createdAt,
   }));
 
+  const activeLines = lines.filter((line) => line.status === 'active');
   const totalInvestment = money(lines.reduce((sum, line) => sum + Number(line.amount || 0), 0));
+  const activeTotalInvestment = money(
+    activeLines.reduce((sum, line) => sum + Number(line.amount || 0), 0)
+  );
 
   return {
     primary: {
@@ -104,13 +93,24 @@ async function lookupProjectInvestments(investmentCode) {
       amount: money(investment.amount),
       status: investment.status,
       dateOfBirth: investment.dateOfBirth,
+      societyOwnershipPct: investment.societyOwnershipPct,
+      investorOwnershipPct: investment.investorOwnershipPct,
     },
     projectLabel: projectLabelFor(investment),
-    totalInvestment,
+    /** @deprecated prefer activeTotalInvestment for sell math */
+    totalInvestment: activeTotalInvestment > 0 ? activeTotalInvestment : totalInvestment,
+    activeTotalInvestment,
+    historicalTotalInvestment: totalInvestment,
+    activeCount: activeLines.length,
     investments: lines,
+    canSell: activeLines.length > 0 && investment.status === 'active',
   };
 }
 
+/**
+ * Legacy sales endpoint — delegates to liquidateProject so member splits,
+ * ledger credits/debits, and Sale list stay consistent with Sell Product UI.
+ */
 async function createSale({
   investmentCode,
   productName = '',
@@ -120,93 +120,32 @@ async function createSale({
   notes = '',
   recordedBy = 'Admin',
 }) {
-  const saleAmt = money(saleAmount);
-  const costs = money(additionalCosts);
-  const taxAmt = money(tax);
-
-  if (saleAmt < 0) {
-    const error = new Error('Sale amount cannot be negative.');
-    error.status = 400;
-    throw error;
-  }
-  if (costs < 0 || taxAmt < 0) {
-    const error = new Error('Additional costs and tax cannot be negative.');
-    error.status = 400;
-    throw error;
-  }
-
   const project = await lookupProjectInvestments(investmentCode);
-  const totalInvestment = money(project.totalInvestment);
-  const netProfitLoss = computeNetProfitLoss({
-    saleAmount: saleAmt,
-    totalInvestment,
-    additionalCosts: costs,
-    tax: taxAmt,
-  });
-  const outcomeType = outcomeFromNet(netProfitLoss);
-  const saleCode = await nextSaleCode();
-
-  const sale = await Sale.create({
-    saleCode,
-    productName: String(productName || '').trim() || project.projectLabel,
-    projectLabel: project.projectLabel,
-    primaryInvestment: project.primary.id,
-    investmentCode: project.primary.investmentCode,
-    investorName: project.primary.investorName,
-    location: project.primary.location,
-    sector: project.primary.sector,
-    saleAmount: saleAmt,
-    additionalCosts: costs,
-    tax: taxAmt,
-    totalInvestment,
-    investmentLines: project.investments.map((line) => ({
-      investment: line.investment,
-      investmentCode: line.investmentCode,
-      amount: line.amount,
-    })),
-    netProfitLoss,
-    outcomeType,
-    notes: String(notes || '').trim(),
-    recordedBy: String(recordedBy || 'Admin').trim(),
-  });
-
-  // Reflect sale outcome on the primary investment without redistributing member profits
-  const primary = await Investment.findById(project.primary.id);
-  if (primary && primary.status === 'active') {
-    primary.status = 'sold';
-    primary.saleAmount = saleAmt;
-    primary.outcomeType = outcomeType === 'break_even' ? 'profit' : outcomeType;
-    primary.soldAt = new Date();
-    if (!primary.notes) {
-      primary.notes = `Sold via ${saleCode}`;
-    }
-    await primary.save();
+  if (!project.canSell) {
+    const error = new Error('No active investments available to sell for this project.');
+    error.status = 400;
+    throw error;
   }
 
-  let bankLedger = null;
-  let ledgerWarning = null;
-  if (saleAmt > 0) {
-    try {
-      const { creditInbound } = require('./bankLedgerService');
-      bankLedger = await creditInbound({
-        type: 'project_sale',
-        amount: saleAmt,
-        referenceType: 'Sale',
-        referenceId: sale._id,
-        note: `Project sale/liquidation ${saleCode}: ${sale.productName || sale.projectLabel}`,
-        createdBy: String(recordedBy || 'Admin').trim(),
-      });
-    } catch (error) {
-      console.error('[createSale] bank ledger credit failed:', error.message);
-      ledgerWarning = error.message;
-    }
-  }
+  const { liquidateProject } = require('./projectFinanceService');
+  const result = await liquidateProject({
+    investmentId: project.primary.id,
+    saleAmount,
+    additionalCosts,
+    tax,
+    notes,
+    recordedBy,
+    productName,
+  });
 
   return {
-    sale,
-    bankLedger,
-    bookBalance: bankLedger?.ledger?.bookBalance ?? null,
-    ledgerWarning,
+    sale: result.sale,
+    investment: result.investment,
+    settlement: result.settlement,
+    bankLedger: result.bankLedger,
+    bookBalance: result.bankLedger?.ledger?.bookBalance ?? null,
+    ledgerWarning: null,
+    message: result.message,
   };
 }
 
@@ -229,6 +168,7 @@ async function getSaleById(id) {
 module.exports = {
   money,
   computeNetProfitLoss,
+  outcomeFromNet,
   lookupProjectInvestments,
   createSale,
   listSales,
