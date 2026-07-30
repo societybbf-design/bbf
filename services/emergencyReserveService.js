@@ -6,6 +6,7 @@ const EmergencyReserveFund = require('../models/EmergencyReserveFund');
 const InvestmentContribution = require('../models/InvestmentContribution');
 const { getLedger, debit: ledgerDebit, money } = require('./bankLedgerService');
 const { calculateMemberShares } = require('./profitService');
+const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -13,14 +14,17 @@ function httpError(message, status = 400) {
   return error;
 }
 
-async function ensureFund() {
-  let fund = await EmergencyReserveFund.findOne({ key: EmergencyReserveFund.FUND_KEY });
+async function ensureFund(session = null) {
+  let fund = await bindSession(
+    EmergencyReserveFund.findOne({ key: EmergencyReserveFund.FUND_KEY }),
+    session
+  );
   if (!fund) {
-    fund = await EmergencyReserveFund.create({
+    fund = await createWithSession(EmergencyReserveFund, {
       key: EmergencyReserveFund.FUND_KEY,
       balance: 0,
       entries: [],
-    });
+    }, session);
   }
   return fund;
 }
@@ -116,31 +120,35 @@ async function pushEntry(fund, {
   createdBy = 'Cashier',
   referenceType = '',
   referenceId = null,
+  adjustBalance = true,
+  session = null,
 }) {
   const normalized = money(amount);
-  if (direction === 'credit') {
-    fund.balance = money(Number(fund.balance || 0) + normalized);
-  } else {
-    if (normalized > money(fund.balance) + 0.001) {
-      throw httpError(
-        `Emergency reserve has only ${formatMoney(money(fund.balance), 2)} available.`
-      );
+  if (adjustBalance) {
+    if (direction === 'credit') {
+      fund.balance = money(Number(fund.balance || 0) + normalized);
+    } else {
+      if (normalized > money(fund.balance) + 0.001) {
+        throw httpError(
+          `Emergency reserve has only ${formatMoney(money(fund.balance), 2)} available.`
+        );
+      }
+      fund.balance = money(Math.max(0, Number(fund.balance || 0) - normalized));
     }
-    fund.balance = money(Math.max(0, Number(fund.balance || 0) - normalized));
   }
 
   fund.entries.push({
     type,
     direction,
     amount: normalized,
-    balanceAfter: fund.balance,
+    balanceAfter: money(fund.balance),
     note: note?.trim() || '',
     createdBy,
     referenceType,
     referenceId,
     createdAt: new Date(),
   });
-  await fund.save();
+  await fund.save(sessionOpt(session));
   return fund.entries[fund.entries.length - 1];
 }
 
@@ -150,6 +158,7 @@ async function pushEntry(fund, {
 async function allocateFromBookBalance(amount, {
   note = '',
   createdBy = 'Cashier',
+  session = null,
 } = {}) {
   const normalized = money(amount);
   if (!(normalized > 0)) {
@@ -166,7 +175,7 @@ async function allocateFromBookBalance(amount, {
     );
   }
 
-  const fund = await ensureFund();
+  const fund = await ensureFund(session);
   const ledgerResult = await ledgerDebit({
     type: 'reserve_allocation',
     amount: normalized,
@@ -174,6 +183,7 @@ async function allocateFromBookBalance(amount, {
     referenceId: fund._id,
     note: note?.trim() || `Allocated to Emergency / Reserve Fund`,
     createdBy,
+    session,
   });
 
   const entry = await pushEntry(fund, {
@@ -184,9 +194,10 @@ async function allocateFromBookBalance(amount, {
     createdBy,
     referenceType: 'BankLedger',
     referenceId: ledgerResult?.entry?._id || null,
+    session,
   });
 
-  const shares = await listMemberReserveShares(fund.balance);
+  const shares = session ? { shares: [] } : await listMemberReserveShares(fund.balance);
 
   return {
     fund: {
@@ -282,8 +293,8 @@ async function allocateToBookBalance(amount, {
   };
 }
 
-async function assertReserveBalance(amount) {
-  const fund = await ensureFund();
+async function assertReserveBalance(amount, session = null) {
+  const fund = await ensureFund(session);
   const normalized = money(amount);
   if (normalized > money(fund.balance) + 0.001) {
     throw httpError(
@@ -295,6 +306,7 @@ async function assertReserveBalance(amount) {
 
 /**
  * Debit the reserve pool (cash already earmarked from book when allocated).
+ * Uses atomic $inc so concurrent covers cannot overdraw the pool.
  */
 async function debitReserve(amount, {
   type = 'adjustment',
@@ -302,21 +314,45 @@ async function debitReserve(amount, {
   createdBy = 'Cashier',
   referenceType = '',
   referenceId = null,
+  session = null,
 } = {}) {
-  const fund = await assertReserveBalance(amount);
-  const entry = await pushEntry(fund, {
+  const normalized = money(amount);
+  if (!(normalized > 0)) {
+    throw httpError('Reserve debit amount must be greater than zero.');
+  }
+  await ensureFund(session);
+
+  const updated = await EmergencyReserveFund.findOneAndUpdate(
+    {
+      key: EmergencyReserveFund.FUND_KEY,
+      balance: { $gte: money(normalized - 0.001) },
+    },
+    {
+      $inc: { balance: -normalized },
+      $set: { updatedAt: new Date() },
+    },
+    sessionOpt(session, { new: true })
+  );
+  if (!updated) {
+    throw httpError('Emergency reserve has insufficient balance for this debit.');
+  }
+  updated.balance = money(updated.balance);
+
+  const entry = await pushEntry(updated, {
     type,
     direction: 'debit',
-    amount,
+    amount: normalized,
     note,
     createdBy,
     referenceType,
     referenceId,
+    adjustBalance: false,
+    session,
   });
   return {
-    fund,
+    fund: updated,
     entry,
-    balance: money(fund.balance),
+    balance: money(updated.balance),
   };
 }
 
@@ -331,13 +367,27 @@ async function creditReserve(amount, {
   createdBy = 'Cashier',
   referenceType = '',
   referenceId = null,
+  session = null,
 } = {}) {
   const normalized = money(amount);
   if (!(normalized > 0)) {
     throw httpError('Replenish amount must be greater than zero.');
   }
-  const fund = await ensureFund();
-  const entry = await pushEntry(fund, {
+  await ensureFund(session);
+  const updated = await EmergencyReserveFund.findOneAndUpdate(
+    { key: EmergencyReserveFund.FUND_KEY },
+    {
+      $inc: { balance: normalized },
+      $set: { updatedAt: new Date() },
+    },
+    sessionOpt(session, { new: true })
+  );
+  if (!updated) {
+    throw httpError('Emergency reserve fund is unavailable.', 500);
+  }
+  updated.balance = money(updated.balance);
+
+  const entry = await pushEntry(updated, {
     type,
     direction: 'credit',
     amount: normalized,
@@ -345,11 +395,13 @@ async function creditReserve(amount, {
     createdBy,
     referenceType,
     referenceId,
+    adjustBalance: false,
+    session,
   });
   return {
-    fund,
+    fund: updated,
     entry,
-    balance: money(fund.balance),
+    balance: money(updated.balance),
   };
 }
 

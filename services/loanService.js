@@ -8,9 +8,32 @@ const { createAdminNotification } = require('./adminNotificationService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { sendTransactionalEmail, generateLoanContractPdf, formatPaymentMethodLabel } = require('./notificationService');
 const { sendSms } = require('./smsService');
+const {
+  withMongoTransaction,
+  bindSession,
+  sessionOpt,
+  createWithSession,
+} = require('./mongoTransaction');
 
 const LOAN_LIMIT_RATIO = 0.8;
 const PAYMENT_METHODS = ['cash', 'bank_transfer', 'mobile_banking', 'check', 'other'];
+
+/** CEO PATCH may only move pending→approved|rejected, or approved→rejected. */
+const CEO_LOAN_STATUS_TRANSITIONS = {
+  pending: ['approved', 'rejected'],
+  approved: ['rejected'],
+};
+
+function money2(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+function httpLoanError(message, status = 400, extra = {}) {
+  const error = new Error(message);
+  error.status = status;
+  Object.assign(error, extra);
+  return error;
+}
 
 async function getMemberTotalDepositAmount(memberId) {
   const Deposit = require('../models/Deposit');
@@ -213,8 +236,8 @@ async function createLoanApplication({
     throw error;
   }
 
-  const normalizedAmount = Number(amount);
-  if (!normalizedAmount || normalizedAmount <= 0) {
+  const normalizedAmount = money2(parseLooseMoney(amount));
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
     const error = new Error('Loan amount must be greater than zero.');
     error.status = 400;
     throw error;
@@ -244,26 +267,34 @@ async function createLoanApplication({
   const isOverLimit = normalizedType === 'general'
     && exceedsAvailableGeneralLoan(normalizedAmount, eligibility.availableMaxLoan);
 
-  const loan = await LoanApplication.create({
-    member: memberId,
-    amount: normalizedAmount,
-    loanType: normalizedType,
-    reason: reason.trim(),
-    witnessName: witnessName.trim(),
-    witnessPhone: witnessPhone.trim(),
-    witnessRelation: witnessRelation?.trim() || '',
-    documents,
-    memberSavingsAtApply: eligibility.totalDepositAmount,
-    maxEligibleAmount: normalizedType === 'general' ? eligibility.theoreticalMaxLoan : 0,
-    status: isOverLimit ? 'rejected' : 'pending',
-    autoRejected: isOverLimit,
-    rejectionReason: isOverLimit
-      ? `Loan amount exceeds remaining general loan limit. Available: ${formatMoney(eligibility.availableMaxLoan, 2)} (80% of total deposits minus active general loans).`
-      : '',
-    adminNote: isOverLimit
-      ? 'Automatically rejected because requested amount is above the remaining 80% total-deposit loan limit.'
-      : '',
-  });
+  let loan;
+  try {
+    loan = await LoanApplication.create({
+      member: memberId,
+      amount: normalizedAmount,
+      loanType: normalizedType,
+      reason: reason.trim(),
+      witnessName: witnessName.trim(),
+      witnessPhone: witnessPhone.trim(),
+      witnessRelation: witnessRelation?.trim() || '',
+      documents,
+      memberSavingsAtApply: eligibility.totalDepositAmount,
+      maxEligibleAmount: normalizedType === 'general' ? eligibility.theoreticalMaxLoan : 0,
+      status: isOverLimit ? 'rejected' : 'pending',
+      autoRejected: isOverLimit,
+      rejectionReason: isOverLimit
+        ? `Loan amount exceeds remaining general loan limit. Available: ${formatMoney(eligibility.availableMaxLoan, 2)} (80% of total deposits minus active general loans).`
+        : '',
+      adminNote: isOverLimit
+        ? 'Automatically rejected because requested amount is above the remaining 80% total-deposit loan limit.'
+        : '',
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      throw httpLoanError('You already have a pending or approved loan application.', 400);
+    }
+    throw error;
+  }
 
   if (isOverLimit) {
     if (member.email) {
@@ -633,67 +664,175 @@ async function uploadSignedLoanContract(loanId, memberId, signedContractPath) {
   return loan;
 }
 
+/**
+ * Release pre-disburse advance/reserve allocations when an approved loan is rejected
+ * (or funding is otherwise abandoned) so lender advance and reserve are not orphaned.
+ */
+async function releaseLoanDisbursementFunding(loan, reviewedBy = 'Admin', session = null) {
+  const InternalBorrowing = require('../models/InternalBorrowing');
+  const { creditReserve } = require('./emergencyReserveService');
+
+  const openBorrowings = await bindSession(
+    InternalBorrowing.find({
+      loan: loan._id,
+      status: { $in: ['open', 'partial'] },
+    }),
+    session
+  );
+
+  for (const borrowing of openBorrowings) {
+    const outstanding = money2(
+      Number(borrowing.amount || 0) - Number(borrowing.amountSettled || 0)
+    );
+    if (outstanding > 0.001) {
+      const refunded = await User.findOneAndUpdate(
+        { _id: borrowing.lender },
+        { $inc: { advanceBalance: outstanding } },
+        sessionOpt(session, { new: true })
+      );
+      if (!refunded) {
+        throw httpLoanError('Unable to restore lender advance while releasing loan funding.', 409);
+      }
+    }
+    borrowing.status = 'cancelled';
+    borrowing.note = [
+      borrowing.note || '',
+      `Cancelled — loan funding released by ${reviewedBy}`,
+    ].filter(Boolean).join(' · ');
+    await borrowing.save(sessionOpt(session));
+  }
+
+  const reserveAllocated = money2(loan.fundingReserveAmount || 0);
+  if (reserveAllocated > 0.001) {
+    await creditReserve(reserveAllocated, {
+      type: 'adjustment',
+      note: `Released unused loan reserve funding · loan ${loan._id}`,
+      createdBy: reviewedBy,
+      referenceType: 'LoanApplication',
+      referenceId: loan._id,
+      session,
+    });
+  }
+
+  await LoanApplication.updateOne(
+    { _id: loan._id },
+    {
+      $set: {
+        fundingAdvanceAmount: 0,
+        fundingReserveAmount: 0,
+        fundingReserveOutstanding: 0,
+        fundingLenderName: '',
+        fundingSource: '',
+        updatedAt: new Date(),
+      },
+    },
+    sessionOpt(session)
+  );
+
+  loan.fundingAdvanceAmount = 0;
+  loan.fundingReserveAmount = 0;
+  loan.fundingReserveOutstanding = 0;
+  loan.fundingLenderName = '';
+  loan.fundingSource = '';
+}
+
 async function updateLoanApplicationStatus(loanId, status, adminNote = '', reviewedBy = 'Admin', paymentMethod = '') {
-  const allowedStatuses = ['pending', 'approved', 'rejected', 'disbursed'];
-  if (!allowedStatuses.includes(status)) {
-    const error = new Error('Invalid loan status.');
-    error.status = 400;
-    throw error;
+  if (status === 'disbursed') {
+    throw httpLoanError('Use the loan disbursement transfer action to send money to the member.');
+  }
+  if (!['approved', 'rejected'].includes(status)) {
+    throw httpLoanError(
+      'Invalid loan status. CEO may only approve or reject pending applications (or reject approved ones before disbursement).'
+    );
   }
 
   const loan = await LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' });
   if (!loan) {
-    const error = new Error('Loan application not found.');
-    error.status = 404;
-    throw error;
+    throw httpLoanError('Loan application not found.', 404);
   }
 
   if (loan.autoRejected) {
-    const error = new Error('This application was auto-rejected and cannot be updated.');
-    error.status = 400;
-    throw error;
+    throw httpLoanError('This application was auto-rejected and cannot be updated.');
   }
 
-  if (status === 'approved' || status === 'disbursed') {
-    if (loan.loanType === 'general') {
-      const eligibility = await buildMemberLoanEligibility(loan.member, { excludeLoanId: loan._id });
-      if (exceedsAvailableGeneralLoan(loan.amount, eligibility.availableMaxLoan)) {
-        const error = new Error(`Cannot approve: loan amount exceeds remaining general loan limit (${formatMoney(eligibility.availableMaxLoan, 2)}).`);
-        error.status = 400;
-        throw error;
-      }
-    }
+  if (['disbursed', 'completed'].includes(loan.status)) {
+    throw httpLoanError(
+      `Cannot change a ${loan.status} loan via CEO review. Disbursed loans are managed through repayment.`,
+      400
+    );
+  }
+
+  const allowedTargets = CEO_LOAN_STATUS_TRANSITIONS[loan.status] || [];
+  if (!allowedTargets.includes(status)) {
+    throw httpLoanError(
+      `Cannot move loan from "${loan.status}" to "${status}". Allowed: ${allowedTargets.join(', ') || 'none'}.`
+    );
   }
 
   if (status === 'approved') {
+    if (loan.loanType === 'general') {
+      const eligibility = await buildMemberLoanEligibility(loan.member, { excludeLoanId: loan._id });
+      if (exceedsAvailableGeneralLoan(loan.amount, eligibility.availableMaxLoan)) {
+        throw httpLoanError(
+          `Cannot approve: loan amount exceeds remaining general loan limit (${formatMoney(eligibility.availableMaxLoan, 2)}).`
+        );
+      }
+    }
     const normalizedPaymentMethod = paymentMethod?.trim() || loan.paymentMethod || '';
     if (!PAYMENT_METHODS.includes(normalizedPaymentMethod)) {
-      const error = new Error('Payment method is required when approving a loan.');
-      error.status = 400;
-      throw error;
+      throw httpLoanError('Payment method is required when approving a loan.');
     }
     loan.paymentMethod = normalizedPaymentMethod;
-    loan.approvedAt = new Date();
+    if (!loan.contractPath) {
+      await generateLoanContractForApplication(loan, loan.member, reviewedBy);
+    }
   }
 
-  if (status === 'disbursed') {
-    const error = new Error('Use the loan disbursement transfer action to send money to the member.');
-    error.status = 400;
-    throw error;
+  const fromStatuses = status === 'approved' ? ['pending'] : ['pending', 'approved'];
+  const setFields = {
+    status,
+    adminNote: adminNote?.trim() || loan.adminNote || '',
+    reviewedBy: reviewedBy?.trim() || 'Admin',
+    updatedAt: new Date(),
+  };
+  if (status === 'approved') {
+    setFields.paymentMethod = loan.paymentMethod;
+    setFields.approvedAt = new Date();
+    if (loan.contractPath) setFields.contractPath = loan.contractPath;
+    if (loan.contractGeneratedAt) setFields.contractGeneratedAt = loan.contractGeneratedAt;
   }
-
-  loan.status = status;
-  loan.adminNote = adminNote?.trim() || loan.adminNote || '';
-  loan.reviewedBy = reviewedBy?.trim() || 'Admin';
   if (status === 'rejected' && adminNote?.trim()) {
-    loan.rejectionReason = adminNote.trim();
+    setFields.rejectionReason = adminNote.trim();
   }
 
-  if (status === 'approved' && !loan.contractPath) {
-    await generateLoanContractForApplication(loan, loan.member, reviewedBy);
-  }
+  const claimed = await withMongoTransaction(async (session) => {
+    if (status === 'rejected' && loan.status === 'approved') {
+      const funded = money2(loan.fundingAdvanceAmount || 0) + money2(loan.fundingReserveAmount || 0);
+      if (funded > 0.001) {
+        await releaseLoanDisbursementFunding(loan, reviewedBy, session);
+      }
+    }
 
-  await loan.save();
+    const updated = await LoanApplication.findOneAndUpdate(
+      {
+        _id: loan._id,
+        status: { $in: fromStatuses },
+        autoRejected: { $ne: true },
+      },
+      { $set: setFields },
+      sessionOpt(session, { new: true })
+    );
+    if (!updated) {
+      throw httpLoanError(
+        'Loan status changed concurrently. Refresh and try again.',
+        409
+      );
+    }
+    return updated;
+  });
+
+  claimed.member = loan.member;
+  Object.assign(loan, claimed.toObject?.() || claimed);
 
   const member = loan.member;
   const paymentLabel = formatPaymentMethodLabel(loan.paymentMethod);
@@ -856,96 +995,129 @@ async function coverLoanDisbursementFromAdvance({
   createdBy = 'Cashier',
   note = '',
 } = {}) {
-  const loan = await LoanApplication.findById(loanId).populate('member', 'name email');
-  if (!loan) {
-    const error = new Error('Loan application not found.');
-    error.status = 404;
-    throw error;
-  }
-  if (loan.status !== 'approved') {
-    const error = new Error('Only approved loans can receive disbursement funding.');
-    error.status = 400;
-    throw error;
-  }
-
-  const snapshot = await getLoanDisbursementFundingSnapshot(loan);
-  if (!(snapshot.remainingToFund > 0.001)) {
-    const error = new Error('This loan is already fully funded. You can disburse it now.');
-    error.status = 400;
-    error.funding = snapshot;
-    throw error;
-  }
-
-  const payAmount = amount == null || amount === ''
-    ? snapshot.remainingToFund
-    : parseLooseMoney(amount);
-  if (!(payAmount > 0)) {
-    const error = new Error('Funding amount must be greater than zero.');
-    error.status = 400;
-    throw error;
-  }
-  if (payAmount > snapshot.remainingToFund + 0.001) {
-    const error = new Error(
-      `Amount exceeds remaining to fund of ${formatMoney(snapshot.remainingToFund, 2)}.`
+  return withMongoTransaction(async (session) => {
+    const loan = await bindSession(
+      LoanApplication.findById(loanId).populate('member', 'name email'),
+      session
     );
-    error.status = 400;
-    throw error;
-  }
+    if (!loan) {
+      throw httpLoanError('Loan application not found.', 404);
+    }
+    if (loan.status !== 'approved') {
+      throw httpLoanError('Only approved loans can receive disbursement funding.');
+    }
 
-  const lender = await User.findOne({ _id: lenderId, role: 'member', status: 'active' });
-  if (!lender) {
-    const error = new Error('Lender member not found or inactive.');
-    error.status = 404;
-    throw error;
-  }
-  const advanceAvail = Number(Number(lender.advanceBalance || 0).toFixed(2));
-  if (payAmount > advanceAvail + 0.001) {
-    const error = new Error(
-      `Lender advance balance insufficient. Available: ${formatMoney(advanceAvail, 2)}.`
+    const snapshot = await getLoanDisbursementFundingSnapshot(loan);
+    if (!(snapshot.remainingToFund > 0.001)) {
+      throw httpLoanError('This loan is already fully funded. You can disburse it now.', 400, {
+        funding: snapshot,
+      });
+    }
+
+    const payAmount = amount == null || amount === ''
+      ? snapshot.remainingToFund
+      : parseLooseMoney(amount);
+    if (!(payAmount > 0)) {
+      throw httpLoanError('Funding amount must be greater than zero.');
+    }
+    if (payAmount > snapshot.remainingToFund + 0.001) {
+      throw httpLoanError(
+        `Amount exceeds remaining to fund of ${formatMoney(snapshot.remainingToFund, 2)}.`
+      );
+    }
+
+    const lender = await bindSession(
+      User.findOne({ _id: lenderId, role: 'member', status: 'active' }),
+      session
     );
-    error.status = 400;
-    throw error;
-  }
+    if (!lender) {
+      throw httpLoanError('Lender member not found or inactive.', 404);
+    }
 
-  const borrowerId = loan.member?._id || loan.member;
-  lender.advanceBalance = Number((advanceAvail - payAmount).toFixed(2));
-  await lender.save();
+    const updatedLender = await User.findOneAndUpdate(
+      {
+        _id: lender._id,
+        role: 'member',
+        status: 'active',
+        advanceBalance: { $gte: money2(payAmount - 0.001) },
+      },
+      { $inc: { advanceBalance: -payAmount } },
+      sessionOpt(session, { new: true })
+    );
+    if (!updatedLender) {
+      const advanceAvail = money2(lender.advanceBalance || 0);
+      throw httpLoanError(
+        `Lender advance balance insufficient. Available: ${formatMoney(advanceAvail, 2)}.`
+      );
+    }
 
-  const InternalBorrowing = require('../models/InternalBorrowing');
-  const borrowing = await InternalBorrowing.create({
-    investment: null,
-    contribution: null,
-    loan: loan._id,
-    lender: lender._id,
-    lenderName: lender.name,
-    borrower: borrowerId,
-    borrowerName: loan.member?.name || 'Loan borrower',
-    amount: payAmount,
-    amountSettled: 0,
-    status: 'open',
-    note: note?.trim()
-      || `Internal borrow from ${lender.name} advance to fund loan disbursement for ${loan.member?.name || 'member'}`,
-    createdBy: String(createdBy || 'Cashier').trim(),
+    const borrowerId = loan.member?._id || loan.member;
+    const InternalBorrowing = require('../models/InternalBorrowing');
+    const borrowing = await createWithSession(InternalBorrowing, {
+      investment: null,
+      contribution: null,
+      loan: loan._id,
+      lender: lender._id,
+      lenderName: lender.name,
+      borrower: borrowerId,
+      borrowerName: loan.member?.name || 'Loan borrower',
+      amount: payAmount,
+      amountSettled: 0,
+      status: 'open',
+      note: note?.trim()
+        || `Internal borrow from ${lender.name} advance to fund loan disbursement for ${loan.member?.name || 'member'}`,
+      createdBy: String(createdBy || 'Cashier').trim(),
+    }, session);
+
+    const fundingLenderName = !loan.fundingLenderName
+      ? lender.name
+      : (String(loan.fundingLenderName).includes(lender.name)
+        ? loan.fundingLenderName
+        : `${loan.fundingLenderName}, ${lender.name}`);
+
+    const updatedLoan = await LoanApplication.findOneAndUpdate(
+      {
+        _id: loan._id,
+        status: 'approved',
+        $expr: {
+          $lte: [
+            {
+              $add: [
+                { $ifNull: ['$fundingAdvanceAmount', 0] },
+                { $ifNull: ['$fundingReserveAmount', 0] },
+                payAmount,
+              ],
+            },
+            { $add: ['$amount', 0.001] },
+          ],
+        },
+      },
+      {
+        $inc: { fundingAdvanceAmount: payAmount },
+        $set: {
+          fundingLenderName,
+          updatedAt: new Date(),
+        },
+      },
+      sessionOpt(session, { new: true })
+    );
+    if (!updatedLoan) {
+      throw httpLoanError(
+        'Unable to allocate advance funding (loan changed or would exceed amount). Refresh and retry.',
+        409
+      );
+    }
+    updatedLoan.member = loan.member;
+
+    const funding = await getLoanDisbursementFundingSnapshot(updatedLoan);
+    return {
+      mode: 'advance',
+      borrowing,
+      amountCovered: payAmount,
+      funding,
+      message: `Allocated ${formatMoney(payAmount, 2)} from ${lender.name}'s advance. Funded ${formatMoney(funding.fundedAmount, 2)} of ${formatMoney(funding.requiredAmount, 2)}. Remaining: ${formatMoney(funding.remainingToFund, 2)}.`,
+    };
   });
-
-  loan.fundingAdvanceAmount = Number(
-    (Number(loan.fundingAdvanceAmount || 0) + payAmount).toFixed(2)
-  );
-  if (!loan.fundingLenderName) {
-    loan.fundingLenderName = lender.name;
-  } else if (!String(loan.fundingLenderName).includes(lender.name)) {
-    loan.fundingLenderName = `${loan.fundingLenderName}, ${lender.name}`;
-  }
-  await loan.save();
-
-  const funding = await getLoanDisbursementFundingSnapshot(loan);
-  return {
-    mode: 'advance',
-    borrowing,
-    amountCovered: payAmount,
-    funding,
-    message: `Allocated ${formatMoney(payAmount, 2)} from ${lender.name}'s advance. Funded ${formatMoney(funding.fundedAmount, 2)} of ${formatMoney(funding.requiredAmount, 2)}. Remaining: ${formatMoney(funding.remainingToFund, 2)}.`,
-  };
 }
 
 /**
@@ -958,79 +1130,99 @@ async function coverLoanDisbursementFromReserve({
   createdBy = 'Cashier',
   note = '',
 } = {}) {
-  const loan = await LoanApplication.findById(loanId).populate('member', 'name email');
-  if (!loan) {
-    const error = new Error('Loan application not found.');
-    error.status = 404;
-    throw error;
-  }
-  if (loan.status !== 'approved') {
-    const error = new Error('Only approved loans can receive disbursement funding.');
-    error.status = 400;
-    throw error;
-  }
-
-  const snapshot = await getLoanDisbursementFundingSnapshot(loan);
-  if (!(snapshot.remainingToFund > 0.001)) {
-    const error = new Error('This loan is already fully funded. You can disburse it now.');
-    error.status = 400;
-    error.funding = snapshot;
-    throw error;
-  }
-
-  const payAmount = amount == null || amount === ''
-    ? Math.min(snapshot.remainingToFund, snapshot.reserveBalance)
-    : parseLooseMoney(amount);
-  if (!(payAmount > 0)) {
-    const error = new Error('Funding amount must be greater than zero.');
-    error.status = 400;
-    throw error;
-  }
-  if (payAmount > snapshot.remainingToFund + 0.001) {
-    const error = new Error(
-      `Amount exceeds remaining to fund of ${formatMoney(snapshot.remainingToFund, 2)}.`
+  return withMongoTransaction(async (session) => {
+    const loan = await bindSession(
+      LoanApplication.findById(loanId).populate('member', 'name email'),
+      session
     );
-    error.status = 400;
-    throw error;
-  }
-  if (payAmount > snapshot.reserveBalance + 0.001) {
-    const error = new Error(
-      `Emergency reserve has only ${formatMoney(snapshot.reserveBalance, 2)} available.`
+    if (!loan) {
+      throw httpLoanError('Loan application not found.', 404);
+    }
+    if (loan.status !== 'approved') {
+      throw httpLoanError('Only approved loans can receive disbursement funding.');
+    }
+
+    const snapshot = await getLoanDisbursementFundingSnapshot(loan);
+    if (!(snapshot.remainingToFund > 0.001)) {
+      throw httpLoanError('This loan is already fully funded. You can disburse it now.', 400, {
+        funding: snapshot,
+      });
+    }
+
+    const payAmount = amount == null || amount === ''
+      ? Math.min(snapshot.remainingToFund, snapshot.reserveBalance)
+      : parseLooseMoney(amount);
+    if (!(payAmount > 0)) {
+      throw httpLoanError('Funding amount must be greater than zero.');
+    }
+    if (payAmount > snapshot.remainingToFund + 0.001) {
+      throw httpLoanError(
+        `Amount exceeds remaining to fund of ${formatMoney(snapshot.remainingToFund, 2)}.`
+      );
+    }
+    if (payAmount > snapshot.reserveBalance + 0.001) {
+      throw httpLoanError(
+        `Emergency reserve has only ${formatMoney(snapshot.reserveBalance, 2)} available.`
+      );
+    }
+
+    const { debitReserve } = require('./emergencyReserveService');
+    const reserveResult = await debitReserve(payAmount, {
+      type: 'loan_cover',
+      note: note?.trim()
+        || `Emergency/Reserve allocated to fund loan disbursement · ${loan.member?.name || 'member'}`,
+      createdBy,
+      referenceType: 'LoanApplication',
+      referenceId: loan._id,
+      session,
+    });
+
+    const updatedLoan = await LoanApplication.findOneAndUpdate(
+      {
+        _id: loan._id,
+        status: 'approved',
+        $expr: {
+          $lte: [
+            {
+              $add: [
+                { $ifNull: ['$fundingAdvanceAmount', 0] },
+                { $ifNull: ['$fundingReserveAmount', 0] },
+                payAmount,
+              ],
+            },
+            { $add: ['$amount', 0.001] },
+          ],
+        },
+      },
+      {
+        $inc: {
+          fundingReserveAmount: payAmount,
+          fundingReserveOutstanding: payAmount,
+        },
+        $set: { updatedAt: new Date() },
+      },
+      sessionOpt(session, { new: true })
     );
-    error.status = 400;
-    throw error;
-  }
+    if (!updatedLoan) {
+      throw httpLoanError(
+        'Unable to allocate reserve funding (loan changed or would exceed amount). Refresh and retry.',
+        409
+      );
+    }
+    updatedLoan.member = loan.member;
 
-  const { debitReserve } = require('./emergencyReserveService');
-
-  const reserveResult = await debitReserve(payAmount, {
-    type: 'loan_cover',
-    note: note?.trim()
-      || `Emergency/Reserve allocated to fund loan disbursement · ${loan.member?.name || 'member'}`,
-    createdBy,
-    referenceType: 'LoanApplication',
-    referenceId: loan._id,
+    const funding = await getLoanDisbursementFundingSnapshot(updatedLoan);
+    return {
+      mode: 'reserve',
+      reserve: {
+        balance: reserveResult.balance,
+        entry: reserveResult.entry,
+      },
+      amountCovered: payAmount,
+      funding,
+      message: `Allocated ${formatMoney(payAmount, 2)} from Emergency / Reserve Fund. Funded ${formatMoney(funding.fundedAmount, 2)} of ${formatMoney(funding.requiredAmount, 2)}. Remaining: ${formatMoney(funding.remainingToFund, 2)}.`,
+    };
   });
-
-  loan.fundingReserveAmount = Number(
-    (Number(loan.fundingReserveAmount || 0) + payAmount).toFixed(2)
-  );
-  loan.fundingReserveOutstanding = Number(
-    (Number(loan.fundingReserveOutstanding || 0) + payAmount).toFixed(2)
-  );
-  await loan.save();
-
-  const funding = await getLoanDisbursementFundingSnapshot(loan);
-  return {
-    mode: 'reserve',
-    reserve: {
-      balance: reserveResult.balance,
-      entry: reserveResult.entry,
-    },
-    amountCovered: payAmount,
-    funding,
-    message: `Allocated ${formatMoney(payAmount, 2)} from Emergency / Reserve Fund. Funded ${formatMoney(funding.fundedAmount, 2)} of ${formatMoney(funding.requiredAmount, 2)}. Remaining: ${formatMoney(funding.remainingToFund, 2)}.`,
-  };
 }
 
 function resolveLoanFundingSourceLabel(loan) {
@@ -1055,7 +1247,7 @@ function resolveLoanFundingSourceLabel(loan) {
 
 /**
  * Finalize loan disbursement after advance and/or reserve funding is fully allocated.
- * Does not debit or credit society book balance.
+ * Atomic approved→disbursed claim inside withMongoTransaction. Does not touch society book balance.
  */
 async function disburseLoanApplication(loanId, {
   paymentMethod = '',
@@ -1066,129 +1258,173 @@ async function disburseLoanApplication(loanId, {
 } = {}) {
   const loan = await LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' });
   if (!loan) {
-    const error = new Error('Loan application not found.');
-    error.status = 404;
-    throw error;
+    throw httpLoanError('Loan application not found.', 404);
   }
 
   if (loan.autoRejected) {
-    const error = new Error('This application was auto-rejected and cannot be disbursed.');
-    error.status = 400;
-    throw error;
+    throw httpLoanError('This application was auto-rejected and cannot be disbursed.');
   }
 
   if (loan.status !== 'approved') {
-    const error = new Error('Only approved loans can be disbursed. Approve the loan first.');
-    error.status = 400;
-    throw error;
+    throw httpLoanError('Only approved loans can be disbursed. Approve the loan first.');
   }
 
   const normalizedPaymentMethod = paymentMethod?.trim() || loan.paymentMethod || '';
   if (!PAYMENT_METHODS.includes(normalizedPaymentMethod)) {
-    const error = new Error('Transfer method is required to disburse the loan.');
-    error.status = 400;
-    throw error;
+    throw httpLoanError('Transfer method is required to disburse the loan.');
   }
 
   const requested = String(fundingSource || '').toLowerCase();
   if (requested === 'bank') {
     const funding = await getLoanDisbursementFundingSnapshot(loan);
-    const error = new Error(
-      'Loans cannot be funded from society book balance. Fund via member advance or Emergency / Reserve Fund in the disbursement popup.'
+    throw httpLoanError(
+      'Loans cannot be funded from society book balance. Fund via member advance or Emergency / Reserve Fund in the disbursement popup.',
+      409,
+      {
+        funding: {
+          ...funding,
+          needsPopup: true,
+          message: 'Loans cannot be funded from society book balance. Fund via member advance or Emergency / Reserve Fund in the disbursement popup.',
+        },
+      }
     );
-    error.status = 409;
-    error.funding = {
-      ...funding,
-      needsPopup: true,
-      message: error.message,
-    };
-    throw error;
   }
 
-  const amount = Number(loan.amount || 0);
-  let workingLoan = loan;
-  let funding = await getLoanDisbursementFundingSnapshot(workingLoan);
-
-  // Optional convenience: request body fundingSource=reserve allocates any remaining amount from reserve.
+  // Optional convenience: allocate remaining from reserve before the atomic claim.
+  let funding = await getLoanDisbursementFundingSnapshot(loan);
   if (requested === 'reserve' && funding.remainingToFund > 0.001) {
     await coverLoanDisbursementFromReserve({
-      loanId: workingLoan._id,
+      loanId: loan._id,
       amount: funding.remainingToFund,
       createdBy: disbursedBy,
-      note: `Full remaining reserve allocation at disbursement · ${workingLoan.member?.name || 'member'}`,
+      note: `Full remaining reserve allocation at disbursement · ${loan.member?.name || 'member'}`,
     });
-    workingLoan = await LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' });
+  }
+
+  const result = await withMongoTransaction(async (session) => {
+    const workingLoan = await bindSession(
+      LoanApplication.findById(loanId).populate({ path: 'member', select: 'name email phone savings' }),
+      session
+    );
     if (!workingLoan) {
-      const error = new Error('Loan application not found after reserve funding.');
-      error.status = 404;
-      throw error;
+      throw httpLoanError('Loan application not found.', 404);
     }
+    if (workingLoan.status !== 'approved') {
+      throw httpLoanError('Only approved loans can be disbursed. Approve the loan first.');
+    }
+
     funding = await getLoanDisbursementFundingSnapshot(workingLoan);
-  }
+    if (!funding.canDisburseDirectly || funding.remainingToFund > 0.001) {
+      throw httpLoanError(
+        `Loan is not fully funded. Allocate ${formatMoney(funding.remainingToFund, 2)} from member advance or Emergency / Reserve Fund before disbursing.`,
+        409,
+        {
+          funding: {
+            ...funding,
+            needsPopup: true,
+            message: `Loan is not fully funded. Allocate ${formatMoney(funding.remainingToFund, 2)} from member advance or Emergency / Reserve Fund before disbursing.`,
+          },
+        }
+      );
+    }
 
-  if (!funding.canDisburseDirectly || funding.remainingToFund > 0.001) {
-    const error = new Error(
-      `Loan is not fully funded. Allocate ${formatMoney(funding.remainingToFund, 2)} from member advance or Emergency / Reserve Fund before disbursing.`
+    const amount = money2(workingLoan.amount || 0);
+    const advanceCovered = money2(workingLoan.fundingAdvanceAmount || 0);
+    const reserveCovered = money2(workingLoan.fundingReserveAmount || 0);
+    let persistedSource = 'advance';
+    if (advanceCovered > 0.001 && reserveCovered > 0.001) {
+      persistedSource = 'mixed';
+    } else if (reserveCovered > 0.001 && !(advanceCovered > 0.001)) {
+      persistedSource = 'reserve';
+    } else if (advanceCovered > 0.001) {
+      persistedSource = 'advance';
+    } else {
+      throw httpLoanError(
+        'Loan funding is incomplete. Allocate from member advance or Emergency / Reserve Fund first.',
+        409,
+        { funding: { ...funding, needsPopup: true, message: 'Loan funding is incomplete. Allocate from member advance or Emergency / Reserve Fund first.' } }
+      );
+    }
+
+    const fundingNote = persistedSource === 'reserve'
+      ? 'Funded from Emergency / Reserve Fund'
+      : persistedSource === 'advance'
+        ? `Funded via internal borrow${workingLoan.fundingLenderName ? ` from ${workingLoan.fundingLenderName}` : ''}`
+        : `Mixed funding · advance ${formatMoney(advanceCovered, 2)} · reserve ${formatMoney(reserveCovered, 2)}`;
+
+    const disbursementNoteCombined = [
+      disbursementNote?.trim() || '',
+      fundingNote,
+    ].filter(Boolean).join(' · ');
+
+    // Atomic claim: only one concurrent disburse can win.
+    const claimed = await LoanApplication.findOneAndUpdate(
+      {
+        _id: workingLoan._id,
+        status: 'approved',
+        $expr: {
+          $lte: [
+            {
+              $subtract: [
+                '$amount',
+                {
+                  $add: [
+                    { $ifNull: ['$fundingAdvanceAmount', 0] },
+                    { $ifNull: ['$fundingReserveAmount', 0] },
+                  ],
+                },
+              ],
+            },
+            0.001,
+          ],
+        },
+      },
+      {
+        $set: {
+          status: 'disbursed',
+          paymentMethod: normalizedPaymentMethod,
+          disbursedAt: new Date(),
+          disbursedBy: disbursedBy?.trim() || 'Admin',
+          disbursementReference: transferReference?.trim() || '',
+          disbursementNote: disbursementNoteCombined,
+          fundingSource: persistedSource,
+          outstandingBalance: amount,
+          totalRepaid: 0,
+          repaymentStatus: 'active',
+          updatedAt: new Date(),
+        },
+      },
+      sessionOpt(session, { new: true })
     );
-    error.status = 409;
-    error.funding = {
-      ...funding,
-      needsPopup: true,
-      message: error.message,
+
+    if (!claimed) {
+      throw httpLoanError(
+        'Loan was already disbursed or funding changed. Refresh the queue and try again.',
+        409
+      );
+    }
+    claimed.member = workingLoan.member;
+
+    const { ensureFund, money: reserveMoney } = require('./emergencyReserveService');
+    const fund = await ensureFund(session);
+    const reserveBalance = reserveMoney(fund.balance);
+
+    return {
+      loan: claimed,
+      fundingSource: persistedSource,
+      fundingSourceLabel: resolveLoanFundingSourceLabel(claimed),
+      reserveBalance,
+      bookBalance: null,
     };
-    throw error;
-  }
+  });
 
-  const advanceCovered = Number(workingLoan.fundingAdvanceAmount || 0);
-  const reserveCovered = Number(workingLoan.fundingReserveAmount || 0);
-  let persistedSource = 'advance';
-  if (advanceCovered > 0.001 && reserveCovered > 0.001) {
-    persistedSource = 'mixed';
-  } else if (reserveCovered > 0.001 && !(advanceCovered > 0.001)) {
-    persistedSource = 'reserve';
-  } else if (advanceCovered > 0.001) {
-    persistedSource = 'advance';
-  } else {
-    const error = new Error(
-      'Loan funding is incomplete. Allocate from member advance or Emergency / Reserve Fund first.'
-    );
-    error.status = 409;
-    error.funding = { ...funding, needsPopup: true, message: error.message };
-    throw error;
-  }
-
-  const fundingNote = persistedSource === 'reserve'
-    ? 'Funded from Emergency / Reserve Fund'
-    : persistedSource === 'advance'
-      ? `Funded via internal borrow${workingLoan.fundingLenderName ? ` from ${workingLoan.fundingLenderName}` : ''}`
-      : `Mixed funding · advance ${formatMoney(advanceCovered, 2)} · reserve ${formatMoney(reserveCovered, 2)}`;
-
-  workingLoan.status = 'disbursed';
-  workingLoan.paymentMethod = normalizedPaymentMethod;
-  workingLoan.disbursedAt = new Date();
-  workingLoan.disbursedBy = disbursedBy?.trim() || 'Admin';
-  workingLoan.disbursementReference = transferReference?.trim() || '';
-  workingLoan.disbursementNote = [
-    disbursementNote?.trim() || '',
-    fundingNote,
-  ].filter(Boolean).join(' · ');
-  workingLoan.fundingSource = persistedSource;
-  workingLoan.outstandingBalance = amount;
-  workingLoan.totalRepaid = 0;
-  workingLoan.repaymentStatus = 'active';
-  // Flexible open repayment: no installment schedule is generated on disbursal.
-  await workingLoan.save();
-
+  const workingLoan = result.loan;
   const member = workingLoan.member;
   const paymentLabel = formatPaymentMethodLabel(workingLoan.paymentMethod);
   const referenceNote = workingLoan.disbursementReference ? ` Reference: ${workingLoan.disbursementReference}.` : '';
-  const sourceLabel = resolveLoanFundingSourceLabel(workingLoan);
+  const sourceLabel = result.fundingSourceLabel;
   const sourceNote = ` (${sourceLabel})`;
   const transferMessage = `Dear ${member.name}, your ${workingLoan.loanType} loan of ${formatMoney(Number(workingLoan.amount), 2)} has been transferred to you via ${paymentLabel}${sourceNote}.${referenceNote}`;
-
-  const { ensureFund, money: reserveMoney } = require('./emergencyReserveService');
-  const fund = await ensureFund();
-  const reserveBalance = reserveMoney(fund.balance);
 
   if (member?.email) {
     await sendTransactionalEmail({
@@ -1215,14 +1451,9 @@ async function disburseLoanApplication(loanId, {
     relatedModel: 'LoanApplication',
   });
 
-  return {
-    loan: workingLoan,
-    fundingSource: persistedSource,
-    fundingSourceLabel: sourceLabel,
-    reserveBalance,
-    bookBalance: null,
-  };
+  return result;
 }
+
 
 module.exports = {
   LOAN_LIMIT_RATIO,
@@ -1245,6 +1476,7 @@ module.exports = {
   previewLoanDisbursement,
   coverLoanDisbursementFromAdvance,
   coverLoanDisbursementFromReserve,
+  releaseLoanDisbursementFunding,
   resolveLoanFundingSourceLabel,
   parseLooseMoney,
   disburseLoanApplication,

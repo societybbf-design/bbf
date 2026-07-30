@@ -59,7 +59,10 @@ test('loan disburse never debits or credits society book balance', () => {
   assert.doesNotMatch(advanceCover, /creditInbound/);
   assert.doesNotMatch(reserveCover, /creditInbound/);
   assert.match(reserveCover, /type:\s*'loan_cover'/);
+  assert.match(advanceCover, /withMongoTransaction/);
+  assert.match(reserveCover, /withMongoTransaction/);
   assert.match(loanServiceJs, /cannot be funded from society book balance/i);
+  assert.match(loanServiceJs, /async function disburseLoanApplication[\s\S]*withMongoTransaction/);
 });
 
 test('staff dashboard always opens external funding modal', () => {
@@ -168,8 +171,8 @@ test('loan repayment settles advance lenders and replenishes reserve', () => {
 });
 
 test('member dashboard shows funding source and repayment obligation', () => {
-  assert.match(memberJs, /Funded from/);
-  assert.match(memberJs, /repayment obligation/);
+  assert.match(memberJs, /Funding Source/);
+  assert.match(memberJs, /Remaining Due Balance/);
   assert.match(memberJs, /Internal borrow still open/);
   assert.match(memberJs, /fundingSourceLabel/);
 });
