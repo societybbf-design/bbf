@@ -13,6 +13,7 @@ const AUDIT_CATEGORIES = Object.freeze([
   { key: 'deposits', label: 'Deposits' },
   { key: 'withdrawals', label: 'Withdrawals' },
   { key: 'refunds', label: 'Refunds' },
+  { key: 'advance_refunds', label: 'Advance refunds (lender)' },
   { key: 'project_returns', label: 'Project returns / sales' },
   { key: 'project_payouts', label: 'Project payouts' },
   { key: 'profit_distribution', label: 'Profit distributions' },
@@ -134,6 +135,32 @@ function refundToTransaction(refund) {
   };
 }
 
+/**
+ * Borrow repayments that instantly credit the original lender's advance balance.
+ * Included even when bank credit was skipped (loan path already booked cash once).
+ */
+function advanceRefundDepositToTransaction(deposit) {
+  const member = deposit.member || {};
+  return {
+    id: String(deposit._id),
+    source: 'deposit',
+    category: 'advance_refunds',
+    categoryLabel: CATEGORY_LABELS.advance_refunds,
+    type: 'borrow_repayment',
+    direction: 'in',
+    amount: money(deposit.amount),
+    balanceAfter: null,
+    description: deposit.notes
+      || `Advance refund / borrow repayment from ${member.name || 'member'}`,
+    referenceType: 'Deposit',
+    referenceId: String(deposit._id),
+    actor: deposit.recordedBy || 'Cashier',
+    partyName: member.name || '',
+    partyEmail: member.email || '',
+    occurredAt: deposit.createdAt,
+  };
+}
+
 function matchesCategory(transaction, category) {
   if (!category || category === 'all') return true;
   return transaction.category === category;
@@ -193,8 +220,9 @@ async function queryAuditTransactions({
     || Object.values(LEDGER_TYPE_TO_CATEGORY).includes(category);
   const includeWithdrawals = !category || category === 'all' || category === 'withdrawals';
   const includeRefunds = !category || category === 'all' || category === 'refunds';
+  const includeAdvanceRefunds = !category || category === 'all' || category === 'advance_refunds';
 
-  const [ledgerEntries, withdrawals, refunds, ledger] = await Promise.all([
+  const [ledgerEntries, withdrawals, refunds, advanceRefundDeposits, ledger] = await Promise.all([
     includeLedger
       ? BankLedgerEntry.find(createdAtFilter).sort({ createdAt: -1 }).lean()
       : [],
@@ -210,14 +238,23 @@ async function queryAuditTransactions({
         .sort({ updatedAt: -1 })
         .lean()
       : [],
+    includeAdvanceRefunds
+      ? Deposit.find({ type: 'borrow_repayment', ...createdAtFilter })
+        .populate('member', 'name email')
+        .sort({ createdAt: -1 })
+        .lean()
+      : [],
     ensureLedger(),
   ]);
 
-  let transactions = [
+  const allMapped = [
     ...ledgerEntries.map(ledgerEntryToTransaction),
     ...withdrawals.map(withdrawalToTransaction),
     ...refunds.map(refundToTransaction),
-  ]
+    ...advanceRefundDeposits.map(advanceRefundDepositToTransaction),
+  ];
+
+  let transactions = allMapped
     .filter((tx) => matchesCategory(tx, category))
     .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
 
@@ -237,13 +274,7 @@ async function queryAuditTransactions({
     },
     ledger: reconciliationState(ledger),
     summary: summarizeTransactions(
-      includeLedger || includeWithdrawals || includeRefunds
-        ? [
-          ...ledgerEntries.map(ledgerEntryToTransaction),
-          ...withdrawals.map(withdrawalToTransaction),
-          ...refunds.map(refundToTransaction),
-        ].filter((tx) => matchesCategory(tx, category))
-        : []
+      allMapped.filter((tx) => matchesCategory(tx, category))
     ),
     transactions,
     totalMatched,

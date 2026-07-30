@@ -386,8 +386,44 @@
       <section class="page-section" data-page-section="portfolio">
         <section class="panel-card">
           <h2>Portfolio Overview</h2>
-          <p class="table-subtitle">Track your savings and investment progress.</p>
+          <p class="table-subtitle">Track your savings, Advance Balance, and investment progress. When someone repays an advance you funded, the amount returns here automatically.</p>
+          <div class="member-self-profile-stats u-mb-1" id="portfolioAdvanceSummary">
+            <div class="member-self-stat">
+              <span>Savings</span>
+              <strong id="portfolioSavingsBalance">—</strong>
+            </div>
+            <div class="member-self-stat">
+              <span>Advance Balance</span>
+              <strong id="portfolioAdvanceBalance">—</strong>
+            </div>
+            <div class="member-self-stat">
+              <span>Profit</span>
+              <strong id="portfolioProfitBalance">—</strong>
+            </div>
+          </div>
           <div id="noticeBoard" class="member-roster-list"></div>
+        </section>
+
+        <section class="panel-card table-card-wide u-mt-1">
+          <h2>Advance funding &amp; internal borrows</h2>
+          <p class="table-subtitle">Amounts you lent from Advance Balance are refunded here the moment the borrower pays at the Cashier — no manual multi-step settlement.</p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Counterparty</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th>Outstanding</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.date">Date</th>
+                </tr>
+              </thead>
+              <tbody id="portfolioBorrowingsBody">
+                <tr><td colspan="6">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       </section>
 
@@ -586,7 +622,7 @@
 
         <section class="panel-card table-card-wide u-mt-1">
           <h2>Internal borrows (advance)</h2>
-          <p class="table-subtitle">When project shares are covered from another member’s advance, the borrow stays unpaid until Cashier settles repayment back to that lender.</p>
+          <p class="table-subtitle">When project shares or loan funding are covered from another member’s advance, Cashier records any custom repayment — the lender’s Advance Balance is refunded instantly and they are notified.</p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>
