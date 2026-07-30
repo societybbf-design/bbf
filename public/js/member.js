@@ -47,6 +47,7 @@ const memberEmail = document.getElementById('memberEmail');
 const memberRole = document.getElementById('memberRole');
 const memberSavings = document.getElementById('memberSavings');
 const memberProfit = document.getElementById('memberProfit');
+const memberTotalDepositAmount = document.getElementById('memberTotalDepositAmount');
 const investmentValue = document.getElementById('investmentValue');
 const totalWithdrawn = document.getElementById('totalWithdrawn');
 const totalMembers = document.getElementById('totalMembers');
@@ -578,6 +579,12 @@ async function loadFinancialData(userId) {
       totalMembers.textContent = totalMembersCount;
       investmentValue.textContent = `${formatMoney((data.totalInvestment || 0), 2)}`;
       totalWithdrawn.textContent = `${formatMoney((data.totalWithdrawn || 0), 2)}`;
+      if (memberTotalDepositAmount) {
+        const depositTotal = data.totalDepositAmount != null
+          ? Number(data.totalDepositAmount || 0)
+          : (data.deposits || []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        memberTotalDepositAmount.textContent = `${formatMoney(depositTotal, 2)}`;
+      }
       const monthlyProfit = data.monthlyProfit || 0;
       monthlyAllocation.textContent = `${formatMoney(monthlyProfit, 2)}`;
       memberProfit.textContent = `${formatMoney(Number(data.memberProfit || currentUser?.profit || 0), 2)}`;

@@ -829,6 +829,8 @@
     "loanSubmitted": "Loan application submitted. Admin has been notified.",
     "investmentValue": "Investment Value",
     "totalWithdrawn": "Total Withdrawn",
+    "totalDepositAmount": "Total Deposit Amount",
+    "lifetimeDeposits": "Lifetime deposits recorded",
     "mySavings": "My Savings",
     "myProfit": "My Profit",
     "notificationsClick": "Click \"View Notifications\" to load updates.",
