@@ -70,6 +70,8 @@ const memberDetailBody = document.getElementById('memberDetailBody');
 const withdrawalForm = document.getElementById('withdrawalForm');
 const withdrawalMessage = document.getElementById('withdrawalMessage');
 const withdrawalTableBody = document.getElementById('withdrawalTableBody');
+const refundRequestForm = document.getElementById('refundRequestForm');
+const refundRequestMessage = document.getElementById('refundRequestMessage');
 const refundTableBody = document.getElementById('refundTableBody');
 const sidebarMemberStatus = document.getElementById('sidebarMemberStatus');
 const accountStatus = document.getElementById('accountStatus');
@@ -381,10 +383,13 @@ function formatRefundStatusBadge(status = 'pending') {
   if (status === 'completed') {
     return '<span class="status-badge status-completed">Completed</span>';
   }
-  if (status === 'processing') {
-    return '<span class="status-badge status-pending">Processing</span>';
+  if (status === 'approved' || status === 'processing') {
+    return '<span class="status-badge status-pending">Approved — awaiting Cashier</span>';
   }
-  return '<span class="status-badge status-pending">Pending</span>';
+  if (status === 'rejected') {
+    return '<span class="status-badge status-fail">Rejected</span>';
+  }
+  return '<span class="status-badge status-pending">Pending CEO review</span>';
 }
 
 function formatLoanStatusBadge(status = 'pending') {
@@ -1283,6 +1288,49 @@ if (withdrawalForm) {
     } catch (error) {
       withdrawalMessage.classList.add('error');
       withdrawalMessage.textContent = 'Unable to submit request.';
+    }
+  });
+}
+
+if (refundRequestForm) {
+  refundRequestForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (refundRequestMessage) {
+      refundRequestMessage.textContent = '';
+      refundRequestMessage.classList.remove('success', 'error');
+    }
+    const formData = new FormData(refundRequestForm);
+    try {
+      const response = await fetch('/api/member/refunds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: Number(formData.get('amount')) || 0,
+          reason: formData.get('reason'),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        if (refundRequestMessage) {
+          refundRequestMessage.classList.add('error');
+          refundRequestMessage.textContent = data.error || 'Unable to submit refund request.';
+        }
+        return;
+      }
+      refundRequestForm.reset();
+      await loadRefunds();
+      if (typeof loadFinancialData === 'function' && currentUser?.id) {
+        await loadFinancialData(currentUser.id);
+      }
+      if (refundRequestMessage) {
+        refundRequestMessage.classList.add('success');
+        refundRequestMessage.textContent = 'Refund request submitted. Awaiting CEO review.';
+      }
+    } catch (error) {
+      if (refundRequestMessage) {
+        refundRequestMessage.classList.add('error');
+        refundRequestMessage.textContent = 'Unable to submit refund request.';
+      }
     }
   });
 }

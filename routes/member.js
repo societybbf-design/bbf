@@ -12,7 +12,7 @@ const {
 } = require('../services/memberExitService');
 const { getDuesAlert, getNotices } = require('../services/memberService');
 const { getLatestDistribution, getMemberProfitHistory } = require('../services/profitService');
-const { getRefundsByMember } = require('../services/refundService');
+const { getRefundsByMember, createMemberRefundRequest } = require('../services/refundService');
 const { generateInvestmentReceiptPdf } = require('../services/notificationService');
 const { requireActiveMember } = require('../middleware/memberAccess');
 const {
@@ -243,6 +243,19 @@ router.get('/refunds', async (req, res) => {
     return res.json({ refunds });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load refund history.' });
+  }
+});
+
+router.post('/refunds', async (req, res) => {
+  try {
+    const result = await createMemberRefundRequest({
+      memberId: req.session.user.id,
+      amount: req.body?.amount,
+      reason: req.body?.reason,
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to submit refund request.' });
   }
 });
 

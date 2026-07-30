@@ -850,28 +850,25 @@
         <!-- REFUNDS -->
         <div class="panel-card hidden" data-staff-view="refunds" id="moduleRefunds">
           <div class="panel-card-header">
-            <h2>Refunds</h2>
-            <p class="text-secondary">Create a refund for a member. Select the member, enter amount and reason.</p>
+            <h2>Refund Payouts</h2>
+            <p class="text-secondary">Pay CEO-approved member refund requests from the society bank/cash ledger. Only the Cashier can disburse funds.</p>
           </div>
-          <form id="cashierRefundForm" class="add-member-form">
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Member
-                  <select name="memberId" id="cashierRefundMember" required>
-                    <option value="">Select member…</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-group">
-                <label>Amount<input type="number" name="amount" min="0.01" step="0.01" required /></label>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Reason<input type="text" name="reason" placeholder="Optional reason" /></label>
-            </div>
-            <button type="submit" class="primary-btn">Create refund</button>
-            <p id="cashierRefundMessage" class="message"></p>
-          </form>
+          <div class="table-wrapper">
+            <table class="data-table table-cards">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th>Reason</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th>Payment</th>
+                  <th data-i18n="table.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cashierRefundsBody"><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p id="cashierRefundMessage" class="message"></p>
         </div>
 
         <!-- REPORTS -->

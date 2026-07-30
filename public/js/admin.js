@@ -3401,10 +3401,13 @@ function formatRefundStatusBadge(status = 'pending') {
   if (status === 'completed') {
     return '<span class="status-badge status-completed">Completed</span>';
   }
-  if (status === 'processing') {
-    return '<span class="status-badge status-pending">Processing</span>';
+  if (status === 'approved' || status === 'processing') {
+    return '<span class="status-badge status-pending">Approved — awaiting Cashier</span>';
   }
-  return '<span class="status-badge status-pending">Pending</span>';
+  if (status === 'rejected') {
+    return '<span class="status-badge status-fail">Rejected</span>';
+  }
+  return '<span class="status-badge status-pending">Pending CEO review</span>';
 }
 
 function buildMemberStatusControl(member = {}) {
@@ -3438,9 +3441,15 @@ function buildRefundHistoryRows(refunds = []) {
       <td>${refund.adminNote || '-'}</td>
       <td>${new Date(refund.createdAt).toLocaleString()}</td>
       <td>
-        ${refund.status === 'pending' ? `<button type="button" class="secondary-btn" data-refund-status="${refund._id}" data-next-status="processing">Start Processing</button>` : ''}
-        ${refund.status === 'processing' ? `<button type="button" class="primary-btn" data-refund-status="${refund._id}" data-next-status="completed">Mark Completed</button>` : ''}
-        ${refund.status === 'completed' ? '<span class="member-profile-meta-pill">Refunded</span>' : ''}
+        ${refund.status === 'pending' ? `
+          <button type="button" class="primary-btn" data-refund-approve="${refund._id}">Approve</button>
+          <button type="button" class="secondary-btn" data-refund-reject="${refund._id}">Reject</button>
+        ` : ''}
+        ${refund.status === 'approved' || refund.status === 'processing'
+          ? '<span class="member-profile-meta-pill">Awaiting Cashier payout</span>'
+          : ''}
+        ${refund.status === 'completed' ? '<span class="member-profile-meta-pill">Paid by Cashier</span>' : ''}
+        ${refund.status === 'rejected' ? '<span class="member-profile-meta-pill">Rejected</span>' : ''}
       </td>
     </tr>
   `).join('');
@@ -3449,29 +3458,8 @@ function buildRefundHistoryRows(refunds = []) {
 function buildRefundSection(memberId, refunds = [], formPrefix = 'profile') {
   return `
     <section class="panel-card">
-      <h3>Record Refund</h3>
-      <p class="table-subtitle">Track when deposited savings are returned to this member.</p>
-      <form class="profile-refund-form" data-member-id="${memberId}" data-form-prefix="${formPrefix}">
-        <div class="form-grid-2">
-          <div class="form-group">
-            <label>
-              Refund Amount (৳)
-              <input type="number" name="amount" min="0.01" step="0.01" placeholder="0.00" required />
-            </label>
-          </div>
-          <div class="form-group">
-            <label>
-              Reason
-              <input type="text" name="reason" placeholder="Deposit return, membership exit, etc." />
-            </label>
-          </div>
-        </div>
-        <button type="submit" class="primary-btn">Record Refund</button>
-        <p class="message profile-refund-message"></p>
-      </form>
-    </section>
-    <section class="panel-card">
       <h3>Refund History</h3>
+      <p class="table-subtitle">Members request refunds from their dashboard. Approve or reject here — only the Cashier can disburse funds after approval.</p>
       <div class="table-wrapper">
         <table class="data-table">
           <thead>
@@ -4399,84 +4387,45 @@ function bindProfileRefundForms(container, onRefundChanged) {
     return;
   }
 
-  container.querySelectorAll('.profile-refund-form').forEach((form) => {
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const messageEl = form.querySelector('.profile-refund-message');
-      const memberId = form.dataset.memberId;
-      const formData = new FormData(form);
-      const amount = Number(formData.get('amount'));
-      const reason = formData.get('reason')?.trim() || '';
+  async function postRefundAction(refundId, action) {
+    const response = await fetch(`/api/admin/refunds/${refundId}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        adminNote: action === 'approve'
+          ? 'Approved from member profile'
+          : 'Rejected from member profile',
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `Unable to ${action} refund.`);
+    }
+    return data;
+  }
 
-      if (messageEl) {
-        messageEl.textContent = '';
-        messageEl.classList.remove('success', 'error');
-      }
-
-      if (!amount || amount <= 0) {
-        if (messageEl) {
-          messageEl.classList.add('error');
-          messageEl.textContent = 'Enter a valid refund amount.';
-        }
-        return;
-      }
-
+  container.querySelectorAll('[data-refund-approve]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const refundId = button.dataset.refundApprove;
+      if (!refundId) return;
       try {
-        const response = await fetch(`/api/admin/members/${memberId}/refunds`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount, reason }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          if (messageEl) {
-            messageEl.classList.add('error');
-            messageEl.textContent = data.error || 'Unable to record refund.';
-          }
-          return;
-        }
-
-        form.reset();
-        if (messageEl) {
-          messageEl.classList.add('success');
-          messageEl.textContent = t('adminUi.refundRecorded', 'Refund recorded successfully.');
-        }
-        if (typeof onRefundChanged === 'function') {
-          await onRefundChanged();
-        }
+        await postRefundAction(refundId, 'approve');
+        if (typeof onRefundChanged === 'function') await onRefundChanged();
       } catch (error) {
-        if (messageEl) {
-          messageEl.classList.add('error');
-          messageEl.textContent = 'Unable to record refund.';
-        }
+        window.alert(error.message || 'Unable to approve refund.');
       }
     });
   });
 
-  container.querySelectorAll('[data-refund-status]').forEach((button) => {
+  container.querySelectorAll('[data-refund-reject]').forEach((button) => {
     button.addEventListener('click', async () => {
-      const refundId = button.dataset.refundStatus;
-      const nextStatus = button.dataset.nextStatus;
-      if (!refundId || !nextStatus) {
-        return;
-      }
-
+      const refundId = button.dataset.refundReject;
+      if (!refundId) return;
       try {
-        const response = await fetch(`/api/admin/refunds/${refundId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: nextStatus }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          window.alert(data.error || 'Unable to update refund status.');
-          return;
-        }
-        if (typeof onRefundChanged === 'function') {
-          await onRefundChanged();
-        }
+        await postRefundAction(refundId, 'reject');
+        if (typeof onRefundChanged === 'function') await onRefundChanged();
       } catch (error) {
-        window.alert('Unable to update refund status.');
+        window.alert(error.message || 'Unable to reject refund.');
       }
     });
   });

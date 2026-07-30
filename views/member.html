@@ -654,9 +654,32 @@
       </section>
 
       <section class="page-section" data-page-section="refunds">
+        <section class="panel-card card-form-wide">
+          <h2>Request a Refund / Savings Return</h2>
+          <p class="table-subtitle">Submit a request to return deposited savings. The CEO reviews first; the Cashier pays after approval.</p>
+          <form id="refundRequestForm" class="add-member-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Amount (৳)
+                  <input type="number" name="amount" min="0.01" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Reason
+                  <input type="text" name="reason" placeholder="Deposit return, savings withdrawal, etc." required />
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn">Submit Refund Request</button>
+            <p id="refundRequestMessage" class="message"></p>
+          </form>
+        </section>
+
         <section class="panel-card table-card-wide">
           <h2>Refund History</h2>
-          <p class="table-subtitle">Track whether your deposited savings have been returned and the current refund status.</p>
+          <p class="table-subtitle">Track your refund requests through CEO review and Cashier payout.</p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>

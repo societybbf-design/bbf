@@ -65,7 +65,7 @@ const FEATURE_CATALOG = [
   { key: 'can_manage_investments', title: 'Investments', detail: 'Investment summary and payment queue.', icon: '📈', panel: 'investments' },
   { key: 'can_manage_ious', title: 'IOUs', detail: 'Investment-related tracking.', icon: '📝', panel: 'investments' },
   { key: 'can_manage_profit', title: 'Profit & Loss', detail: 'Record investment P&L, distribute profits, and automatic dividends.', icon: '💹', panel: 'profit' },
-  { key: 'can_manage_refunds', title: 'Refunds', detail: 'Create member refunds.', icon: '↩️', panel: 'refunds' },
+  { key: 'can_disburse_refunds', title: 'Refunds', detail: 'Pay CEO-approved member refunds from the bank ledger.', icon: '↩️', panel: 'refunds' },
   { key: 'can_manage_kyc', title: 'KYC', detail: 'KYC is handled in Settings workflows.', icon: '🪪', panel: 'home' },
   { key: 'can_view_reports', title: 'Reports', detail: 'Society summaries and Z-report.', icon: '📊', panel: 'reports' },
   { key: 'can_manage_notices', title: 'Notices', detail: 'Notices are managed from your home workspace.', icon: '📢', panel: 'home' },
@@ -281,7 +281,7 @@ const HOME_MODULE_COPY = {
   funding: { title: 'Advances & Borrowing', detail: 'Advance balances & unpaid shares', icon: '🔄' },
   profit: { title: 'Profit & Loss', detail: 'Investment P&L, distributions & dividends', icon: '💹' },
   reports: { title: 'Reports', detail: 'Society summaries & Z-report', icon: '📊' },
-  refunds: { title: 'Refunds', detail: 'Create member refunds', icon: '↩️' },
+  refunds: { title: 'Refunds', detail: 'Pay CEO-approved refunds', icon: '↩️' },
   chat: { title: 'Chat', detail: 'Message society members', icon: '💬' },
   ledger: { title: 'Bank Ledger', detail: 'Book balance & reconciliation', icon: '🏛️' },
   queue: { title: 'Payment Queue', detail: 'Investment payment queue', icon: '⏳' },
@@ -3507,11 +3507,79 @@ async function loadWithdrawalsModule() {
 }
 
 async function loadRefundsModule() {
+  const tbody = document.getElementById('cashierRefundsBody');
+  const msg = document.getElementById('cashierRefundMessage');
+  if (msg) {
+    msg.textContent = '';
+    msg.classList.remove('success', 'error');
+  }
   try {
-    await ensureMembersOptions(['cashierRefundMember']);
+    const response = await fetch('/api/admin/refunds/cashier-queue');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load refund payout queue.');
+    const refunds = data.refunds || [];
+    if (!tbody) return;
+    if (!refunds.length) {
+      tbody.innerHTML = '<tr><td colspan="6">No CEO-approved refunds awaiting payout.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = refunds.map((refund) => `
+      <tr data-refund-id="${escapeHtml(refund._id)}">
+        <td>${escapeHtml(refund.member?.name || 'Member')}</td>
+        <td>${money(refund.amount)}</td>
+        <td>${escapeHtml(refund.reason || '—')}</td>
+        <td>${statusPill(refund.status === 'processing' ? 'approved' : refund.status)}</td>
+        <td>
+          <select class="cashier-refund-method" aria-label="Payment method">
+            <option value="cash">Cash</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="mobile_banking">Mobile Banking</option>
+            <option value="check">Check</option>
+            <option value="other">Other</option>
+          </select>
+          <input type="text" class="cashier-refund-ref" placeholder="Reference (optional)" />
+        </td>
+        <td>
+          <button type="button" class="primary-btn" data-cashier-pay-refund="${escapeHtml(refund._id)}">Pay from bank</button>
+        </td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('[data-cashier-pay-refund]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const refundId = btn.dataset.cashierPayRefund;
+        const row = btn.closest('tr');
+        const paymentMethod = row?.querySelector('.cashier-refund-method')?.value || 'cash';
+        const disbursementReference = row?.querySelector('.cashier-refund-ref')?.value?.trim() || '';
+        try {
+          const payRes = await fetch(`/api/admin/refunds/${refundId}/cashier-complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentMethod,
+              disbursementReference,
+              adminNote: 'Paid from Cashier refund queue',
+            }),
+          });
+          const payData = await payRes.json();
+          if (!payRes.ok) throw new Error(payData.error || 'Unable to complete refund payout.');
+          if (msg) {
+            msg.classList.add('success');
+            msg.textContent = payData.message || 'Refund paid. Member savings and bank ledger updated.';
+          }
+          await loadRefundsModule();
+        } catch (error) {
+          if (msg) {
+            msg.classList.remove('success');
+            msg.classList.add('error');
+            msg.textContent = error.message;
+          }
+        }
+      });
+    });
   } catch (error) {
-    const msg = document.getElementById('cashierRefundMessage');
     if (msg) msg.textContent = error.message;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -5670,34 +5738,6 @@ function bindModuleForms() {
     }
   });
 
-  document.getElementById('cashierRefundForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const msg = document.getElementById('cashierRefundMessage');
-    const formData = new FormData(event.target);
-    const memberId = formData.get('memberId');
-    try {
-      const response = await fetch(`/api/admin/members/${memberId}/refunds`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: formData.get('amount'),
-          reason: formData.get('reason') || '',
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to create refund.');
-      if (msg) {
-        msg.classList.add('success');
-        msg.textContent = 'Refund created.';
-      }
-      event.target.reset();
-    } catch (error) {
-      if (msg) {
-        msg.classList.remove('success');
-        msg.textContent = error.message;
-      }
-    }
-  });
 }
 
 async function init() {

@@ -9,7 +9,14 @@ const {
   getDeletedMemberCount,
   getMemberDeletionSummary,
 } = require('../services/memberLifecycleService');
-const { createRefund, getRefundsByMember, updateRefundStatusWithAudit } = require('../services/refundService');
+const {
+  getRefundsByMember,
+  listCeoPendingRefunds,
+  listCashierRefundQueue,
+  approveRefund,
+  rejectRefund,
+  processRefundPayout,
+} = require('../services/refundService');
 const { getMonthlyContributionReport, generateMonthlyContributionReportPdf } = require('../services/monthlyContributionService');
 const {
   getMemberLedgerDocumentData,
@@ -34,13 +41,25 @@ const {
 } = require('../services/memberMigrationService');
 const { userHasPermission, isFullAccessRole } = require('../services/rbac');
 
-router.use(requireAuth, requirePermission('can_manage_members', 'can_view_reports', 'can_manage_notices', 'can_manage_refunds'));
+router.use(requireAuth, requirePermission(
+  'can_manage_members',
+  'can_view_reports',
+  'can_manage_notices',
+  'can_manage_refunds',
+  'can_disburse_refunds'
+));
 
 const manageMembers = requirePermission('can_manage_members');
 const manageNotices = requirePermission('can_manage_notices');
 const manageRefunds = requirePermission('can_manage_refunds');
+const disburseRefunds = requirePermission('can_disburse_refunds');
 const manageMemberOperations = requirePermission('can_manage_members');
 const ceoOnly = requireRoles('ceo');
+
+function requireCashierRole(req, res, next) {
+  if (req.session?.user?.role === 'cashier') return next();
+  return res.status(403).json({ error: 'Only the Cashier can disburse refunds.' });
+}
 
 function stripSensitiveMemberFields(member) {
   if (!member) return member;
@@ -273,27 +292,95 @@ router.get('/members/:id/refunds', manageRefunds, async (req, res) => {
   }
 });
 
+/** Direct staff creation disabled — members request; CEO approves; Cashier pays. */
 router.post('/members/:id/refunds', manageRefunds, requirePasswordConfirmation, async (req, res) => {
+  return res.status(403).json({
+    error: 'Direct staff refund creation is disabled. Members submit refund requests from their dashboard; the CEO approves; only the Cashier disburses.',
+  });
+});
+
+router.get('/refunds/pending', manageRefunds, async (req, res) => {
   try {
-    const { amount, reason } = req.body;
-    const refund = await createRefund({
-      memberId: req.params.id,
-      amount,
-      reason,
-      recordedBy: req.session?.user?.name || 'Admin',
-    });
-    return res.status(201).json({ refund });
+    const refunds = await listCeoPendingRefunds();
+    return res.json({ refunds });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Could not record refund.' });
+    return res.status(500).json({ error: 'Unable to load pending refunds.' });
   }
 });
 
-router.patch('/refunds/:id', manageRefunds, requirePasswordConfirmation, async (req, res) => {
+router.get('/refunds/cashier-queue', disburseRefunds, requireCashierRole, async (req, res) => {
   try {
+    const refunds = await listCashierRefundQueue();
+    return res.json({ refunds });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load refund payout queue.' });
+  }
+});
+
+router.post('/refunds/:id/approve', manageRefunds, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const refund = await approveRefund(req.params.id, {
+      reviewedBy: req.session?.user?.name || 'CEO',
+      adminNote: req.body?.adminNote || '',
+    });
+    return res.json({ refund, message: 'Refund approved and sent to Cashier for payout.' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Could not approve refund.' });
+  }
+});
+
+router.post('/refunds/:id/reject', manageRefunds, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const refund = await rejectRefund(req.params.id, {
+      reviewedBy: req.session?.user?.name || 'CEO',
+      adminNote: req.body?.adminNote || '',
+    });
+    return res.json({ refund, message: 'Refund request rejected.' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Could not reject refund.' });
+  }
+});
+
+router.post('/refunds/:id/cashier-complete', disburseRefunds, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const { clientIp } = require('../services/securityService');
+    const result = await processRefundPayout(req.params.id, {
+      processedBy: req.session?.user?.name || 'Cashier',
+      paymentMethod: req.body?.paymentMethod || 'cash',
+      disbursementReference: req.body?.disbursementReference || '',
+      adminNote: req.body?.adminNote || '',
+      actor: req.session?.user || null,
+      ip: clientIp(req),
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Could not complete refund payout.' });
+  }
+});
+
+/** Legacy status bridge — prefer approve / reject / cashier-complete. */
+router.patch('/refunds/:id', requirePasswordConfirmation, async (req, res) => {
+  try {
+    const { updateRefundStatusWithAudit } = require('../services/refundService');
     const { status, adminNote } = req.body;
+    const role = req.session?.user?.role;
+    const canReview = userHasPermission(req.session?.user, 'can_manage_refunds');
+    const canDisburse = userHasPermission(req.session?.user, 'can_disburse_refunds') && role === 'cashier';
+
+    if ((status === 'approved' || status === 'processing' || status === 'rejected') && !canReview) {
+      return res.status(403).json({ error: 'Only the CEO can approve or reject refund requests.' });
+    }
+    if (status === 'completed' && !canDisburse) {
+      return res.status(403).json({ error: 'Only the Cashier can disburse approved refunds.' });
+    }
+
     const { clientIp } = require('../services/securityService');
     const refund = await updateRefundStatusWithAudit(req.params.id, status, adminNote, {
       actor: req.session?.user || null,
+      actorName: req.session?.user?.name || '',
+      role,
+      paymentMethod: req.body?.paymentMethod || 'cash',
+      disbursementReference: req.body?.disbursementReference || '',
       ip: clientIp(req),
     });
     return res.json({ refund });
