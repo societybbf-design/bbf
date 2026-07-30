@@ -20,7 +20,7 @@ test('auto deduction window is 1st through 15th', () => {
   assert.equal(isWithinAutoDeductionWindow(new Date('2026-07-16')), false);
 });
 
-test('smart payment plan allocates across liabilities then advance surplus', () => {
+test('smart payment plan allocates project dues then monthly then advance — never formal loans', () => {
   const liabilities = {
     yearMonth: '2026-07',
     legs: {
@@ -35,6 +35,7 @@ test('smart payment plan allocates across liabilities then advance surplus', () 
         label: 'Project share',
         outstanding: 300,
       }],
+      // Formal loan payload must be ignored if ever present.
       loan: { loanId: 'l1', outstanding: 1000 },
       monthlyDeposit: { outstanding: 2000, targetAmount: 2000 },
     },
@@ -43,9 +44,10 @@ test('smart payment plan allocates across liabilities then advance surplus', () 
   const plan = buildSmartPaymentPlan(liabilities, 5000);
   assert.equal(plan.summary.toLenders, 500);
   assert.equal(plan.summary.toProjectDues, 300);
-  assert.equal(plan.summary.toLoan, 1000);
   assert.equal(plan.summary.toMonthly, 2000);
-  assert.equal(plan.summary.toAdvance, 1200);
+  assert.equal(plan.summary.toAdvance, 2200);
+  assert.equal(plan.summary.toLoan, undefined);
+  assert.equal(plan.allocations.some((a) => a.kind === 'loan_repayment'), false);
   assert.equal(plan.allocations.reduce((s, a) => s + a.amount, 0), 5000);
 });
 
@@ -55,7 +57,6 @@ test('smart payment with no liabilities routes all to advance', () => {
     legs: {
       internalBorrowings: [],
       unpaidContributions: [],
-      loan: null,
       monthlyDeposit: null,
     },
   }, 1500);

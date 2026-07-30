@@ -9,10 +9,8 @@ const {
   yearMonthFromDate,
   getTargetForMonth,
   getOrCreateMemberDue,
-  computeMonthlyDepositSplit,
 } = require('./monthlyTargetService');
 const { contributionRemainingDue } = require('./advanceBorrowingService');
-const { getMemberOutstandingSummary } = require('./loanRepaymentService');
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -21,7 +19,9 @@ function httpError(message, status = 400) {
 }
 
 /**
- * Collect open liabilities for smart payment allocation (priority order).
+ * Collect open deposit-screen liabilities for smart payment allocation.
+ * Formal member loans are excluded — those are handled only in the Loans module.
+ * Priority: project/emergency internal dues → monthly target → advance surplus.
  */
 async function getMemberPaymentLiabilities(memberId, {
   yearMonth = yearMonthFromDate(),
@@ -29,7 +29,8 @@ async function getMemberPaymentLiabilities(memberId, {
   const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
   if (!member) throw httpError('Member not found.', 404);
 
-  const [projectBorrowings, contributions, loanSummary, target] = await Promise.all([
+  const [projectBorrowings, contributions, target] = await Promise.all([
+    // Project / emergency internal borrows only (exclude formal-loan funding borrows).
     InternalBorrowing.find({
       borrower: memberId,
       loan: null,
@@ -42,7 +43,6 @@ async function getMemberPaymentLiabilities(memberId, {
         { status: 'unpaid' },
       ],
     }).populate('investment', 'investmentCode').sort({ createdAt: 1 }).lean(),
-    getMemberOutstandingSummary(memberId),
     getTargetForMonth(yearMonth),
   ]);
 
@@ -78,8 +78,6 @@ async function getMemberPaymentLiabilities(memberId, {
     monthlyDue = money(Math.max(0, money(due.expectedAmount) - money(due.paidAmount)));
   }
 
-  const loanDue = loanSummary.hasOutstandingLoan ? money(loanSummary.availableToPay || 0) : 0;
-
   return {
     member: {
       id: member._id,
@@ -92,12 +90,6 @@ async function getMemberPaymentLiabilities(memberId, {
     legs: {
       internalBorrowings: borrowingRows,
       unpaidContributions: contributionRows,
-      loan: loanSummary.hasOutstandingLoan ? {
-        outstanding: loanDue,
-        fundingReserveOutstanding: money(loanSummary.fundingReserveOutstanding || 0),
-        openBorrowings: loanSummary.openBorrowings || [],
-        loanId: loanSummary.loan?._id,
-      } : null,
       monthlyDeposit: monthlyDue > 0 ? {
         outstanding: monthlyDue,
         targetAmount: money(target.amount),
@@ -106,14 +98,14 @@ async function getMemberPaymentLiabilities(memberId, {
     totalOutstanding: money(
       borrowingRows.reduce((s, r) => s + r.outstanding, 0)
       + contributionRows.reduce((s, r) => s + r.outstanding, 0)
-      + loanDue
       + monthlyDue
     ),
   };
 }
 
 /**
- * Pure allocation plan for a cashier payment across liabilities.
+ * Pure allocation plan for a cashier deposit payment.
+ * Formal loan repayments are never included.
  */
 function buildSmartPaymentPlan(liabilities, totalAmount) {
   let remaining = money(totalAmount);
@@ -148,19 +140,6 @@ function buildSmartPaymentPlan(liabilities, totalAmount) {
     });
   }
 
-  if (liabilities.legs.loan && remaining > 0) {
-    const loanMax = money(liabilities.legs.loan.outstanding);
-    if (loanMax > 0) {
-      push({
-        kind: 'loan_repayment',
-        loanId: liabilities.legs.loan.loanId,
-        label: 'Loan repayment',
-        amount: Math.min(remaining, loanMax),
-        max: loanMax,
-      });
-    }
-  }
-
   if (liabilities.legs.monthlyDeposit && remaining > 0) {
     const monthlyMax = money(liabilities.legs.monthlyDeposit.outstanding);
     if (monthlyMax > 0) {
@@ -191,7 +170,6 @@ function buildSmartPaymentPlan(liabilities, totalAmount) {
     summary: {
       toLenders: money(allocations.filter((a) => a.kind === 'internal_borrowing').reduce((s, a) => s + a.amount, 0)),
       toProjectDues: money(allocations.filter((a) => a.kind === 'unpaid_contribution').reduce((s, a) => s + a.amount, 0)),
-      toLoan: money(allocations.filter((a) => a.kind === 'loan_repayment').reduce((s, a) => s + a.amount, 0)),
       toMonthly: money(allocations.filter((a) => a.kind === 'monthly_deposit').reduce((s, a) => s + a.amount, 0)),
       toAdvance: money(allocations.filter((a) => a.kind === 'advance_surplus').reduce((s, a) => s + a.amount, 0)),
     },
@@ -207,7 +185,8 @@ async function previewSmartMemberPayment({ memberId, amount, yearMonth = yearMon
 }
 
 /**
- * Apply a single cashier payment across borrowings, project dues, loan, monthly target, and advance.
+ * Apply a single cashier deposit across project/emergency internal dues, monthly target, and advance.
+ * Formal loan repayments are never applied here — use the Loans module.
  * Credits the bank ledger once for the full cash amount.
  */
 async function applySmartMemberPayment({
@@ -224,14 +203,13 @@ async function applySmartMemberPayment({
   const total = money(amount);
   if (!(total > 0)) throw httpError('Payment amount must be greater than zero.');
 
-  const { liabilities, plan } = await previewSmartMemberPayment({ memberId, amount: total, yearMonth });
+  const { plan } = await previewSmartMemberPayment({ memberId, amount: total, yearMonth });
   const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
   if (!member) throw httpError('Member not found.', 404);
   if (member.status !== 'active') throw httpError('Only active members can receive payments.', 400);
 
   const { settleInternalBorrowing } = require('./advanceBorrowingService');
   const { repayUnpaidContribution } = require('./advanceBorrowingService');
-  const { recordAdminLoanRepayment } = require('./loanRepaymentService');
   const { saveDeposit } = require('./memberService');
   const { saveAdvanceDeposit } = require('./advanceBorrowingService');
   const { creditInbound } = require('./bankLedgerService');
@@ -258,17 +236,6 @@ async function applySmartMemberPayment({
         skipBankCredit: true,
       });
       applied.push({ ...leg, result: repaid });
-    } else if (leg.kind === 'loan_repayment') {
-      const loanRepay = await recordAdminLoanRepayment({
-        memberId,
-        amount: leg.amount,
-        repaymentType: 'partial',
-        paymentMethod,
-        adminNote: notes || 'Smart payment — loan leg',
-        reviewedBy: recordedBy,
-        skipBankCredit: true,
-      });
-      applied.push({ ...leg, result: loanRepay });
     } else if (leg.kind === 'monthly_deposit') {
       monthlyResult = await saveDeposit(memberId, leg.amount, {
         yearMonth: leg.yearMonth || yearMonth,
@@ -325,9 +292,6 @@ async function applySmartMemberPayment({
   }
   if (plan.summary.toProjectDues > 0) {
     messageParts.push(`project dues ${formatMoney(plan.summary.toProjectDues, 2)}`);
-  }
-  if (plan.summary.toLoan > 0) {
-    messageParts.push(`loan ${formatMoney(plan.summary.toLoan, 2)}`);
   }
   if (plan.summary.toMonthly > 0) {
     messageParts.push(`monthly deposit ${formatMoney(plan.summary.toMonthly, 2)}`);

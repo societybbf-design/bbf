@@ -2864,8 +2864,8 @@ async function loadDepositsModule(options = {}) {
 
     if (hint) {
       hint.textContent = target.amount != null
-        ? 'Clears lenders → project dues → loan → monthly target; leftover goes to Advance Balance.'
-        : 'No month target set yet — payment still clears lenders/loans first; remainder may go to Advance.';
+        ? 'Clears project/emergency internal dues → monthly target; leftover goes to Advance Balance. Formal loans stay in the Loans module.'
+        : 'No month target set yet — payment still clears project/emergency internal dues first; remainder may go to Advance. Formal loans stay in the Loans module.';
     }
     if (amountInput && target.amount != null && !amountInput.value) {
       amountInput.value = Number(target.amount).toFixed(2);
@@ -2947,7 +2947,6 @@ function computeClientDepositSplit(totalAmount, remainingDue, targetAmount) {
 function smartAllocKindClass(kind = '') {
   if (kind === 'internal_borrowing') return 'is-lenders';
   if (kind === 'unpaid_contribution') return 'is-project';
-  if (kind === 'loan_repayment') return 'is-loan';
   if (kind === 'monthly_deposit') return 'is-monthly';
   if (kind === 'advance_surplus') return 'is-advance';
   return '';
@@ -2956,7 +2955,6 @@ function smartAllocKindClass(kind = '') {
 function smartAllocKindCaption(kind = '') {
   if (kind === 'internal_borrowing') return 'Internal lender refund';
   if (kind === 'unpaid_contribution') return 'Project / emergency dues';
-  if (kind === 'loan_repayment') return 'Loan settlement';
   if (kind === 'monthly_deposit') return 'Mandatory monthly deposit';
   if (kind === 'advance_surplus') return 'Surplus → Advance Balance';
   return 'Allocation';
@@ -3055,11 +3053,11 @@ function updateDepositSplitPreview() {
 
       const lenders = Number(summary.toLenders || 0);
       const project = Number(summary.toProjectDues || 0);
-      const loan = Number(summary.toLoan || 0);
       const monthly = Number(summary.toMonthly || 0);
       const advance = Number(summary.toAdvance || 0);
 
       // Prefer summarized buckets for a clean card; expand lender detail when present.
+      // Formal loan repayments are never shown — Loans module only.
       const lenderLegs = allocations.filter((a) => a.kind === 'internal_borrowing');
       if (lenderLegs.length) {
         lenderLegs.forEach((leg) => structured.push(leg));
@@ -3074,9 +3072,6 @@ function updateDepositSplitPreview() {
         structured.push({ kind: 'unpaid_contribution', label: 'Project / emergency dues', amount: project });
       }
 
-      if (loan > 0) {
-        structured.push({ kind: 'loan_repayment', label: 'Loan repayment', amount: loan });
-      }
       if (monthly > 0) {
         structured.push({
           kind: 'monthly_deposit',
