@@ -119,7 +119,7 @@ const UserSchema = new mongoose.Schema({
   /** How the exit was funded: replacement buy-in, direct society fund, or multi-approval exit */
   exitSettlementSource: {
     type: String,
-    enum: ['', 'replacement', 'society_fund', 'approved_exit'],
+    enum: ['', 'replacement', 'society_fund', 'approved_exit', 'user_management'],
     default: '',
   },
   /** Member this account replaced (seat transfer) — historical records of the old member stay intact */

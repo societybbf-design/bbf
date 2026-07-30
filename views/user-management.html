@@ -356,6 +356,35 @@
     </div>
   </div>
 
+  <div id="devDeleteSettleModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="devDeleteSettleTitle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="devDeleteSettleTitle">Confirm member deletion settlement</h2>
+        <button type="button" class="modal-close" id="closeDevDeleteSettleModal" aria-label="Close">×</button>
+      </div>
+      <div id="devDeleteSettleBody" class="u-mb-1">
+        <p class="table-subtitle">Loading settlement…</p>
+      </div>
+      <div class="form-group">
+        <label>
+          Reason (optional)
+          <input type="text" id="devDeleteSettleReason" placeholder="Soft-delete reason" />
+        </label>
+      </div>
+      <div class="form-group" id="devDeleteSettleConfirmGroup" hidden>
+        <label>
+          Type exact settlement amount to confirm (৳)
+          <input type="number" id="devDeleteSettleConfirmAmount" min="0" step="0.01" />
+        </label>
+      </div>
+      <p id="devDeleteSettleMessage" class="message"></p>
+      <div class="ceo-dev-status-actions">
+        <button type="button" class="ghost-btn" id="devDeleteSettleCancelBtn">Cancel</button>
+        <button type="button" class="primary-btn" id="devDeleteSettleConfirmBtn">Confirm settlement &amp; soft-delete</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/js/i18n.js"></script>
   <script src="/static/js/branding.js"></script>
   <script src="/static/js/mobile-menu.js"></script>
