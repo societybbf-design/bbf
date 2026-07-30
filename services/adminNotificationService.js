@@ -1,5 +1,9 @@
 const AdminNotification = require('../models/AdminNotification');
 const { normalizeRole } = require('./rbac');
+const {
+  sectionForNotification,
+  enrichNotificationForViewer,
+} = require('./notificationLinkService');
 
 function viewerId(user) {
   return user?.id || user?._id || null;
@@ -59,6 +63,7 @@ async function createAdminNotification({
   relatedModel = '',
   targetUser = null,
   targetRoles = [],
+  link = '',
 }) {
   if (!title?.trim()) {
     return null;
@@ -68,12 +73,20 @@ async function createAdminNotification({
     ? [...new Set(targetRoles.map((role) => normalizeRole(role)).filter(Boolean))]
     : [];
 
+  const resolvedLink = sectionForNotification({
+    type,
+    relatedModel,
+    title,
+    link,
+  });
+
   return AdminNotification.create({
     type,
     title: title.trim(),
     message: message.trim(),
     relatedId,
     relatedModel,
+    link: resolvedLink,
     targetUser: targetUser || null,
     targetRoles: roles,
     readBy: [],
@@ -82,11 +95,12 @@ async function createAdminNotification({
 }
 
 async function getAdminNotifications(user, limit = 30) {
+  const role = viewerRole(user);
   const docs = await AdminNotification.find(buildAudienceFilter(user))
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
-  return docs.map((doc) => withPersonalRead(doc, user));
+  return docs.map((doc) => enrichNotificationForViewer(withPersonalRead(doc, user), role));
 }
 
 async function getUnreadNotificationCount(user) {
@@ -111,7 +125,7 @@ async function markNotificationRead(notificationId, user) {
     notification.readBy = [...(notification.readBy || []), id];
     await notification.save();
   }
-  return withPersonalRead(notification.toObject(), user);
+  return enrichNotificationForViewer(withPersonalRead(notification.toObject(), user), viewerRole(user));
 }
 
 async function markAllNotificationsRead(user) {
