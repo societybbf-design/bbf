@@ -692,7 +692,7 @@
         <div class="panel-card hidden" data-staff-view="funding" id="moduleFunding">
           <div class="panel-card-header">
             <h2 data-i18n="staffUi.advancesBorrowing">Advances &amp; Internal Borrowing</h2>
-            <p class="text-secondary">Record advance balances, cover unpaid project shares, and settle borrower repayments — the original lender’s Advance Balance is credited instantly.</p>
+            <p class="text-secondary">Overview of member advance balances and unpaid project shares. Internal borrowing and lender refunds are handled automatically when deposits and loan repayments are recorded.</p>
           </div>
 
           <h3>Record advance deposit</h3>
@@ -716,7 +716,10 @@
             <p id="cashierAdvanceMessage" class="message"></p>
           </form>
 
-          <h3 class="u-mt-1">Member advance balances</h3>
+          <div class="panel-card-header u-mt-1" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <h3 style="margin:0;">Member advance balances</h3>
+            <a class="secondary-btn" id="cashierFundingPdfBtn" href="/api/admin/funding/report.pdf" target="_blank" rel="noopener">Download PDF</a>
+          </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
               <thead><tr><th>Member</th><th>Savings</th><th>Advance</th><th>Profit</th></tr></thead>
@@ -725,7 +728,7 @@
           </div>
 
           <h3 class="u-mt-1">Unpaid project shares</h3>
-          <p class="text-secondary">Flagged when a member could not cover their equal share. Cover via <strong>internal borrow</strong> (from a member with advance) or <strong>Emergency / Reserve Fund</strong>, or record a direct repayment.</p>
+          <p class="text-secondary">Flagged when a member could not cover their equal share. Cover from the <strong>Emergency / Reserve Fund</strong>, or record a direct repayment. Internal borrows and lender refunds happen automatically during deposit and loan repayment.</p>
           <div class="table-wrapper">
             <table class="data-table table-cards">
               <thead><tr><th>Investment</th><th>Member</th><th>Due</th><th data-i18n="table.status">Status</th><th data-i18n="table.actions">Actions</th></tr></thead>
@@ -733,47 +736,6 @@
             </table>
           </div>
           <p id="cashierUnpaidMessage" class="message"></p>
-
-          <h3 class="u-mt-1">Create internal borrow</h3>
-          <p class="text-secondary">Select any member share that still has an unpaid balance (partial or past payments are fine). Choose the lender who holds advance funds to cover it.</p>
-          <form id="cashierBorrowForm" class="add-member-form">
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Unpaid contribution
-                  <select name="contributionKey" id="cashierBorrowContribution" required>
-                    <option value="">Select unpaid share…</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-group">
-                <label>Lender (has advance)
-                  <select name="lenderId" id="cashierBorrowLender" required>
-                    <option value="">Select lender…</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Amount<input type="number" name="amount" id="cashierBorrowAmount" min="0.01" step="0.01" required /></label>
-              </div>
-              <div class="form-group">
-                <label>Note<input type="text" name="note" placeholder="Optional" /></label>
-              </div>
-            </div>
-            <button type="submit" class="primary-btn">Borrow from advance</button>
-            <p id="cashierBorrowMessage" class="message"></p>
-          </form>
-
-          <h3 class="u-mt-1">Open borrowings — settle repayment</h3>
-          <p class="text-secondary">Enter any custom repayment amount. The system checks the borrower’s Savings + Advance Balance, credits the bank ledger when needed, instantly refunds the original lender’s Advance Balance, and notifies the lender.</p>
-          <div class="table-wrapper">
-            <table class="data-table table-cards">
-              <thead><tr><th>Project</th><th>Borrower</th><th>Lender</th><th data-i18n="table.amount">Amount</th><th data-i18n="common.outstanding">Outstanding</th><th data-i18n="table.when">When</th><th>Settle</th></tr></thead>
-              <tbody id="cashierBorrowingsBody"><tr><td colspan="7" data-i18n="common.loading">Loading…</td></tr></tbody>
-            </table>
-          </div>
-          <p id="cashierSettleMessage" class="message"></p>
         </div>
 
         <!-- DEPOSITS -->

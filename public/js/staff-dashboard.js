@@ -58,7 +58,7 @@ const ROLE_META = {
 const FEATURE_CATALOG = [
   { key: 'can_manage_members', title: 'Members', detail: 'View society members.', icon: '👥', panel: 'members' },
   { key: 'can_manage_deposits', title: 'Deposits', detail: 'Record member deposits and receipts.', icon: '💵', panel: 'deposits' },
-  { key: 'can_manage_deposits', title: 'Advances & Borrowing', detail: 'Advance balances, unpaid shares, internal borrow & settle.', icon: '🔄', panel: 'funding', catalogKey: 'funding' },
+  { key: 'can_manage_deposits', title: 'Advances & Borrowing', detail: 'Advance balances and unpaid project shares overview.', icon: '🔄', panel: 'funding', catalogKey: 'funding' },
   { key: 'can_manage_withdrawals', title: 'Withdrawals', detail: 'Review withdrawal requests.', icon: '🏦', panel: 'withdrawals' },
   { key: 'can_disburse_loans', title: 'Loans', detail: 'Disburse approved loans and record repayments.', icon: '📄', panel: 'loans' },
   { key: 'can_manage_loans', title: 'Loan Review', detail: 'View pending loan applications (CEO approves).', icon: '📄', panel: 'loans', catalogKey: 'loan_review' },
@@ -278,7 +278,7 @@ const HOME_MODULE_ORDER = [
 const HOME_MODULE_COPY = {
   deposits: { title: 'Deposits', detail: 'Record member deposits', icon: '🪙' },
   withdrawals: { title: 'Withdrawals', detail: 'Review payout requests', icon: '↗️' },
-  funding: { title: 'Advances & Borrowing', detail: 'Advances, unpaid shares & settle', icon: '🔄' },
+  funding: { title: 'Advances & Borrowing', detail: 'Advance balances & unpaid shares', icon: '🔄' },
   profit: { title: 'Profit & Loss', detail: 'Investment P&L, distributions & dividends', icon: '💹' },
   reports: { title: 'Reports', detail: 'Society summaries & Z-report', icon: '📊' },
   refunds: { title: 'Refunds', detail: 'Create member refunds', icon: '↩️' },
@@ -3169,45 +3169,21 @@ function contributionDueAmount(contribution) {
   return Math.max(0, Number((expected - covered).toFixed(2)));
 }
 
-function populateBorrowLenderSelect(members = []) {
-  const lenderSelect = document.getElementById('cashierBorrowLender');
-  if (!lenderSelect) return;
-  const previous = lenderSelect.value;
-  const withAdvance = (members || []).filter((m) => Number(m.advanceBalance) > 0);
-  lenderSelect.disabled = false;
-  if (!withAdvance.length) {
-    lenderSelect.innerHTML = '<option value="">No members with advance balance</option>';
-    return;
-  }
-  lenderSelect.innerHTML = `<option value="">Select lender…</option>${withAdvance.map((m) => `
-    <option value="${m.id}">${escapeHtml(m.name)} (advance ${money(m.advanceBalance)})</option>
-  `).join('')}`;
-  if (previous && withAdvance.some((m) => String(m.id) === String(previous))) {
-    lenderSelect.value = previous;
-  }
-}
-
 async function loadFundingModule() {
   const advanceBody = document.getElementById('cashierAdvanceBody');
   const unpaidBody = document.getElementById('cashierUnpaidBody');
-  const borrowingsBody = document.getElementById('cashierBorrowingsBody');
-  const contribSelect = document.getElementById('cashierBorrowContribution');
-  const lenderSelect = document.getElementById('cashierBorrowLender');
 
   try {
-    const [, advRes, unpaidRes, borrowRes] = await Promise.all([
+    const [, advRes, unpaidRes] = await Promise.all([
       ensureMembersOptions(['cashierAdvanceMember']),
       fetch('/api/admin/funding/advances'),
       fetch('/api/admin/funding/unpaid-contributions'),
-      fetch('/api/admin/funding/borrowings?status=open'),
     ]);
     const advances = await advRes.json();
     const unpaid = await unpaidRes.json();
-    const borrowings = await borrowRes.json();
 
     if (!advRes.ok) throw new Error(advances.error || 'Unable to load advances.');
     if (!unpaidRes.ok) throw new Error(unpaid.error || 'Unable to load unpaid shares.');
-    if (!borrowRes.ok) throw new Error(borrowings.error || 'Unable to load borrowings.');
 
     const members = advances.members || [];
     if (advanceBody) {
@@ -3223,16 +3199,12 @@ async function loadFundingModule() {
         : '<tr><td colspan="4">No members.</td></tr>';
     }
 
-    populateBorrowLenderSelect(members);
-    if (lenderSelect) lenderSelect.disabled = false;
-
     unpaidContributionsCache = unpaid.contributions || [];
     if (unpaidBody) {
       unpaidBody.innerHTML = unpaidContributionsCache.length
         ? unpaidContributionsCache.map((c) => {
           const due = contributionDueAmount(c);
           const canDirectRepay = due > 0;
-          const borrowId = c.borrowing?._id || c.borrowing;
           return `
           <tr>
             <td>${escapeHtml(c.investment?.investmentCode || '—')}</td>
@@ -3246,83 +3218,12 @@ async function loadFundingModule() {
               ${canDirectRepay ? `
                 <button type="button" class="primary-btn" data-cover-reserve="${c._id}" data-due="${due}">Cover from reserve</button>
               ` : ''}
-              ${borrowId ? `
-                <button type="button" class="secondary-btn" data-repay-borrowing="${borrowId}">Settle borrow</button>
-              ` : (!canDirectRepay ? '—' : '')}
+              ${!canDirectRepay ? '—' : ''}
             </td>
           </tr>
         `;
         }).join('')
         : '<tr><td colspan="5">No unpaid shares.</td></tr>';
-    }
-
-    if (contribSelect) {
-      // Flexible: any share with remaining unpaid due, even after partial/past payments or prior borrows.
-      const borrowable = unpaidContributionsCache.filter((c) => contributionDueAmount(c) > 0);
-      const previous = contribSelect.value;
-      contribSelect.innerHTML = `<option value="">Select unpaid share…</option>${borrowable.map((c) => {
-        const due = contributionDueAmount(c);
-        const historyParts = [];
-        if (Number(c.paidFromSavings) > 0) historyParts.push(`savings ${money(c.paidFromSavings)}`);
-        if (Number(c.paidFromAdvance) > 0) historyParts.push(`advance ${money(c.paidFromAdvance)}`);
-        if (Number(c.borrowedAmount) > 0) historyParts.push(`borrowed ${money(c.borrowedAmount)}`);
-        const history = historyParts.length ? ` · paid ${historyParts.join(', ')}` : '';
-        return `
-        <option value="${c._id}"
-          data-amount="${due}"
-          data-investment="${c.investment?._id || c.investment || ''}"
-          data-borrower="${c.member?._id || c.member || ''}"
-          data-contribution="${c._id}">
-          ${escapeHtml(c.memberName || c.member?.name || 'Member')} · ${escapeHtml(c.investment?.investmentCode || '')} · due ${money(due)}${escapeHtml(history)}
-        </option>`;
-      }).join('')}`;
-      if (previous && borrowable.some((c) => String(c._id) === String(previous))) {
-        contribSelect.value = previous;
-      }
-      contribSelect.onchange = () => {
-        const opt = contribSelect.selectedOptions[0];
-        const amountInput = document.getElementById('cashierBorrowAmount');
-        if (opt && amountInput) amountInput.value = opt.dataset.amount || '';
-      };
-      if (contribSelect.value) contribSelect.onchange();
-    }
-
-    const openBorrowings = borrowings.borrowings || [];
-
-    if (borrowingsBody) {
-      borrowingsBody.innerHTML = openBorrowings.length
-        ? openBorrowings.map((b) => {
-          const outstanding = Math.max(0, Number(b.amount || 0) - Number(b.amountSettled || 0));
-          const lenderName = b.lenderName || b.lender?.name || 'lender';
-          const borrowerName = b.borrowerName || b.borrower?.name || '—';
-          const isLoanBorrow = Boolean(b.loan);
-          const projectLabel = isLoanBorrow
-            ? `Loan · ${b.loan?.loanType || 'member loan'}${b.note ? ` — ${b.note}` : ''}`
-            : (b.investment?.investmentCode || b.note || '—');
-          const borrowingId = String(b._id || b.id || '');
-          return `
-            <tr data-borrowing-row="${escapeHtml(borrowingId)}">
-              <td>${escapeHtml(projectLabel)}</td>
-              <td>${escapeHtml(borrowerName)}</td>
-              <td>${escapeHtml(lenderName)}</td>
-              <td>${money(b.amount)}</td>
-              <td>${money(outstanding)}</td>
-              <td>${escapeHtml(new Date(b.createdAt).toLocaleString())}</td>
-              <td>
-                <button type="button" class="primary-btn"
-                  data-settle-borrowing="${escapeHtml(borrowingId)}"
-                  data-outstanding="${outstanding}"
-                  data-lender-name="${escapeHtml(lenderName)}"
-                  data-borrower-name="${escapeHtml(borrowerName)}"
-                  data-loan-borrow="${isLoanBorrow ? '1' : '0'}"
-                  ${!borrowingId || outstanding <= 0 ? 'disabled' : ''}>
-                  Settle &amp; refund lender
-                </button>
-              </td>
-            </tr>
-          `;
-        }).join('')
-        : '<tr><td colspan="7">No open borrowings.</td></tr>';
     }
 
     document.querySelectorAll('[data-repay-contribution]').forEach((btn) => {
@@ -3382,146 +3283,11 @@ async function loadFundingModule() {
         }
       };
     });
-
-    // Settle buttons use delegated handler bound once in bindFundingSettleActions().
   } catch (error) {
     if (advanceBody) advanceBody.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
-    const settleMsg = document.getElementById('cashierSettleMessage');
-    if (settleMsg) {
-      settleMsg.classList.remove('success');
-      settleMsg.textContent = error.message;
-    }
+    if (unpaidBody) unpaidBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
   }
 }
-
-async function settleBorrowingRepayment(button) {
-  const id = String(button?.dataset?.settleBorrowing || button?.dataset?.repayBorrowing || '').trim();
-  if (!id) {
-    throw new Error('Borrowing id is missing. Refresh the page and try again.');
-  }
-
-  const lenderName = button.dataset.lenderName || 'the original lender';
-  const borrowerName = button.dataset.borrowerName || 'the borrower';
-  const outstanding = Number(button.dataset.outstanding || 0);
-  const msg = document.getElementById('cashierSettleMessage') || document.getElementById('cashierUnpaidMessage');
-  const isLoanBorrow = String(button.dataset.loanBorrow || '') === '1';
-
-  const defaultAmount = outstanding > 0 ? String(outstanding) : '';
-  const entered = window.prompt(
-    `Enter custom repayment amount for ${borrowerName}.\n`
-    + `Outstanding: ${money(outstanding)}.\n`
-    + `Funds checked: borrower Savings + Advance Balance`
-    + (isLoanBorrow ? ' (or cash at desk for loan funding).' : '.')
-    + `\nExact amount is instantly refunded to ${lenderName}'s Advance Balance.`,
-    defaultAmount
-  );
-  if (entered === null) {
-    return null;
-  }
-  const payAmount = Number(String(entered).replace(/,/g, '').trim());
-  if (!(payAmount > 0)) {
-    if (msg) {
-      msg.classList.remove('success');
-      msg.classList.add('error');
-      msg.textContent = 'Repayment amount must be greater than zero.';
-    }
-    return null;
-  }
-  if (outstanding > 0 && payAmount > outstanding + 0.001) {
-    if (msg) {
-      msg.classList.remove('success');
-      msg.classList.add('error');
-      msg.textContent = `Amount exceeds outstanding ${money(outstanding)}.`;
-    }
-    return null;
-  }
-
-  if (msg) {
-    msg.classList.remove('success', 'error');
-    msg.textContent = `Settling repayment of ${money(payAmount)}…`;
-  }
-
-  button.disabled = true;
-  try {
-    const res = await fetch(`/api/admin/funding/borrowings/${encodeURIComponent(id)}/repay`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount: payAmount,
-        notes: isLoanBorrow
-          ? `Loan funding settle — refund to ${lenderName} (cash at desk)`
-          : `Settled by cashier — refund to ${lenderName}`,
-        cashReceived: isLoanBorrow ? true : undefined,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Unable to settle borrowing.');
-
-    const refunded = data.lender?.refundedAmount ?? data.settledAmount;
-    const deducted = data.borrower?.deductedAmount ?? data.settledAmount;
-    const fromSavings = data.borrower?.deductedFromSavings;
-    const fromAdvance = data.borrower?.deductedFromAdvance;
-    const lenderLabel = data.lender?.name || lenderName;
-    const borrowerLabel = data.borrower?.name || borrowerName;
-    const fundBits = data.cashReceived
-      ? 'cash at desk'
-      : (fromSavings != null || fromAdvance != null
-        ? `savings ${money(fromSavings || 0)} + advance ${money(fromAdvance || 0)}`
-        : `funds ${money(deducted)}`);
-    const successText = data.fullySettled
-      ? `Settled ${money(data.settledAmount)} from ${borrowerLabel} (${fundBits}). Instantly refunded ${money(refunded)} to ${lenderLabel}'s Advance Balance (now ${money(data.lender?.advanceBalance)}). Lender notified.`
-      : `Partial settlement ${money(data.settledAmount)} from ${borrowerLabel} (${fundBits}). Refunded ${money(refunded)} to ${lenderLabel}'s Advance Balance. Outstanding ${money(data.outstandingAfter)}. Lender notified.`;
-
-    if (msg) {
-      msg.classList.remove('error');
-      msg.classList.add('success');
-      msg.textContent = successText;
-    }
-
-    // Remove the row immediately for responsive UI, then reload module data.
-    const row = button.closest('[data-borrowing-row]');
-    if (data.fullySettled && row) {
-      row.remove();
-      const body = document.getElementById('cashierBorrowingsBody');
-      if (body && !body.querySelector('[data-borrowing-row]')) {
-        body.innerHTML = '<tr><td colspan="7">No open borrowings.</td></tr>';
-      }
-    }
-
-    invalidateStaffViewCache(['funding', 'ledger', 'deposits', 'home']);
-    await loadFundingModule();
-    return data;
-  } catch (error) {
-    button.disabled = false;
-    if (msg) {
-      msg.classList.remove('success');
-      msg.classList.add('error');
-      msg.textContent = error.message || String(error);
-    } else {
-      window.alert(error.message || String(error));
-    }
-    throw error;
-  }
-}
-
-function bindFundingSettleActions() {
-  const root = document.getElementById('moduleFunding') || document.getElementById('cashierBorrowingsBody');
-  if (!root || root.dataset.settleBound === '1') return;
-  root.dataset.settleBound = '1';
-
-  root.addEventListener('click', async (event) => {
-    const btn = event.target.closest('[data-settle-borrowing], [data-repay-borrowing]');
-    if (!btn || btn.disabled) return;
-    event.preventDefault();
-    try {
-      await settleBorrowingRepayment(btn);
-    } catch (_) {
-      // Error already shown in settleBorrowingRepayment
-    }
-  });
-}
-
-window.settleBorrowingRepayment = settleBorrowingRepayment;
 
 async function loadEmergencyReserveModule() {
   const sharesBody = document.getElementById('cashierReserveSharesBody');
@@ -5789,7 +5555,6 @@ function bindProfitPoolForms() {
 }
 
 function bindModuleForms() {
-  bindFundingSettleActions();
   document.getElementById('cashierSendDuesRemindersBtn')?.addEventListener('click', async () => {
     const msg = document.getElementById('cashierDuesReminderMessage');
     const button = document.getElementById('cashierSendDuesRemindersBtn');
@@ -5901,56 +5666,6 @@ function bindModuleForms() {
       }
       event.target.reset();
       await syncAfterCashIn({ memberId, bookBalance: book });
-    } catch (error) {
-      if (msg) {
-        msg.classList.remove('success');
-        msg.textContent = error.message;
-      }
-    }
-  });
-
-  document.getElementById('cashierBorrowForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const msg = document.getElementById('cashierBorrowMessage');
-    const formData = new FormData(event.target);
-    const contribSelect = document.getElementById('cashierBorrowContribution');
-    const opt = contribSelect?.selectedOptions?.[0];
-    if (!opt?.value) {
-      if (msg) {
-        msg.classList.remove('success');
-        msg.textContent = 'Select an unpaid contribution share.';
-      }
-      return;
-    }
-    if (!formData.get('lenderId')) {
-      if (msg) {
-        msg.classList.remove('success');
-        msg.textContent = 'Select a lender with advance balance.';
-      }
-      return;
-    }
-    try {
-      const response = await fetch('/api/admin/funding/borrowings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contributionId: opt.dataset.contribution || opt.value,
-          investmentId: opt.dataset.investment,
-          borrowerId: opt.dataset.borrower,
-          lenderId: formData.get('lenderId'),
-          amount: formData.get('amount'),
-          note: formData.get('note') || '',
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to create borrowing.');
-      if (msg) {
-        msg.classList.add('success');
-        msg.textContent = `Borrowed ${money(data.borrowing?.amount)} from ${data.lender?.name} for ${data.borrower?.name}. Lender advance now ${money(data.lender?.advanceBalance)}.`;
-      }
-      event.target.reset();
-      invalidateStaffViewCache(['funding']);
-      await loadFundingModule();
     } catch (error) {
       if (msg) {
         msg.classList.remove('success');
