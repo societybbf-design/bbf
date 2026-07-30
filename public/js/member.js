@@ -458,7 +458,7 @@ function buildLoanDecisionText(loan = {}) {
     return loan.adminNote;
   }
   if (loan.autoRejected) {
-    return 'Automatically rejected (exceeds 80% savings limit).';
+    return 'Automatically rejected (exceeds 80% total deposit limit).';
   }
   if (loan.status === 'pending') {
     return 'Awaiting CEO review.';
@@ -1311,11 +1311,11 @@ async function loadLoanDashboardSummary() {
     const eligibilityBlock = `
       <div class="loan-dashboard-highlight loan-eligibility-strip">
         <div class="member-profile-meta">
-          <span class="member-profile-meta-pill">Total Savings: ${formatMoney(Number(eligibility.totalSavings || 0), 2)}</span>
+          <span class="member-profile-meta-pill">Total Deposit: ${formatMoney(Number(eligibility.totalDepositAmount ?? eligibility.totalSavings ?? 0), 2)}</span>
           <span class="member-profile-meta-pill">Max Loan (80%): ${formatMoney(Number(eligibility.availableMaxLoan ?? eligibility.maxEligibleAmount ?? 0), 2)}</span>
           <span class="member-profile-meta-pill">Used: ${formatMoney(Number(eligibility.usedGeneralLoanAmount || 0), 2)}</span>
         </div>
-        <p class="table-subtitle">সাধারণ ঋণের অবশিষ্ট সীমা স্বয়ংক্রিয়ভাবে হিসাব হয়। জরুরি ঋণ আনলিমিটেড।</p>
+        <p class="table-subtitle">সাধারণ ঋণের অবশিষ্ট সীমা মোট জমার ৮০% থেকে স্বয়ংক্রিয়ভাবে হিসাব হয়। জরুরি ঋণ আনলিমিটেড।</p>
       </div>
     `;
 
@@ -1480,7 +1480,8 @@ async function downloadLoanContractPdf(button) {
 window.downloadLoanContractPdf = downloadLoanContractPdf;
 
 function renderLoanEligibilityUi(data = {}) {
-  const savingsEl = document.getElementById('loanTotalSavings');
+  const depositEl = document.getElementById('loanTotalDepositAmount')
+    || document.getElementById('loanTotalSavings');
   const maxEl = document.getElementById('loanMaxEligible');
   const maxNoteEl = document.getElementById('loanMaxEligibleNote');
   const dashboardMaxLoan = document.getElementById('dashboardMaxLoan');
@@ -1488,12 +1489,14 @@ function renderLoanEligibilityUi(data = {}) {
   const generalAmountInput = document.querySelector('#generalLoanForm [name="amount"]');
   const generalMaxHint = document.getElementById('generalLoanMaxHint');
 
-  const totalSavings = Number(data.totalSavings || 0);
+  const totalDepositAmount = Number(
+    data.totalDepositAmount ?? data.totalSavings ?? 0
+  );
   const availableMaxLoan = Number(data.availableMaxLoan ?? data.maxEligibleAmount ?? data.generalMaxLoan ?? 0);
   const usedGeneralLoanAmount = Number(data.usedGeneralLoanAmount || 0);
   const theoreticalMaxLoan = Number(data.theoreticalMaxLoan || availableMaxLoan);
 
-  if (savingsEl) savingsEl.textContent = `${formatMoney(totalSavings, 2)}`;
+  if (depositEl) depositEl.textContent = `${formatMoney(totalDepositAmount, 2)}`;
   if (maxEl) maxEl.textContent = `${formatMoney(availableMaxLoan, 2)}`;
   if (dashboardMaxLoan) dashboardMaxLoan.textContent = `${formatMoney(availableMaxLoan, 2)}`;
 
@@ -1509,25 +1512,31 @@ function renderLoanEligibilityUi(data = {}) {
   }
   if (generalMaxHint) {
     generalMaxHint.textContent = availableMaxLoan > 0
-      ? `অবশিষ্ট সাধারণ ঋণ সীমা: ${formatMoney(availableMaxLoan, 2)} (মোট ৮০%: ${formatMoney(theoreticalMaxLoan, 2)}, ব্যবহৃত: ${formatMoney(usedGeneralLoanAmount, 2)})`
+      ? `অবশিষ্ট সাধারণ ঋণ সীমা: ${formatMoney(availableMaxLoan, 2)} (মোট জমার ৮০%: ${formatMoney(theoreticalMaxLoan, 2)}, ব্যবহৃত: ${formatMoney(usedGeneralLoanAmount, 2)})`
       : 'কোনো সাধারণ ঋণ সীমা অবশিষ্ট নেই।';
   }
+}
+
+function fallbackLoanEligibilityFromDeposits() {
+  const deposits = memberFinancialData.deposits || [];
+  const totalDepositAmount = Number(
+    deposits.reduce((sum, row) => sum + Number(row.amount || 0), 0).toFixed(2)
+  );
+  const maxLoan = Number((totalDepositAmount * 0.8).toFixed(2));
+  return {
+    totalDepositAmount,
+    totalSavings: totalDepositAmount,
+    availableMaxLoan: maxLoan,
+    theoreticalMaxLoan: maxLoan,
+    usedGeneralLoanAmount: 0,
+  };
 }
 
 async function loadLoanEligibility() {
   try {
     const response = await fetch('/api/loans/member/eligibility');
     if (!response.ok) {
-      if (currentUser) {
-        const savings = Number(currentUser.savings || 0);
-        const maxLoan = Number((savings * 0.8).toFixed(2));
-        renderLoanEligibilityUi({
-          totalSavings: savings,
-          availableMaxLoan: maxLoan,
-          theoreticalMaxLoan: maxLoan,
-          usedGeneralLoanAmount: 0,
-        });
-      }
+      renderLoanEligibilityUi(fallbackLoanEligibilityFromDeposits());
       return null;
     }
 
@@ -1536,16 +1545,7 @@ async function loadLoanEligibility() {
     return data;
   } catch (error) {
     console.error('Failed to load loan eligibility:', error);
-    if (currentUser) {
-      const savings = Number(currentUser.savings || 0);
-      const maxLoan = Number((savings * 0.8).toFixed(2));
-      renderLoanEligibilityUi({
-        totalSavings: savings,
-        availableMaxLoan: maxLoan,
-        theoreticalMaxLoan: maxLoan,
-        usedGeneralLoanAmount: 0,
-      });
-    }
+    renderLoanEligibilityUi(fallbackLoanEligibilityFromDeposits());
   }
   return null;
 }

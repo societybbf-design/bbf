@@ -12,6 +12,14 @@ const { sendSms } = require('./smsService');
 const LOAN_LIMIT_RATIO = 0.8;
 const PAYMENT_METHODS = ['cash', 'bank_transfer', 'mobile_banking', 'check', 'other'];
 
+async function getMemberTotalDepositAmount(memberId) {
+  const Deposit = require('../models/Deposit');
+  const rows = await Deposit.find({ member: memberId }).select('amount').lean();
+  return Number(
+    rows.reduce((sum, row) => sum + Number(row.amount || 0), 0).toFixed(2)
+  );
+}
+
 /** Parse amounts that may use comma decimals (e.g. 17716,67) or thousand separators. */
 function parseLooseMoney(value) {
   if (value == null || value === '') return NaN;
@@ -52,11 +60,17 @@ async function generateLoanContractForApplication(loan, member, adminName) {
   return contractPath;
 }
 
-function calculateLoanEligibility(savings = 0) {
-  const normalizedSavings = Number(savings) || 0;
-  const maxEligibleAmount = Number((normalizedSavings * LOAN_LIMIT_RATIO).toFixed(2));
+/**
+ * Max general loan = 80% of the member's lifetime total deposit amount
+ * (not current savings balance).
+ */
+function calculateLoanEligibility(totalDepositAmount = 0) {
+  const normalizedDeposits = Number(totalDepositAmount) || 0;
+  const maxEligibleAmount = Number((normalizedDeposits * LOAN_LIMIT_RATIO).toFixed(2));
   return {
-    totalSavings: normalizedSavings,
+    totalDepositAmount: normalizedDeposits,
+    // Backward-compatible alias: older clients read totalSavings as the 80% base.
+    totalSavings: normalizedDeposits,
     maxEligibleAmount,
     theoreticalMaxLoan: maxEligibleAmount,
     limitPercent: LOAN_LIMIT_RATIO * 100,
@@ -87,16 +101,19 @@ async function getGeneralLoanUsage(memberId, excludeLoanId = null) {
     }, 0);
 }
 
-async function buildMemberLoanEligibility(member) {
-  const baseEligibility = calculateLoanEligibility(member.savings);
-  const usedGeneralLoanAmount = await getGeneralLoanUsage(member._id);
+async function buildMemberLoanEligibility(member, { excludeLoanId = null } = {}) {
+  const totalDepositAmount = await getMemberTotalDepositAmount(member._id);
+  const baseEligibility = calculateLoanEligibility(totalDepositAmount);
+  const usedGeneralLoanAmount = await getGeneralLoanUsage(member._id, excludeLoanId);
   const availableMaxLoan = Math.max(
     0,
     Number((baseEligibility.maxEligibleAmount - usedGeneralLoanAmount).toFixed(2))
   );
 
   return {
-    totalSavings: baseEligibility.totalSavings,
+    totalDepositAmount,
+    totalSavings: totalDepositAmount,
+    memberSavingsBalance: Number(member.savings || 0),
     theoreticalMaxLoan: baseEligibility.maxEligibleAmount,
     usedGeneralLoanAmount,
     availableMaxLoan,
@@ -113,7 +130,7 @@ function exceedsAvailableGeneralLoan(amount, availableMaxLoan) {
   return normalizedAmount > Number(availableMaxLoan || 0);
 }
 
-function exceedsLoanLimit(amount, savings, loanType = 'general', availableMaxLoan = null) {
+function exceedsLoanLimit(amount, totalDepositAmount, loanType = 'general', availableMaxLoan = null) {
   if (loanType === 'emergency') {
     return false;
   }
@@ -121,7 +138,7 @@ function exceedsLoanLimit(amount, savings, loanType = 'general', availableMaxLoa
     return exceedsAvailableGeneralLoan(amount, availableMaxLoan);
   }
   const normalizedAmount = Number(amount) || 0;
-  const { maxEligibleAmount } = calculateLoanEligibility(savings);
+  const { maxEligibleAmount } = calculateLoanEligibility(totalDepositAmount);
   return normalizedAmount > maxEligibleAmount;
 }
 
@@ -236,15 +253,15 @@ async function createLoanApplication({
     witnessPhone: witnessPhone.trim(),
     witnessRelation: witnessRelation?.trim() || '',
     documents,
-    memberSavingsAtApply: eligibility.totalSavings,
+    memberSavingsAtApply: eligibility.totalDepositAmount,
     maxEligibleAmount: normalizedType === 'general' ? eligibility.theoreticalMaxLoan : 0,
     status: isOverLimit ? 'rejected' : 'pending',
     autoRejected: isOverLimit,
     rejectionReason: isOverLimit
-      ? `Loan amount exceeds remaining general loan limit. Available: ${formatMoney(eligibility.availableMaxLoan, 2)} (80% savings limit minus active general loans).`
+      ? `Loan amount exceeds remaining general loan limit. Available: ${formatMoney(eligibility.availableMaxLoan, 2)} (80% of total deposits minus active general loans).`
       : '',
     adminNote: isOverLimit
-      ? 'Automatically rejected because requested amount is above the remaining 80% savings loan limit.'
+      ? 'Automatically rejected because requested amount is above the remaining 80% total-deposit loan limit.'
       : '',
   });
 
@@ -253,8 +270,8 @@ async function createLoanApplication({
       await sendTransactionalEmail({
         to: member.email,
         subject: 'Loan Application Auto-Rejected',
-        text: `Dear ${member.name}, your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was automatically rejected. Remaining general loan limit: ${formatMoney(eligibility.availableMaxLoan, 2)} (total 80% cap: ${formatMoney(eligibility.theoreticalMaxLoan, 2)}, already used: ${formatMoney(eligibility.usedGeneralLoanAmount, 2)}).`,
-        html: `<p>Dear ${member.name},</p><p>Your <strong>${normalizedType}</strong> loan application for <strong>${formatMoney(normalizedAmount, 2)}</strong> was automatically rejected because it exceeds your <strong>remaining</strong> general loan limit.</p><p>Total savings: ${formatMoney(eligibility.totalSavings, 2)}<br>80% cap: ${formatMoney(eligibility.theoreticalMaxLoan, 2)}<br>Already reserved in general loans: ${formatMoney(eligibility.usedGeneralLoanAmount, 2)}<br>Available now: ${formatMoney(eligibility.availableMaxLoan, 2)}</p>`,
+        text: `Dear ${member.name}, your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was automatically rejected. Remaining general loan limit: ${formatMoney(eligibility.availableMaxLoan, 2)} (total 80% of deposits cap: ${formatMoney(eligibility.theoreticalMaxLoan, 2)}, already used: ${formatMoney(eligibility.usedGeneralLoanAmount, 2)}).`,
+        html: `<p>Dear ${member.name},</p><p>Your <strong>${normalizedType}</strong> loan application for <strong>${formatMoney(normalizedAmount, 2)}</strong> was automatically rejected because it exceeds your <strong>remaining</strong> general loan limit.</p><p>Total deposit amount: ${formatMoney(eligibility.totalDepositAmount, 2)}<br>80% cap: ${formatMoney(eligibility.theoreticalMaxLoan, 2)}<br>Already reserved in general loans: ${formatMoney(eligibility.usedGeneralLoanAmount, 2)}<br>Available now: ${formatMoney(eligibility.availableMaxLoan, 2)}</p>`,
       });
     }
 
@@ -638,13 +655,10 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
   }
 
   if (status === 'approved' || status === 'disbursed') {
-    const memberSavings = Number(loan.member?.savings || loan.memberSavingsAtApply || 0);
     if (loan.loanType === 'general') {
-      const usedGeneralLoanAmount = await getGeneralLoanUsage(loan.member._id, loan._id);
-      const theoreticalMaxLoan = calculateLoanEligibility(memberSavings).maxEligibleAmount;
-      const availableMaxLoan = Math.max(0, Number((theoreticalMaxLoan - usedGeneralLoanAmount).toFixed(2)));
-      if (exceedsAvailableGeneralLoan(loan.amount, availableMaxLoan)) {
-        const error = new Error(`Cannot approve: loan amount exceeds remaining general loan limit (${formatMoney(availableMaxLoan, 2)}).`);
+      const eligibility = await buildMemberLoanEligibility(loan.member, { excludeLoanId: loan._id });
+      if (exceedsAvailableGeneralLoan(loan.amount, eligibility.availableMaxLoan)) {
+        const error = new Error(`Cannot approve: loan amount exceeds remaining general loan limit (${formatMoney(eligibility.availableMaxLoan, 2)}).`);
         error.status = 400;
         throw error;
       }
@@ -1214,6 +1228,7 @@ module.exports = {
   LOAN_LIMIT_RATIO,
   PAYMENT_METHODS,
   calculateLoanEligibility,
+  getMemberTotalDepositAmount,
   getGeneralLoanUsage,
   buildMemberLoanEligibility,
   getLoanEligibility,
