@@ -17,11 +17,11 @@ function requireActiveMember(req, res, next) {
         if (!member || member.role !== 'member') {
           return res.status(403).json({ error: 'Forbidden' });
         }
-        if (member.status === 'inactive') {
-          return res.status(403).json({ error: 'Your account is inactive. Please contact the admin.' });
+        if (member.status === 'inactive' || member.status === 'deleted') {
+          return res.status(403).json({ error: 'Your account is inactive. Please contact User Management.' });
         }
-        if (member.status === 'deleted') {
-          return res.status(403).json({ error: 'Your account has been removed from the society.' });
+        if (member.status === 'blocked') {
+          return res.status(403).json({ error: 'Your account is blocked. Please contact User Management.' });
         }
         req.memberRecord = member;
         return next();

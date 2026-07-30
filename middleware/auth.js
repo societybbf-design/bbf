@@ -10,18 +10,45 @@ const {
   rolesRequiringPasswordConfirm,
   recordAudit,
   clientIp,
+  assertSessionStillValid,
 } = require('../services/securityService');
 
+function destroySession(req) {
+  return new Promise((resolve) => {
+    if (!req.session) return resolve();
+    req.session.destroy(() => resolve());
+  });
+}
+
 function requireAuth(req, res, next) {
-  if (req.session?.user) {
-    return next();
+  if (!req.session?.user) {
+    if (req.accepts('html') && !req.path.startsWith('/api/')) {
+      return res.redirect('/');
+    }
+    return res.status(401).json({ error: 'Authentication required.' });
   }
 
-  if (req.accepts('html') && !req.path.startsWith('/api/')) {
-    return res.redirect('/');
-  }
-
-  return res.status(401).json({ error: 'Authentication required.' });
+  // Live DB check: inactive/blocked/sessionVersion revoke access immediately.
+  return assertSessionStillValid(req.session.user)
+    .then(async (gate) => {
+      if (!gate.ok) {
+        if (gate.revoke) {
+          await destroySession(req);
+          res.clearCookie?.('society.sid');
+        }
+        if (req.accepts('html') && !req.path.startsWith('/api/')) {
+          return res.redirect('/');
+        }
+        return res.status(gate.status || 401).json({ error: gate.error || 'Authentication required.' });
+      }
+      // Keep session role/name in sync with DB.
+      req.session.user.role = gate.user.role;
+      req.session.user.name = gate.user.name;
+      req.session.user.email = gate.user.email;
+      req.session.user.sessionVersion = Number(gate.user.sessionVersion || 0);
+      return next();
+    })
+    .catch(() => res.status(500).json({ error: 'Unable to verify session.' }));
 }
 
 function requireDeveloper(req, res, next) {

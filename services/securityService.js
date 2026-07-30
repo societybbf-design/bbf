@@ -4,15 +4,28 @@ const User = require('../models/User');
 const SecurityAudit = require('../models/SecurityAudit');
 const { sendTransactionalEmail } = require('./notificationService');
 const { getOrganizationName } = require('./organizationBranding');
-const { ROLE_LABELS, isDeveloperRole, isFullAccessRole, ASSIGNABLE_ROLES, getDefaultPermissions, sanitizePermissions } = require('./rbac');
+const {
+  ROLE_LABELS,
+  isDeveloperRole,
+  isFullAccessRole,
+  ASSIGNABLE_ROLES,
+  CEO_PANEL_ASSIGNABLE_ROLES,
+  getDefaultPermissions,
+  sanitizePermissions,
+  UM_EXCLUSIVE_PERMISSIONS,
+  CASHIER_EXCLUSIVE_PERMISSIONS,
+} = require('./rbac');
 
 const MAX_FAILED_ATTEMPTS = Number(process.env.MAX_FAILED_LOGIN_ATTEMPTS) || 5;
 const LOCK_DURATION_MS = Number(process.env.ACCOUNT_LOCK_MS) || 24 * 60 * 60 * 1000;
-const OTP_TTL_MS = Number(process.env.PASSWORD_OTP_TTL_MS) || 30 * 60 * 1000;
+/** Strict OTP expiry — default 10 minutes (override via PASSWORD_OTP_TTL_MS). */
+const OTP_TTL_MS = Number(process.env.PASSWORD_OTP_TTL_MS) || 10 * 60 * 1000;
 const OTP_LENGTH = 6;
 const OTP_RATE_LIMIT_MS = Number(process.env.PASSWORD_OTP_RATE_LIMIT_MS) || 60 * 1000;
 const OTP_RATE_LIMIT_MAX = Number(process.env.PASSWORD_OTP_RATE_LIMIT_MAX) || 3;
+const OTP_MAX_VERIFY_FAILURES = Number(process.env.PASSWORD_OTP_MAX_FAILURES) || 5;
 const otpRequestHits = new Map();
+const ACCOUNT_CONTROL_STATUSES = Object.freeze(['active', 'inactive', 'blocked']);
 
 function assertOtpRateLimit(key) {
   const now = Date.now();
@@ -31,6 +44,116 @@ function assertOtpRateLimit(key) {
 }
 
 const MIN_PASSWORD_LENGTH = 6;
+
+function httpSecurityError(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+/** Roles the actor may assign when creating accounts (never developer). */
+function assignableRolesForActor(actor) {
+  if (isDeveloperRole(actor?.role)) return [...ASSIGNABLE_ROLES];
+  return [...CEO_PANEL_ASSIGNABLE_ROLES];
+}
+
+function assertActorCanAssignRole(actor, role) {
+  const normalized = String(role || '').trim();
+  if (normalized === 'developer' || normalized === 'admin') {
+    throw httpSecurityError(
+      'Cannot assign Platform Developer / User Management Admin (or legacy admin) from Create Account.',
+      403
+    );
+  }
+  const allowed = assignableRolesForActor(actor);
+  if (!allowed.includes(normalized)) {
+    throw httpSecurityError(
+      isDeveloperRole(actor?.role)
+        ? 'Invalid role. User Management cannot assign this role.'
+        : 'Only the Platform Developer (User Management Admin) can create CEO accounts. Choose a lower role.',
+      403
+    );
+  }
+  return normalized;
+}
+
+function sanitizeManagedPermissions(role, permissions, actor) {
+  let finalPermissions = sanitizePermissions(permissions);
+  if (!finalPermissions.length) {
+    finalPermissions = getDefaultPermissions(role);
+  }
+  if (role === 'member') return [];
+  if (role !== 'cashier') {
+    finalPermissions = finalPermissions.filter((key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key));
+  }
+  // UM-exclusive grants require Platform Developer actor — CEOs cannot escalate.
+  if (!isDeveloperRole(actor?.role)) {
+    finalPermissions = finalPermissions.filter((key) => !UM_EXCLUSIVE_PERMISSIONS.includes(key));
+  }
+  return finalPermissions;
+}
+
+async function bumpSessionVersion(userOrId, { save = true } = {}) {
+  if (!userOrId) return null;
+  if (typeof userOrId === 'object' && userOrId._id) {
+    userOrId.sessionVersion = Number(userOrId.sessionVersion || 0) + 1;
+    if (save) await userOrId.save();
+    return userOrId.sessionVersion;
+  }
+  await User.updateOne(
+    { _id: userOrId },
+    { $inc: { sessionVersion: 1 } }
+  );
+  return true;
+}
+
+/**
+ * Convert legacy soft-deleted accounts to inactive so financial history stays
+ * addressable without a delete lifecycle in User Management.
+ */
+async function migrateSoftDeletedAccountsToInactive() {
+  const result = await User.updateMany(
+    { status: 'deleted' },
+    {
+      $set: { status: 'inactive' },
+      $inc: { sessionVersion: 1 },
+    }
+  );
+  return {
+    matched: result.matchedCount ?? result.n ?? 0,
+    modified: result.modifiedCount ?? result.nModified ?? 0,
+  };
+}
+
+async function assertSessionStillValid(sessionUser) {
+  if (!sessionUser?.id) {
+    return { ok: false, status: 401, error: 'Authentication required.', revoke: true };
+  }
+  const user = await User.findById(sessionUser.id)
+    .select('status role sessionVersion name email permissions preferredLanguage');
+  if (!user) {
+    return { ok: false, status: 401, error: 'Session invalid. Please sign in again.', revoke: true };
+  }
+  if (['inactive', 'blocked', 'deleted'].includes(user.status)) {
+    return {
+      ok: false,
+      status: 403,
+      error: user.status === 'blocked'
+        ? 'Your account is blocked. Please contact User Management.'
+        : 'Your account is inactive. Please contact User Management.',
+      revoke: true,
+    };
+  }
+  if (Number(sessionUser.sessionVersion || 0) !== Number(user.sessionVersion || 0)) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Your session was revoked. Please sign in again.',
+      revoke: true,
+    };
+  }
+  return { ok: true, user };
+}
 
 function hashValue(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -141,10 +264,8 @@ function assertCanLogin(user) {
   if (!user) {
     return { ok: false, status: 401, error: 'Invalid credentials.' };
   }
-  if (user.status === 'deleted') {
-    return { ok: false, status: 403, error: 'Your account has been removed. Please contact User Management.' };
-  }
-  if (user.status === 'inactive') {
+  // Legacy soft-delete treated as inactive — accounts are never removed from UM.
+  if (user.status === 'deleted' || user.status === 'inactive') {
     return { ok: false, status: 403, error: 'Your account is inactive. Please contact User Management.' };
   }
   if (user.status === 'blocked') {
@@ -181,6 +302,7 @@ async function requestPasswordOtp(email, meta = {}) {
   const otp = generateOtp();
   user.passwordResetOtpHash = hashValue(otp);
   user.passwordResetOtpExpires = new Date(Date.now() + OTP_TTL_MS);
+  user.passwordResetOtpFailCount = 0;
   user.passwordResetRequestedAt = new Date();
   user.passwordResetVerifiedAt = null;
   await user.save();
@@ -252,12 +374,24 @@ async function verifyOtpAndResetPassword({ userId, otp, newPassword, actor, ip }
   }
 
   if (new Date(user.passwordResetOtpExpires).getTime() < Date.now()) {
+    user.passwordResetOtpHash = null;
+    user.passwordResetOtpExpires = null;
+    user.passwordResetOtpFailCount = 0;
+    await user.save();
     const err = new Error('OTP has expired. Ask the user to request a new one.');
     err.status = 400;
     throw err;
   }
 
-  if (hashValue(otp) !== user.passwordResetOtpHash) {
+  if (hashValue(String(otp).trim()) !== user.passwordResetOtpHash) {
+    const failCount = Number(user.passwordResetOtpFailCount || 0) + 1;
+    const burned = failCount >= OTP_MAX_VERIFY_FAILURES;
+    user.passwordResetOtpFailCount = burned ? 0 : failCount;
+    if (burned) {
+      user.passwordResetOtpHash = null;
+      user.passwordResetOtpExpires = null;
+    }
+    await user.save();
     await recordAudit({
       action: 'password_otp_failed',
       actorId: actor?.id,
@@ -265,24 +399,28 @@ async function verifyOtpAndResetPassword({ userId, otp, newPassword, actor, ip }
       actorRole: actor?.role,
       targetUserId: user._id,
       targetEmail: user.email,
+      details: { burned, failCount },
       ip: ip || '',
       success: false,
     });
-    const err = new Error('Invalid OTP.');
-    err.status = 400;
-    throw err;
+    throw httpSecurityError(
+      burned
+        ? 'OTP invalidated after too many failed attempts. Ask the user to request a new OTP.'
+        : 'Invalid OTP.',
+      400
+    );
   }
 
+  // Single-use: clear OTP before persisting the new password.
   user.password = newPassword;
   user.passwordResetOtpHash = null;
   user.passwordResetOtpExpires = null;
+  user.passwordResetOtpFailCount = 0;
   user.passwordResetVerifiedAt = new Date();
   user.failedLoginAttempts = 0;
   user.lockUntil = null;
-  if (user.status === 'blocked') {
-    // Unlock temporary lock only; blocked stays blocked unless developer unblocks
-  }
   user.passwordChangedAt = new Date();
+  user.sessionVersion = Number(user.sessionVersion || 0) + 1;
   await user.save();
 
   await recordAudit({
@@ -326,6 +464,7 @@ async function changeOwnPassword(userId, { currentPassword, newPassword }, meta 
 
   user.password = newPassword;
   user.passwordChangedAt = new Date();
+  user.sessionVersion = Number(user.sessionVersion || 0) + 1;
   await user.save();
 
   await recordAudit({
@@ -338,7 +477,10 @@ async function changeOwnPassword(userId, { currentPassword, newPassword }, meta 
     ip: meta.ip || '',
   });
 
-  return { message: 'Password updated successfully.' };
+  return {
+    message: 'Password updated successfully.',
+    sessionVersion: Number(user.sessionVersion || 0),
+  };
 }
 
 async function developerSetPassword(userId, newPassword, actor, ip) {
@@ -365,6 +507,8 @@ async function developerSetPassword(userId, newPassword, actor, ip) {
   user.lockUntil = null;
   user.passwordResetOtpHash = null;
   user.passwordResetOtpExpires = null;
+  user.passwordResetOtpFailCount = 0;
+  user.sessionVersion = Number(user.sessionVersion || 0) + 1;
   await user.save();
 
   await recordAudit({
@@ -421,33 +565,23 @@ async function developerUpdateEmail(userId, newEmail, actor, ip) {
 }
 
 async function developerSetAccountStatus(userId, status, actor, ip) {
-  const allowed = new Set(['active', 'inactive', 'blocked']);
-  if (!allowed.has(status)) {
-    const err = new Error('Status must be active, inactive, or blocked. Use soft-delete to remove an account.');
-    err.status = 400;
-    throw err;
+  if (!ACCOUNT_CONTROL_STATUSES.includes(status)) {
+    throw httpSecurityError('Status must be active, inactive, or blocked. Account deletion is not allowed.');
   }
 
   const user = await User.findById(userId);
   if (!user) {
-    const err = new Error('User not found.');
-    err.status = 404;
-    throw err;
+    throw httpSecurityError('User not found.', 404);
   }
+  // Auto-heal legacy soft-deleted rows into the allowed status set.
   if (user.status === 'deleted') {
-    const err = new Error('Account is soft-deleted. Restore it before changing status.');
-    err.status = 400;
-    throw err;
+    user.status = 'inactive';
   }
   if (isDeveloperRole(user.role) && String(user._id) !== String(actor?.id)) {
-    const err = new Error('Cannot change another developer account status.');
-    err.status = 403;
-    throw err;
+    throw httpSecurityError('Cannot change another developer account status.', 403);
   }
   if (String(user._id) === String(actor?.id) && status !== 'active') {
-    const err = new Error('You cannot deactivate or block your own developer account.');
-    err.status = 400;
-    throw err;
+    throw httpSecurityError('You cannot deactivate or block your own developer account.');
   }
 
   const previous = user.status;
@@ -455,6 +589,9 @@ async function developerSetAccountStatus(userId, status, actor, ip) {
   if (status === 'active') {
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
+  } else {
+    // Instantly invalidate any active sessions for inactive/blocked accounts.
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
   }
   await user.save();
 
@@ -465,7 +602,7 @@ async function developerSetAccountStatus(userId, status, actor, ip) {
     actorRole: actor?.role,
     targetUserId: user._id,
     targetEmail: user.email,
-    details: { previous, status },
+    details: { previous, status, sessionRevoked: status !== 'active' },
     ip: ip || '',
   });
 
@@ -505,47 +642,35 @@ async function createManagedUser({
   permissions,
 }, actor, ip) {
   if (!name || !email || !password || !role) {
-    const err = new Error('Name, email, password, and role are required.');
-    err.status = 400;
-    throw err;
+    throw httpSecurityError('Name, email, password, and role are required.');
   }
-  if (!ASSIGNABLE_ROLES.includes(role)) {
-    const err = new Error('Invalid role. User Management cannot assign this role.');
-    err.status = 400;
-    throw err;
-  }
+  const normalizedRole = assertActorCanAssignRole(actor, role);
   if (String(password).length < MIN_PASSWORD_LENGTH) {
-    const err = new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-    err.status = 400;
-    throw err;
+    throw httpSecurityError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
 
   const normalizedEmail = String(email).toLowerCase().trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw httpSecurityError('Enter a valid email address.');
+  }
   const existing = await User.findOne({ email: normalizedEmail });
   if (existing) {
-    const err = new Error('A user with this email already exists.');
-    err.status = 409;
-    throw err;
+    throw httpSecurityError('A user with this email already exists.', 409);
   }
 
-  let finalPermissions = sanitizePermissions(permissions);
-  if (!finalPermissions.length) {
-    finalPermissions = getDefaultPermissions(role);
-  }
-  if (role === 'member') {
-    finalPermissions = [];
-  }
+  const finalPermissions = sanitizeManagedPermissions(normalizedRole, permissions, actor);
 
   const user = await User.create({
-    name: String(name).trim(),
+    name: String(name).trim().slice(0, 120),
     email: normalizedEmail,
     password,
-    role,
+    role: normalizedRole,
     permissions: finalPermissions,
     savings: 0,
     profit: 0,
     advanceBalance: 0,
     status: 'active',
+    sessionVersion: 0,
   });
 
   await recordAudit({
@@ -555,154 +680,31 @@ async function createManagedUser({
     actorRole: actor?.role,
     targetUserId: user._id,
     targetEmail: user.email,
-    details: { role, status: user.status },
+    details: { role: normalizedRole, status: user.status },
     ip: ip || '',
   });
 
   const fresh = await User.findById(user._id);
   return {
     user: sanitizeUserForDeveloper(fresh),
-    message: role === 'member'
+    message: normalizedRole === 'member'
       ? 'Member account created and is active. They can log in with the temporary password.'
       : 'Account created in User Management.',
   };
 }
 
-async function softDeleteUser(userId, {
-  reason = '',
-  deletedBy = '',
-  confirmSettlementAmount = null,
-  settleBalances = true,
-} = {}, actor, ip) {
-  const user = await User.findById(userId);
-  if (!user) {
-    const err = new Error('User not found.');
-    err.status = 404;
-    throw err;
-  }
-  if (user.status === 'deleted') {
-    const err = new Error('Account is already soft-deleted.');
-    err.status = 400;
-    throw err;
-  }
-  if (isDeveloperRole(user.role)) {
-    const err = new Error('User Management admin accounts cannot be soft-deleted.');
-    err.status = 403;
-    throw err;
-  }
-  if (String(user._id) === String(actor?.id)) {
-    const err = new Error('You cannot soft-delete your own account.');
-    err.status = 400;
-    throw err;
-  }
-
-  let settlement = null;
-  if (user.role === 'member' && settleBalances !== false) {
-    const {
-      getMemberDeletionSettlementPreview,
-      settleMemberBalancesForDeletion,
-    } = require('./memberLifecycleService');
-
-    const preview = await getMemberDeletionSettlementPreview(user._id);
-    if (!preview.canDelete) {
-      const err = new Error(preview.blockers[0] || 'Member cannot be deleted until financial blockers are cleared.');
-      err.status = 400;
-      err.settlementPreview = preview;
-      throw err;
-    }
-
-    // Positive balances require explicit confirmation of the payout amount.
-    if (preview.requiresSettlement) {
-      settlement = await settleMemberBalancesForDeletion(user._id, {
-        confirmedAmount: confirmSettlementAmount,
-        processedBy: deletedBy || actor?.name || actor?.email || 'User Management',
-        reason: reason || 'Soft-deleted via User Management with central book settlement',
-      });
-    } else {
-      await settleMemberBalancesForDeletion(user._id, {
-        confirmedAmount: 0,
-        processedBy: deletedBy || actor?.name || actor?.email || 'User Management',
-        reason: reason || 'Soft-deleted via User Management (zero balance)',
-      });
-    }
-  }
-
-  // Re-load in case settlement mutated balances / exit fields
-  const fresh = await User.findById(userId);
-  const previous = fresh.status;
-  fresh.status = 'deleted';
-  fresh.deletedAt = new Date();
-  fresh.deletedReason = String(reason || 'Soft-deleted via User Management').trim();
-  fresh.deletedBy = String(deletedBy || actor?.name || actor?.email || 'User Management').trim();
-  fresh.restoredAt = null;
-  await fresh.save();
-
-  await recordAudit({
-    action: 'account_soft_deleted',
-    actorId: actor?.id,
-    actorEmail: actor?.email,
-    actorRole: actor?.role,
-    targetUserId: fresh._id,
-    targetEmail: fresh.email,
-    details: {
-      previous,
-      reason: fresh.deletedReason,
-      settlementAmount: settlement?.settlementAmount || 0,
-      bookPayable: settlement?.bookPayable || 0,
-      bookBalanceAfter: settlement?.bookBalanceAfter ?? null,
-      exitDepositId: settlement?.exitDeposit?._id || null,
-    },
-    ip: ip || '',
-  });
-
-  return {
-    user: sanitizeUserForDeveloper(fresh),
-    settlement: settlement
-      ? {
-        settlementAmount: settlement.settlementAmount,
-        bookPayable: settlement.bookPayable,
-        reserveShare: settlement.reserveShare,
-        bookBalanceAfter: settlement.bookBalanceAfter,
-        breakdown: settlement.preview?.settlementBreakdown || null,
-        exitDepositId: settlement.exitDeposit?._id || null,
-      }
-      : null,
-  };
+/** @deprecated Soft-delete removed — use active / inactive / blocked. */
+async function softDeleteUser() {
+  throw httpSecurityError(
+    'Account deletion is disabled. Set the account to inactive or blocked instead so financial history stays intact.',
+    410
+  );
 }
 
+/** @deprecated Soft-delete removed — activate via status controls. */
 async function restoreSoftDeletedUser(userId, actor, ip) {
-  const user = await User.findById(userId);
-  if (!user) {
-    const err = new Error('User not found.');
-    err.status = 404;
-    throw err;
-  }
-  if (user.status !== 'deleted') {
-    const err = new Error('Only soft-deleted accounts can be restored.');
-    err.status = 400;
-    throw err;
-  }
-
-  user.status = 'active';
-  user.restoredAt = new Date();
-  user.deletedAt = null;
-  user.deletedReason = '';
-  user.deletedBy = '';
-  user.failedLoginAttempts = 0;
-  user.lockUntil = null;
-  await user.save();
-
-  await recordAudit({
-    action: 'account_restored',
-    actorId: actor?.id,
-    actorEmail: actor?.email,
-    actorRole: actor?.role,
-    targetUserId: user._id,
-    targetEmail: user.email,
-    ip: ip || '',
-  });
-
-  return sanitizeUserForDeveloper(user);
+  await migrateSoftDeletedAccountsToInactive();
+  return developerSetAccountStatus(userId, 'active', actor, ip);
 }
 
 function sanitizeUserForDeveloper(user) {
@@ -750,9 +752,18 @@ function sanitizeUserForDeveloper(user) {
 }
 
 async function listUsersForDeveloper({ q = '', role = '', status = '' } = {}) {
+  await migrateSoftDeletedAccountsToInactive();
+
   const filter = {};
   if (role) filter.role = role;
-  if (status) filter.status = status;
+  if (status) {
+    if (status === 'deleted') {
+      // Deleted filter retired — surface inactive accounts instead.
+      filter.status = 'inactive';
+    } else {
+      filter.status = status;
+    }
+  }
   if (q) {
     const escaped = String(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filter.$or = [
@@ -766,28 +777,27 @@ async function listUsersForDeveloper({ q = '', role = '', status = '' } = {}) {
 }
 
 async function getDeveloperDashboardStats() {
+  await migrateSoftDeletedAccountsToInactive();
+
   const [
     total,
     active,
     inactive,
     blocked,
-    deleted,
     locked,
     pendingOtp,
     byRole,
   ] = await Promise.all([
-    User.countDocuments({ status: { $ne: 'deleted' } }),
+    User.countDocuments({}),
     User.countDocuments({ status: 'active' }),
     User.countDocuments({ status: 'inactive' }),
     User.countDocuments({ status: 'blocked' }),
-    User.countDocuments({ status: 'deleted' }),
     User.countDocuments({ lockUntil: { $gt: new Date() } }),
     User.countDocuments({
       passwordResetOtpExpires: { $gt: new Date() },
       passwordResetOtpHash: { $ne: null },
     }),
     User.aggregate([
-      { $match: { status: { $ne: 'deleted' } } },
       { $group: { _id: '$role', count: { $sum: 1 } } },
     ]),
   ]);
@@ -797,7 +807,7 @@ async function getDeveloperDashboardStats() {
     active,
     inactive,
     blocked,
-    deleted,
+    deleted: 0,
     locked,
     pendingOtp,
     byRole: byRole.reduce((acc, row) => {
@@ -806,6 +816,7 @@ async function getDeveloperDashboardStats() {
     }, {}),
     maxFailedAttempts: MAX_FAILED_ATTEMPTS,
     lockDurationHours: LOCK_DURATION_MS / (60 * 60 * 1000),
+    otpTtlMinutes: Math.round(OTP_TTL_MS / 60000),
   };
 }
 
@@ -839,7 +850,9 @@ module.exports = {
   MAX_FAILED_ATTEMPTS,
   LOCK_DURATION_MS,
   OTP_TTL_MS,
+  OTP_MAX_VERIFY_FAILURES,
   MIN_PASSWORD_LENGTH,
+  ACCOUNT_CONTROL_STATUSES,
   hashValue,
   generateOtp,
   recordAudit,
@@ -848,6 +861,12 @@ module.exports = {
   registerFailedLogin,
   registerSuccessfulLogin,
   assertCanLogin,
+  assertSessionStillValid,
+  assertActorCanAssignRole,
+  assignableRolesForActor,
+  sanitizeManagedPermissions,
+  bumpSessionVersion,
+  migrateSoftDeletedAccountsToInactive,
   requestPasswordOtp,
   verifyOtpAndResetPassword,
   changeOwnPassword,

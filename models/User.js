@@ -215,6 +215,15 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  /**
+   * Bumped when status becomes inactive/blocked or password changes so existing
+   * express-session cookies are rejected immediately (no JWT in this app).
+   */
+  sessionVersion: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   passwordResetOtpHash: {
     type: String,
     default: null,
@@ -223,6 +232,11 @@ const UserSchema = new mongoose.Schema({
   passwordResetOtpExpires: {
     type: Date,
     default: null,
+  },
+  passwordResetOtpFailCount: {
+    type: Number,
+    default: 0,
+    min: 0,
   },
   passwordResetRequestedAt: {
     type: Date,

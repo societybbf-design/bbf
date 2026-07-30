@@ -29,5 +29,5 @@ test('approvals routes module exports a router', () => {
     .filter((layer) => layer.route)
     .map((layer) => layer.route.path)
     .sort();
-  assert.deepEqual(paths, ['/counts', '/inbox']);
+  assert.deepEqual(paths, ['/counts', '/inbox', '/tracking']);
 });

@@ -32,163 +32,7 @@ function moneyFmt(value) {
   return `৳${Number(value || 0).toFixed(2)}`;
 }
 
-let pendingDeletionContext = null;
-
-function closeDeletionSettlementModal() {
-  const settleModal = document.getElementById('devDeleteSettleModal');
-  if (settleModal) settleModal.classList.add('hidden');
-  pendingDeletionContext = null;
-}
-
-async function openDeletionSettlementModal({
-  userId,
-  displayName,
-  displayEmail,
-  role,
-  onSuccess,
-  onError,
-}) {
-  const settleModal = document.getElementById('devDeleteSettleModal');
-  const body = document.getElementById('devDeleteSettleBody');
-  const confirmGroup = document.getElementById('devDeleteSettleConfirmGroup');
-  const confirmInput = document.getElementById('devDeleteSettleConfirmAmount');
-  const reasonInput = document.getElementById('devDeleteSettleReason');
-  const msg = document.getElementById('devDeleteSettleMessage');
-  const confirmBtn = document.getElementById('devDeleteSettleConfirmBtn');
-
-  if (!settleModal || !body) {
-    throw new Error('Settlement confirmation UI is missing.');
-  }
-
-  pendingDeletionContext = { userId, displayName, displayEmail, role, onSuccess, onError };
-  if (msg) {
-    msg.classList.remove('success', 'error');
-    msg.textContent = '';
-  }
-  if (reasonInput) reasonInput.value = '';
-  if (confirmInput) confirmInput.value = '';
-  settleModal.classList.remove('hidden');
-  body.innerHTML = '<p class="table-subtitle">Calculating financial standing…</p>';
-  if (confirmBtn) confirmBtn.disabled = true;
-
-  if (role !== 'member') {
-    body.innerHTML = `
-      <p><strong>${escapeHtml(displayName)}</strong> (${escapeHtml(displayEmail)})</p>
-      <p class="table-subtitle">Staff account — no society balances to settle. Soft-delete preserves the account record for restore.</p>
-    `;
-    if (confirmGroup) confirmGroup.hidden = true;
-    if (confirmBtn) {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Confirm soft-delete';
-    }
-    pendingDeletionContext.preview = { requiresSettlement: false, settlementAmount: 0, canDelete: true };
-    return;
-  }
-
-  try {
-    const preview = await api(`/api/developer/users/${userId}/deletion-settlement`);
-    pendingDeletionContext.preview = preview;
-    const b = preview.settlementBreakdown || {};
-    const blockers = preview.blockers || [];
-    body.innerHTML = `
-      <p><strong>${escapeHtml(preview.member?.name || displayName)}</strong> · ${escapeHtml(preview.member?.email || displayEmail)}</p>
-      <p class="table-subtitle">${escapeHtml(preview.formula || '')}</p>
-      <div class="table-wrapper u-mt-1">
-        <table class="data-table">
-          <tbody>
-            <tr><td>Lifetime deposits</td><td>${moneyFmt(preview.lifetimeDeposits)}</td></tr>
-            <tr><td>Savings</td><td>${moneyFmt(b.savings)}</td></tr>
-            <tr><td>Profit</td><td>${moneyFmt(b.profit)}</td></tr>
-            <tr><td>Advance balance</td><td>${moneyFmt(b.advance)}</td></tr>
-            <tr><td>Emergency reserve share</td><td>${moneyFmt(b.emergencyReserveShare)}</td></tr>
-            <tr><td><strong>Total payable to member</strong></td><td><strong>${moneyFmt(preview.settlementAmount)}</strong></td></tr>
-            <tr><td>Central book debit (savings+profit+advance)</td><td>${moneyFmt(preview.bookPayable)}</td></tr>
-            <tr><td>Current central book balance</td><td>${preview.bookBalance == null ? '—' : moneyFmt(preview.bookBalance)}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      ${blockers.length
-        ? `<div class="status-fail u-mt-1">${blockers.map((row) => escapeHtml(row)).join('<br>')}</div>`
-        : preview.requiresSettlement
-          ? `<div class="status-warn u-mt-1">Confirming will debit the Central Book Balance by ${moneyFmt(preview.bookPayable)}`
-            + (Number(b.emergencyReserveShare) > 0
-              ? ` and pay ${moneyFmt(b.emergencyReserveShare)} from the Emergency / Reserve Fund`
-              : '')
-            + `, zero the member balances, then soft-delete the account.</div>`
-          : '<div class="status-pass u-mt-1">No positive balances — soft-delete will not change the Central Book Balance.</div>'}
-    `;
-
-    if (confirmGroup) confirmGroup.hidden = !preview.requiresSettlement;
-    if (confirmInput && preview.requiresSettlement) {
-      confirmInput.value = Number(preview.settlementAmount || 0).toFixed(2);
-    }
-    if (confirmBtn) {
-      confirmBtn.disabled = !preview.canDelete;
-      confirmBtn.textContent = preview.requiresSettlement
-        ? 'Confirm settlement & soft-delete'
-        : 'Confirm soft-delete';
-    }
-  } catch (error) {
-    body.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
-    if (confirmBtn) confirmBtn.disabled = true;
-  }
-}
-
-async function submitDeletionSettlement() {
-  if (!pendingDeletionContext) return;
-  const { userId, preview, onSuccess, onError } = pendingDeletionContext;
-  const msg = document.getElementById('devDeleteSettleMessage');
-  const reasonInput = document.getElementById('devDeleteSettleReason');
-  const confirmInput = document.getElementById('devDeleteSettleConfirmAmount');
-  const confirmBtn = document.getElementById('devDeleteSettleConfirmBtn');
-
-  if (preview && preview.canDelete === false) {
-    if (msg) {
-      msg.classList.add('error');
-      msg.textContent = (preview.blockers && preview.blockers[0]) || 'Cannot delete until blockers are cleared.';
-    }
-    return;
-  }
-
-  const payload = {
-    reason: reasonInput?.value || '',
-  };
-  if (preview?.requiresSettlement) {
-    payload.confirmSettlementAmount = confirmInput?.value;
-  }
-
-  if (confirmBtn) confirmBtn.disabled = true;
-  if (msg) {
-    msg.classList.remove('success', 'error');
-    msg.textContent = 'Processing settlement…';
-  }
-
-  try {
-    const data = await api(`/api/developer/users/${userId}/soft-delete`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    closeDeletionSettlementModal();
-    if (typeof onSuccess === 'function') {
-      await onSuccess(data.message || 'Account soft-deleted.');
-    }
-  } catch (error) {
-    if (msg) {
-      msg.classList.add('error');
-      msg.textContent = error.message;
-    }
-    if (typeof onError === 'function') onError(error.message);
-    if (confirmBtn) confirmBtn.disabled = false;
-  }
-}
-
-function bindDeletionSettlementModal() {
-  document.getElementById('closeDevDeleteSettleModal')?.addEventListener('click', closeDeletionSettlementModal);
-  document.getElementById('devDeleteSettleCancelBtn')?.addEventListener('click', closeDeletionSettlementModal);
-  document.getElementById('devDeleteSettleConfirmBtn')?.addEventListener('click', () => {
-    void submitDeletionSettlement();
-  });
-}
+/* Soft-delete / deletion settlement UI removed — use active / inactive / blocked. */
 
 function formatDate(value) {
   if (!value) return '—';
@@ -200,13 +44,13 @@ function formatDate(value) {
 }
 
 const TAB_TITLE_KEYS = {
-  overview: ['um.overview', 'um.focusedNote'],
-  create: ['um.createAccount', 'um.createSubtitle'],
-  users: ['um.allAccounts', 'um.directoryNote'],
-  recovery: ['um.otpRecovery', 'um.otpNote'],
-  audits: ['um.securityAudit', 'um.auditNote'],
-  approvals: ['Member Approvals', 'Track member votes and record proxy approvals for absent members. CEO and Cashier steps are not changed.'],
-  security: ['um.mySecurity', 'um.changePasswordTitle'],
+  overview: ['um.overview', 'Overview', 'um.focusedNote', 'Account lifecycle and security only — finance modules stay on the CEO dashboard.'],
+  create: ['um.createAccount', 'Create Account', 'um.createSubtitle', 'Exclusive path for members, investors, project managers, cashiers, employees, and CEOs.'],
+  users: ['um.allAccounts', 'All Accounts', 'um.directoryNote', 'Browse accounts by role. Accounts stay active, inactive, or blocked — never deleted.'],
+  recovery: ['um.otpRecovery', 'OTP Recovery', 'um.otpNote', 'When a locked or forgotten-password user shares their OTP, select their account, enter the OTP, and set a new password.'],
+  audits: ['um.securityAudit', 'Security Audit', 'um.auditNote', 'Login failures, lockouts, OTP requests, password changes, and email updates.'],
+  approvals: ['Member Approvals', 'Member Approvals', 'um.approvalsNote', 'Track member votes and record proxy approvals for absent members. CEO and Cashier steps are not changed.'],
+  security: ['um.mySecurity', 'My Security', 'um.changePasswordTitle', 'Change my password'],
 };
 
 const ROLE_DIRECTORY = [
@@ -225,7 +69,7 @@ function roleLabel(entry) {
 
 function tabTitles(tab) {
   const keys = TAB_TITLE_KEYS[tab] || TAB_TITLE_KEYS.overview;
-  return [t(keys[0], tab), t(keys[1], '')];
+  return [t(keys[0], keys[1] || tab), t(keys[2], keys[3] || '')];
 }
 
 let cachedUsers = [];
@@ -500,7 +344,6 @@ async function loadStats() {
     ['Active', stats.active],
     ['Inactive', stats.inactive],
     ['Blocked', stats.blocked],
-    [t('um.softDelete', 'Soft-deleted'), stats.deleted || 0],
     ['Temporarily locked', stats.locked],
     ['Pending OTP', stats.pendingOtp],
   ];
@@ -571,9 +414,6 @@ function renderActiveRoleDirectory() {
 }
 
 function lockBadge(user) {
-  if (user.status === 'deleted') {
-    return `<span class="status-pill">Deleted ${formatDate(user.deletedAt)}</span>`;
-  }
   if (user.isTemporarilyLocked) return `<span class="status-pill">${t('um.locked24h', 'Locked 24h')}</span>`;
   if (user.hasPendingOtp) return `<span class="status-pill">${t('um.otpPending', 'OTP pending')}</span>`;
   if (user.failedLoginAttempts) return `${user.failedLoginAttempts} ${t('um.fails', 'fails')}`;
@@ -627,49 +467,40 @@ function openUserModal(userId) {
   if (emailEl) emailEl.textContent = displayEmail;
   if (metaEl) metaEl.textContent = `${roleLabel} · ${t('table.status', 'Status')}: ${statusLabel(user.status)}`;
 
-  const isDeleted = user.status === 'deleted';
   document.getElementById('devUserModalBody').innerHTML = `
     <div class="um-modal-subject" aria-live="polite">
       <p class="um-modal-subject-line">You are managing <strong>${escapeHtml(displayName)}</strong></p>
       <p class="um-modal-subject-email">${escapeHtml(displayEmail)}</p>
     </div>
     <p class="small-label">Failed logins: ${user.failedLoginAttempts || 0} · Lock until: ${formatDate(user.lockUntil)} · Last login: ${formatDate(user.lastLoginAt)}</p>
-    ${isDeleted ? `
-      <p class="table-subtitle">Soft-deleted ${formatDate(user.deletedAt)} by ${escapeHtml(user.deletedBy || '—')}. Reason: ${escapeHtml(user.deletedReason || '—')}. Financial records were preserved and can be restored anytime.</p>
-      <div class="ceo-dev-status-actions">
-        <button type="button" class="primary-btn" data-action="restore">Restore account</button>
+    <form id="devEmailForm" class="add-member-form u-mt-1">
+      <h3>Update email</h3>
+      <div class="form-group">
+        <label>
+          New email
+          <input type="email" name="email" value="${escapeHtml(user.email)}" required />
+        </label>
       </div>
-    ` : `
-      <form id="devEmailForm" class="add-member-form u-mt-1">
-        <h3>Update email</h3>
-        <div class="form-group">
-          <label>
-            New email
-            <input type="email" name="email" value="${escapeHtml(user.email)}" required />
-          </label>
-        </div>
-        <button type="submit" class="primary-btn">Save email</button>
-      </form>
+      <button type="submit" class="primary-btn">Save email</button>
+    </form>
 
-      <form id="devPasswordForm" class="add-member-form u-mt-1">
-        <h3>Set password directly</h3>
-        <div class="form-group">
-          <label>
-            New password
-            <input type="password" name="password" minlength="6" required />
-          </label>
-        </div>
-        <button type="submit" class="primary-btn">Set password</button>
-      </form>
-
-      <div class="ceo-dev-status-actions">
-        <button type="button" class="primary-btn" data-status="active">Activate</button>
-        <button type="button" class="ghost-btn" data-status="inactive">Deactivate</button>
-        <button type="button" class="ghost-btn" data-status="blocked">Block</button>
-        <button type="button" class="ghost-btn" data-action="unlock">${t('um.clearLockout', 'Clear lockout')}</button>
-        <button type="button" class="ghost-btn" data-action="soft-delete">${t('um.softDelete', 'Soft-delete')}</button>
+    <form id="devPasswordForm" class="add-member-form u-mt-1">
+      <h3>Set password directly</h3>
+      <div class="form-group">
+        <label>
+          New password
+          <input type="password" name="password" minlength="6" required />
+        </label>
       </div>
-    `}
+      <button type="submit" class="primary-btn">Set password</button>
+    </form>
+
+    <div class="ceo-dev-status-actions">
+      <button type="button" class="primary-btn" data-status="active">Activate</button>
+      <button type="button" class="ghost-btn" data-status="inactive">Deactivate</button>
+      <button type="button" class="ghost-btn" data-status="blocked">Block</button>
+      <button type="button" class="ghost-btn" data-action="unlock">${t('um.clearLockout', 'Clear lockout')}</button>
+    </div>
     <p id="devModalMessage" class="message"></p>
   `;
 
@@ -723,7 +554,7 @@ function openUserModal(userId) {
           method: 'PATCH',
           body: JSON.stringify({ status: btn.dataset.status }),
         });
-        msg.textContent = `Status set to ${btn.dataset.status}.`;
+        msg.textContent = `Status set to ${btn.dataset.status}.` + (btn.dataset.status !== 'active' ? ' Active sessions were revoked.' : '');
         await loadUsers();
         const refreshed = cachedUsers.find((u) => String(u.id || u._id) === selectedUserId);
         const metaNode = document.getElementById('devUserModalMeta');
@@ -747,52 +578,14 @@ function openUserModal(userId) {
     }
   });
 
-  document.querySelector('#devUserModalBody [data-action="soft-delete"]')?.addEventListener('click', async () => {
-    const msg = document.getElementById('devModalMessage');
-    try {
-      await openDeletionSettlementModal({
-        userId: selectedUserId,
-        displayName,
-        displayEmail,
-        role: user.role,
-        onSuccess: async (resultMessage) => {
-          if (msg) msg.textContent = resultMessage || t('um.softDelete', 'Account soft-deleted.');
-          modal.classList.add('hidden');
-          await loadUsers();
-          await loadStats();
-        },
-        onError: (errorMessage) => {
-          if (msg) msg.textContent = errorMessage;
-        },
-      });
-    } catch (error) {
-      if (msg) msg.textContent = error.message;
-    }
-  });
 
-  document.querySelector('#devUserModalBody [data-action="restore"]')?.addEventListener('click', async () => {
-    const msg = document.getElementById('devModalMessage');
-    if (!window.confirm(`Restore ${displayName} (${displayEmail}) to active? Linked financial history stays intact.`)) return;
-    try {
-      await api(`/api/developer/users/${selectedUserId}/restore`, {
-        method: 'POST',
-        body: '{}',
-      });
-      msg.textContent = t('um.restore', 'Account restored.');
-      modal.classList.add('hidden');
-      await loadUsers();
-      await loadStats();
-    } catch (error) {
-      msg.textContent = error.message;
-    }
-  });
 }
 
 function loadRecoveryOptions() {
   const select = document.getElementById('otpUserSelect');
   if (!select) return;
   const pending = cachedUsers.filter((u) => u.hasPendingOtp);
-  const options = (pending.length ? pending : cachedUsers.filter((u) => u.status !== 'deleted')).map((u) => `
+  const options = (pending.length ? pending : cachedUsers.filter((u) => ['active', 'inactive', 'blocked'].includes(u.status))).map((u) => `
     <option value="${escapeHtml(u.id || u._id)}">
       ${escapeHtml(u.name)} (${escapeHtml(u.email)})${u.hasPendingOtp ? ' · OTP pending' : ''}
     </option>

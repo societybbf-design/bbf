@@ -665,7 +665,9 @@ async function completeCashierMemberExit(exitRequestId, {
       member.savings = 0;
       member.profit = 0;
       member.advanceBalance = 0;
-      member.status = 'deleted';
+      // Exit closes membership access without deleting the identity (ledger history preserved).
+      member.status = 'inactive';
+      member.sessionVersion = Number(member.sessionVersion || 0) + 1;
       member.deletedAt = new Date();
       member.deletedReason = claimed.notes?.trim()
         || `Multi-approval exit completed; settlement ${formatMoney(settlement, 2)} paid by Cashier`;
