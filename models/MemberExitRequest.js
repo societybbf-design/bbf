@@ -101,6 +101,7 @@ const MemberExitRequestSchema = new mongoose.Schema({
       'pending_departing_approval',
       'pending_member_approval',
       'pending_cashier_payment',
+      'processing_cashier_payment',
       'completed',
       'cancelled',
       'rejected',
@@ -128,6 +129,10 @@ const MemberExitRequestSchema = new mongoose.Schema({
     member: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     memberName: { type: String, trim: true, default: '' },
     approvedAt: { type: Date, default: null },
+    proxiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    proxiedByName: { type: String, trim: true, default: '' },
+    proxiedByRole: { type: String, trim: true, default: '' },
+    proxyReason: { type: String, trim: true, default: '' },
   },
   memberApprovals: [ExitApprovalSchema],
   notes: {

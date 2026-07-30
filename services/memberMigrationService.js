@@ -142,9 +142,51 @@ async function getEntryValuation({ replaceMemberId = null } = {}) {
   };
 }
 
+async function assertReplacementGuards(memberId) {
+  const LoanApplication = require('../models/LoanApplication');
+  const InternalBorrowing = require('../models/InternalBorrowing');
+
+  const blockingLoans = await LoanApplication.find({
+    member: memberId,
+    status: { $in: ['pending', 'approved', 'disbursed'] },
+  }).select('status amount outstandingBalance repaymentStatus');
+
+  const unresolved = blockingLoans.filter((loan) => {
+    if (loan.status === 'pending' || loan.status === 'approved') return true;
+    if (loan.status === 'disbursed') {
+      if (loan.repaymentStatus === 'paid_off') return false;
+      const outstanding = loan.outstandingBalance != null
+        ? Number(loan.outstandingBalance)
+        : Number(loan.amount || 0);
+      return outstanding > 0.009;
+    }
+    return false;
+  });
+  if (unresolved.length) {
+    const error = new Error(
+      'Cannot replace this member while they have pending, approved, or outstanding loans. Clear loans first.'
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const openBorrowings = await InternalBorrowing.countDocuments({
+    borrower: memberId,
+    status: { $in: ['open', 'partial'] },
+  });
+  if (openBorrowings > 0) {
+    const error = new Error(
+      'Cannot replace this member while they have open internal borrowings to repay. Settle borrowings at Cashier first.'
+    );
+    error.status = 400;
+    throw error;
+  }
+}
+
 /**
  * Replace a departing member: incoming payment settles their exit balance,
  * then activates the UM-created successor — even when society bank cash was insufficient alone.
+ * Uses hard ledger credit+debit (balance-sheet neutral) with compensating rollback on failure.
  */
 async function replaceMember({
   departingMemberId,
@@ -164,6 +206,8 @@ async function replaceMember({
     throw error;
   }
 
+  await assertReplacementGuards(departingMemberId);
+
   const valuation = await getEntryValuation({ replaceMemberId: departingMemberId });
   const requiredEntry = money(valuation.entryAmount);
   const paid = money(entryAmountPaid);
@@ -176,113 +220,161 @@ async function replaceMember({
     throw error;
   }
 
-  const successor = await User.findOne({
-    _id: newMemberId,
-    role: 'member',
-    status: { $ne: 'deleted' },
-  });
-  if (!successor) {
-    const error = new Error('Replacement member not found. Create the account in User Management first.');
-    error.status = 404;
-    throw error;
-  }
+  const { withMongoTransaction } = require('./mongoTransaction');
+  const { creditInbound, debit } = require('./bankLedgerService');
 
-  const departingBefore = valuation.departing;
-  const departingDoc = await User.findById(departingMemberId);
-  if (!departingDoc) {
-    const error = new Error('Departing member not found.');
-    error.status = 404;
-    throw error;
-  }
-
-  let bankCredit = null;
-  let bankDebit = null;
-  const { tryCredit, tryDebit } = require('./bankLedgerService');
-
-  const entryDeposit = await Deposit.create({
-    member: successor._id,
-    amount: paid,
-    type: 'replacement_entry',
-    notes: notes?.trim()
-      || `Replacement entry settling exit of ${departingDoc.name} (${departingDoc.email})`,
-    recordedBy: String(recordedBy || 'CEO').trim(),
-  });
-
-  if (paid > 0) {
-    bankCredit = await tryCredit({
-      type: 'deposit',
-      amount: paid,
-      referenceType: 'Deposit',
-      referenceId: entryDeposit._id,
-      note: `Replacement payment in: ${successor.name}`,
-      createdBy: recordedBy,
+  return withMongoTransaction(async (session) => {
+    const successorQuery = User.findOne({
+      _id: newMemberId,
+      role: 'member',
+      status: { $ne: 'deleted' },
     });
-  }
+    if (session) successorQuery.session(session);
+    const successor = await successorQuery;
+    if (!successor) {
+      const error = new Error('Replacement member not found. Create the account in User Management first.');
+      error.status = 404;
+      throw error;
+    }
 
-  let exitDeposit = null;
-  if (requiredEntry > 0) {
-    exitDeposit = await Deposit.create({
-      member: departingDoc._id,
-      amount: requiredEntry,
-      type: 'exit_settlement',
-      notes: `Exit settlement funded by replacement ${successor.name}`,
-      recordedBy: String(recordedBy || 'CEO').trim(),
-    });
+    const departingBefore = valuation.departing;
+    const departingQuery = User.findById(departingMemberId);
+    if (session) departingQuery.session(session);
+    const departingDoc = await departingQuery;
+    if (!departingDoc || departingDoc.status === 'deleted') {
+      const error = new Error('Departing member not found.');
+      error.status = 404;
+      throw error;
+    }
 
-    bankDebit = await tryDebit({
-      type: 'project_payout',
-      amount: requiredEntry,
-      referenceType: 'Deposit',
-      referenceId: exitDeposit._id,
-      note: `Exit settlement payout to ${departingDoc.name}`,
-      createdBy: recordedBy,
-    });
-  }
+    let bankCredit = null;
+    let bankDebit = null;
+    let entryDeposit = null;
+    let exitDeposit = null;
 
-  departingDoc.exitSettledAt = new Date();
-  departingDoc.exitSettlementAmount = requiredEntry;
-  departingDoc.exitSettledBy = String(recordedBy || '').trim();
-  departingDoc.exitSettlementSource = 'replacement';
-  departingDoc.savings = 0;
-  departingDoc.profit = 0;
-  departingDoc.advanceBalance = 0;
-  await departingDoc.save();
+    const rollbackLedger = async () => {
+      if (bankDebit && requiredEntry > 0) {
+        try {
+          await creditInbound({
+            type: 'deposit',
+            amount: requiredEntry,
+            referenceType: 'Deposit',
+            referenceId: exitDeposit?._id || null,
+            note: `Rollback replacement exit payout for ${departingDoc.name}`,
+            createdBy: recordedBy,
+          });
+        } catch (_) { /* keep original error */ }
+      }
+      if (bankCredit && paid > 0) {
+        try {
+          await debit({
+            type: 'project_payout',
+            amount: paid,
+            referenceType: 'Deposit',
+            referenceId: entryDeposit?._id || null,
+            note: `Rollback replacement payment in for ${successor.name}`,
+            createdBy: recordedBy,
+          });
+        } catch (_) { /* keep original error */ }
+      }
+      if (exitDeposit?._id) await Deposit.deleteOne({ _id: exitDeposit._id }).catch(() => {});
+      if (entryDeposit?._id) await Deposit.deleteOne({ _id: entryDeposit._id }).catch(() => {});
+    };
 
-  const removed = await removeMember(departingMemberId, {
-    reason: notes?.trim() || `Replaced by member ${successor.name}; exit settled via incoming payment`,
-    deletedBy: recordedBy,
+    try {
+      const entryDocs = await Deposit.create([{
+        member: successor._id,
+        amount: paid,
+        type: 'replacement_entry',
+        notes: notes?.trim()
+          || `Replacement entry settling exit of ${departingDoc.name} (${departingDoc.email})`,
+        recordedBy: String(recordedBy || 'CEO').trim(),
+      }], session ? { session } : undefined);
+      entryDeposit = Array.isArray(entryDocs) ? entryDocs[0] : entryDocs;
+
+      if (paid > 0) {
+        bankCredit = await creditInbound({
+          type: 'deposit',
+          amount: paid,
+          referenceType: 'Deposit',
+          referenceId: entryDeposit._id,
+          note: `Replacement payment in: ${successor.name}`,
+          createdBy: recordedBy,
+        });
+      }
+
+      if (requiredEntry > 0) {
+        const exitDocs = await Deposit.create([{
+          member: departingDoc._id,
+          amount: requiredEntry,
+          type: 'exit_settlement',
+          notes: `Exit settlement funded by replacement ${successor.name}`,
+          recordedBy: String(recordedBy || 'CEO').trim(),
+        }], session ? { session } : undefined);
+        exitDeposit = Array.isArray(exitDocs) ? exitDocs[0] : exitDocs;
+
+        bankDebit = await debit({
+          type: 'project_payout',
+          amount: requiredEntry,
+          referenceType: 'Deposit',
+          referenceId: exitDeposit._id,
+          note: `Exit settlement payout to ${departingDoc.name}`,
+          createdBy: recordedBy,
+        });
+      }
+
+      departingDoc.exitSettledAt = new Date();
+      departingDoc.exitSettlementAmount = requiredEntry;
+      departingDoc.exitSettledBy = String(recordedBy || '').trim();
+      departingDoc.exitSettlementSource = 'replacement';
+      departingDoc.savings = 0;
+      departingDoc.profit = 0;
+      departingDoc.advanceBalance = 0;
+      departingDoc.status = 'deleted';
+      departingDoc.deletedAt = new Date();
+      departingDoc.deletedReason = notes?.trim()
+        || `Replaced by member ${successor.name}; exit settled via incoming payment`;
+      departingDoc.deletedBy = String(recordedBy || 'CEO').trim();
+      departingDoc.restoredAt = null;
+      await departingDoc.save(session ? { session } : undefined);
+
+      successor.replacedMember = departingDoc._id;
+      successor.joinedViaReplacement = true;
+      successor.replacementEntryAmount = requiredEntry;
+      successor.savings = money(Number(successor.savings || 0) + paid);
+      successor.pendingEntryBuyIn = false;
+      successor.requiredEntryAmount = requiredEntry;
+      successor.entryBuyInPaidAt = new Date();
+      successor.profitEligibleFrom = getNextMonthStart(successor.entryBuyInPaidAt);
+      successor.status = 'active';
+      await successor.save(session ? { session } : undefined);
+
+      return {
+        valuation,
+        departingMember: {
+          id: departingDoc._id,
+          name: departingDoc.name,
+          email: departingDoc.email,
+          status: departingDoc.status,
+          settledAmount: requiredEntry,
+          balancesBeforeExit: departingBefore,
+        },
+        newMember: successor.toJSON(),
+        entryDeposit,
+        exitDeposit,
+        bankLedger: {
+          credit: bankCredit,
+          debit: bankDebit,
+        },
+        message: 'Exit settled from replacement payment (bank credit then debit). Departing member closed; successor activated with seat buy-in.',
+      };
+    } catch (error) {
+      if (!session) {
+        await rollbackLedger();
+      }
+      throw error;
+    }
   });
-
-  successor.replacedMember = departingDoc._id;
-  successor.joinedViaReplacement = true;
-  successor.replacementEntryAmount = requiredEntry;
-  successor.savings = money(Number(successor.savings || 0) + paid);
-  successor.pendingEntryBuyIn = false;
-  successor.requiredEntryAmount = requiredEntry;
-  successor.entryBuyInPaidAt = new Date();
-  successor.profitEligibleFrom = getNextMonthStart(successor.entryBuyInPaidAt);
-  successor.status = 'active';
-  await successor.save();
-
-  return {
-    valuation,
-    departingMember: {
-      id: removed.id || removed._id,
-      name: removed.name,
-      email: removed.email,
-      status: removed.status,
-      settledAmount: requiredEntry,
-      balancesBeforeExit: departingBefore,
-    },
-    newMember: successor.toJSON(),
-    entryDeposit,
-    exitDeposit,
-    bankLedger: {
-      credit: bankCredit,
-      debit: bankDebit,
-    },
-    message: 'Exit settled from replacement payment. Departing member closed; successor activated with seat buy-in.',
-  };
 }
 
 /**

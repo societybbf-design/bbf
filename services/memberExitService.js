@@ -2,7 +2,6 @@ const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const MemberExitRequest = require('../models/MemberExitRequest');
-const { removeMember } = require('./memberLifecycleService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { createAdminNotification } = require('./adminNotificationService');
 const { money, amountsMatch, listActiveSocietyMembers, getEntryValuation } = require('./memberMigrationService');
@@ -21,6 +20,7 @@ function httpError(message, status = 400) {
 
 async function assertNoBlockingLoans(memberId) {
   const LoanApplication = require('../models/LoanApplication');
+  const InternalBorrowing = require('../models/InternalBorrowing');
   const blockingLoans = await LoanApplication.find({
     member: memberId,
     status: { $in: ['pending', 'approved', 'disbursed'] },
@@ -41,6 +41,16 @@ async function assertNoBlockingLoans(memberId) {
   if (unresolved.length) {
     throw httpError(
       'Cannot start member exit while the member has pending, approved, or outstanding loans. Clear loans first.'
+    );
+  }
+
+  const openBorrowings = await InternalBorrowing.countDocuments({
+    borrower: memberId,
+    status: { $in: ['open', 'partial'] },
+  });
+  if (openBorrowings > 0) {
+    throw httpError(
+      'Cannot start member exit while the member has open internal borrowings to repay. Settle borrowings at Cashier first.'
     );
   }
 }
@@ -185,7 +195,7 @@ async function previewMemberExit(memberId) {
     settlementBreakdown: breakdown,
     remainingMemberCount: remaining.length,
     redistributionPlan,
-    formula: 'Settlement = savings + profit + advance. Released balances redistribute to remaining members by savings weight (equal if all zero). Cashier pays settlement from society bank.',
+    formula: 'Settlement = savings + profit + advance. Cashier pays that cash from the society bank once; departing balances are zeroed (not credited again to remaining members). Ownership seat redistributes automatically among remaining active members (weights shown for audit).',
   };
 }
 
@@ -415,36 +425,12 @@ async function rejectExitByDepartingMember(exitRequestId, memberId, reason = '')
 }
 
 async function approveExitByMember(exitRequestId, memberId, { proxy = null } = {}) {
-  const exitRequest = await MemberExitRequest.findById(exitRequestId);
-  if (!exitRequest) {
-    throw httpError('Exit request not found.', 404);
-  }
-  if (exitRequest.status !== 'pending_member_approval') {
-    throw httpError('This exit is not waiting for remaining-member approvals.');
-  }
-
-  const eligible = (exitRequest.eligibleMembers || []).map((id) => String(id));
-  if (!eligible.includes(String(memberId))) {
-    throw httpError('You are not eligible to approve this exit redistribution.', 403);
-  }
-
-  const already = (exitRequest.memberApprovals || []).some(
-    (row) => String(row.member) === String(memberId)
-  );
-  if (already) {
-    return {
-      exitRequest: serializeExitRequest(exitRequest),
-      message: 'You already approved this exit redistribution.',
-      alreadyApproved: true,
-    };
-  }
-
   const member = await User.findById(memberId).select('name status role');
   if (!member || member.role !== 'member' || member.status !== 'active') {
     throw httpError('Active member account required.', 403);
   }
 
-  exitRequest.memberApprovals.push({
+  const approvalRow = {
     member: member._id,
     memberName: member.name,
     approvedAt: new Date(),
@@ -454,25 +440,69 @@ async function approveExitByMember(exitRequestId, memberId, { proxy = null } = {
       proxiedByRole: proxy.proxiedByRole,
       proxyReason: proxy.proxyReason,
     } : {}),
-  });
+  };
+
+  // Atomic push — prevents duplicate approvals / lost updates under concurrency.
+  let exitRequest = await MemberExitRequest.findOneAndUpdate(
+    {
+      _id: exitRequestId,
+      status: 'pending_member_approval',
+      eligibleMembers: memberId,
+      'memberApprovals.member': { $ne: member._id },
+    },
+    { $push: { memberApprovals: approvalRow } },
+    { new: true }
+  );
+
+  if (!exitRequest) {
+    const existing = await MemberExitRequest.findById(exitRequestId);
+    if (!existing) throw httpError('Exit request not found.', 404);
+    if (existing.status !== 'pending_member_approval') {
+      throw httpError('This exit is not waiting for remaining-member approvals.');
+    }
+    const eligible = (existing.eligibleMembers || []).map((id) => String(id));
+    if (!eligible.includes(String(memberId))) {
+      throw httpError('You are not eligible to approve this exit redistribution.', 403);
+    }
+    const already = (existing.memberApprovals || []).some(
+      (row) => String(row.member) === String(memberId)
+    );
+    if (already) {
+      return {
+        exitRequest: serializeExitRequest(existing),
+        message: 'You already approved this exit redistribution.',
+        alreadyApproved: true,
+      };
+    }
+    throw httpError('Unable to record approval. Refresh and try again.', 409);
+  }
 
   const tracking = buildApprovalTracking(exitRequest);
   let message = `Approval recorded (${tracking.approvedCount}/${tracking.totalMembers}).`;
 
   if (tracking.allMembersApproved) {
-    exitRequest.status = 'pending_cashier_payment';
-    message = 'All members approved. Exit forwarded to the Cashier for payout.';
-    await createAdminNotification({
-      type: 'general',
-      title: 'Member exit ready for Cashier payout',
-      message: `Exit for ${exitRequest.departingMemberName} (${formatMoney(exitRequest.settlementAmount, 2)}) is ready for Cashier disbursement.`,
-      relatedId: exitRequest._id,
-      relatedModel: 'MemberExitRequest',
-      targetRoles: ['cashier'],
-    });
+    const claimed = await MemberExitRequest.findOneAndUpdate(
+      { _id: exitRequest._id, status: 'pending_member_approval' },
+      { $set: { status: 'pending_cashier_payment' } },
+      { new: true }
+    );
+    if (claimed) {
+      exitRequest = claimed;
+      message = 'All members approved. Exit forwarded to the Cashier for payout.';
+      await createAdminNotification({
+        type: 'general',
+        title: 'Member exit ready for Cashier payout',
+        message: `Exit for ${exitRequest.departingMemberName} (${formatMoney(exitRequest.settlementAmount, 2)}) is ready for Cashier disbursement.`,
+        relatedId: exitRequest._id,
+        relatedModel: 'MemberExitRequest',
+        targetRoles: ['cashier'],
+      });
+    } else {
+      exitRequest = await MemberExitRequest.findById(exitRequestId);
+      message = 'Approval recorded. Exit is already with the Cashier or completed.';
+    }
   }
 
-  await exitRequest.save();
   return {
     exitRequest: serializeExitRequest(exitRequest),
     message,
@@ -508,153 +538,199 @@ async function completeCashierMemberExit(exitRequestId, {
   cashierNote = '',
   processedBy = 'Cashier',
 } = {}) {
-  const exitRequest = await MemberExitRequest.findById(exitRequestId);
-  if (!exitRequest) {
-    throw httpError('Exit request not found.', 404);
-  }
-  if (exitRequest.status !== 'pending_cashier_payment') {
+  const { withMongoTransaction } = require('./mongoTransaction');
+  const { debit, getLedger, creditInbound } = require('./bankLedgerService');
+
+  // Atomic claim prevents double payout under concurrent Cashier clicks.
+  const claimed = await MemberExitRequest.findOneAndUpdate(
+    { _id: exitRequestId, status: 'pending_cashier_payment' },
+    {
+      $set: {
+        status: 'processing_cashier_payment',
+        cashierProcessedBy: String(processedBy || 'Cashier').trim(),
+        cashierProcessedAt: new Date(),
+        paymentMethod: String(paymentMethod || '').trim(),
+        transferReference: String(transferReference || '').trim(),
+        cashierNote: String(cashierNote || '').trim(),
+      },
+    },
+    { new: true }
+  );
+
+  if (!claimed) {
+    const existing = await MemberExitRequest.findById(exitRequestId);
+    if (!existing) throw httpError('Exit request not found.', 404);
+    if (existing.status === 'completed') {
+      throw httpError('This exit payout was already completed.', 409);
+    }
+    if (existing.status === 'processing_cashier_payment') {
+      throw httpError('This exit payout is already being processed.', 409);
+    }
     throw httpError('Only fully approved exits can be paid by the Cashier.');
   }
 
-  const member = await User.findOne({
-    _id: exitRequest.departingMember,
-    role: 'member',
-    status: { $in: ['active', 'inactive'] },
-  });
-  if (!member) {
-    throw httpError('Departing member not found or already removed.', 404);
-  }
-
-  await assertNoBlockingLoans(member._id);
-
-  const settlement = money(exitRequest.settlementAmount);
-  const { debit, getLedger, credit } = require('./bankLedgerService');
-
-  let bookBalance = 0;
-  try {
-    const ledgerSummary = await getLedger({ entryLimit: 1 });
-    bookBalance = money(ledgerSummary?.bookBalance);
-  } catch (_) {
-    // debit() will throw if opening/balance blocks payout
-  }
-  if (settlement > 0 && bookBalance + 0.001 < settlement) {
-    throw httpError(
-      `Society bank cash is insufficient for this exit. Settlement ${formatMoney(settlement, 2)}; book balance ${formatMoney(bookBalance, 2)}.`
-    );
-  }
+  const releaseClaim = async () => {
+    await MemberExitRequest.updateOne(
+      { _id: claimed._id, status: 'processing_cashier_payment' },
+      { $set: { status: 'pending_cashier_payment' } }
+    ).catch(() => {});
+  };
 
   let exitDeposit = null;
   let bankDebit = null;
-
-  if (settlement > 0) {
-    exitDeposit = await Deposit.create({
-      member: member._id,
-      amount: settlement,
-      type: 'exit_settlement',
-      notes: cashierNote?.trim()
-        || `Approved member-exit payout for ${member.name} (multi-approval workflow)`,
-      recordedBy: String(processedBy || 'Cashier').trim(),
-    });
-
-    try {
-      bankDebit = await debit({
-        type: 'project_payout',
-        amount: settlement,
-        referenceType: 'Deposit',
-        referenceId: exitDeposit._id,
-        note: `Member-exit payout to ${member.name}`,
-        createdBy: processedBy,
-        paymentChannel: paymentMethod || '',
-        paymentReference: transferReference || '',
-      });
-    } catch (err) {
-      await Deposit.deleteOne({ _id: exitDeposit._id }).catch(() => {});
-      throw err;
-    }
-  }
+  let settlement = 0;
+  let bookBalance = 0;
+  let memberName = claimed.departingMemberName || 'member';
 
   try {
-    for (const row of exitRequest.redistributionPlan || []) {
-      if (!row.member) continue;
-      const credits = {
-        savings: money(row.savingsCredit),
-        profit: money(row.profitCredit),
-        advance: money(row.advanceCredit),
-      };
-      if (credits.savings <= 0 && credits.profit <= 0 && credits.advance <= 0) continue;
+    const result = await withMongoTransaction(async (session) => {
+      const memberQuery = User.findOne({
+        _id: claimed.departingMember,
+        role: 'member',
+        status: { $in: ['active', 'inactive'] },
+      });
+      if (session) memberQuery.session(session);
+      const member = await memberQuery;
+      if (!member) {
+        throw httpError('Departing member not found or already removed.', 404);
+      }
+      memberName = member.name;
 
-      await User.updateOne(
-        { _id: row.member, role: 'member', status: 'active' },
-        {
-          $inc: {
-            savings: credits.savings,
-            profit: credits.profit,
-            advanceBalance: credits.advance,
-          },
-        }
+      await assertNoBlockingLoans(member._id);
+
+      settlement = money(claimed.settlementAmount);
+      const liveSettlement = money(
+        Number(member.savings || 0)
+        + Number(member.profit || 0)
+        + Number(member.advanceBalance || 0)
       );
-    }
+      if (!amountsMatch(liveSettlement, settlement)) {
+        throw httpError(
+          `Member balances changed since exit was initiated. Approved settlement ${formatMoney(settlement, 2)}; live balances ${formatMoney(liveSettlement, 2)}. Cancel and re-initiate the exit.`,
+          409
+        );
+      }
 
-    member.exitSettledAt = new Date();
-    member.exitSettlementAmount = settlement;
-    member.exitSettledBy = String(processedBy || 'Cashier').trim();
-    member.exitSettlementSource = 'approved_exit';
-    member.savings = 0;
-    member.profit = 0;
-    member.advanceBalance = 0;
-    await member.save();
+      try {
+        const ledgerSummary = await getLedger({ entryLimit: 1 });
+        bookBalance = money(ledgerSummary?.bookBalance);
+      } catch (_) {
+        bookBalance = 0;
+      }
+      if (settlement > 0 && bookBalance + 0.001 < settlement) {
+        throw httpError(
+          `Society bank cash is insufficient for this exit. Settlement ${formatMoney(settlement, 2)}; book balance ${formatMoney(bookBalance, 2)}.`
+        );
+      }
 
-    const removed = await removeMember(member._id, {
-      reason: exitRequest.notes?.trim()
-        || `Multi-approval exit completed; settlement ${formatMoney(settlement, 2)} paid by Cashier`,
-      deletedBy: processedBy,
+      // Accounting rule: Cashier pays settlement from bank ONCE.
+      // Do NOT credit remaining members with the same balances (that double-counts liabilities).
+      // Ownership seat redistributes automatically when the departing member is soft-deleted.
+      if (settlement > 0) {
+        const depositDocs = await Deposit.create([{
+          member: member._id,
+          amount: settlement,
+          type: 'exit_settlement',
+          notes: cashierNote?.trim()
+            || `Approved member-exit payout for ${member.name} (multi-approval workflow)`,
+          recordedBy: String(processedBy || 'Cashier').trim(),
+        }], session ? { session } : undefined);
+        exitDeposit = Array.isArray(depositDocs) ? depositDocs[0] : depositDocs;
+
+        try {
+          bankDebit = await debit({
+            type: 'project_payout',
+            amount: settlement,
+            referenceType: 'Deposit',
+            referenceId: exitDeposit._id,
+            note: `Member-exit payout to ${member.name}`,
+            createdBy: processedBy,
+            paymentChannel: paymentMethod || '',
+            paymentReference: transferReference || '',
+          });
+        } catch (err) {
+          if (session) {
+            throw err;
+          }
+          await Deposit.deleteOne({ _id: exitDeposit._id }).catch(() => {});
+          exitDeposit = null;
+          throw err;
+        }
+      }
+
+      member.exitSettledAt = new Date();
+      member.exitSettlementAmount = settlement;
+      member.exitSettledBy = String(processedBy || 'Cashier').trim();
+      member.exitSettlementSource = 'approved_exit';
+      member.savings = 0;
+      member.profit = 0;
+      member.advanceBalance = 0;
+      member.status = 'deleted';
+      member.deletedAt = new Date();
+      member.deletedReason = claimed.notes?.trim()
+        || `Multi-approval exit completed; settlement ${formatMoney(settlement, 2)} paid by Cashier`;
+      member.deletedBy = String(processedBy || 'Cashier').trim();
+      member.restoredAt = null;
+      await member.save(session ? { session } : undefined);
+      const removed = member.toJSON();
+
+      const completed = await MemberExitRequest.findOneAndUpdate(
+        { _id: claimed._id, status: 'processing_cashier_payment' },
+        {
+          $set: {
+            status: 'completed',
+            exitDepositId: exitDeposit?._id || null,
+            bankLedgerEntryId: bankDebit?.entry?._id || null,
+          },
+        },
+        { new: true, ...(session ? { session } : {}) }
+      );
+      if (!completed) {
+        throw httpError('Exit payout claim was lost during completion. Contact support before retrying.', 409);
+      }
+
+      return {
+        exitRequest: serializeExitRequest(completed),
+        departingMember: removed,
+        bankLedger: {
+          debit: bankDebit,
+          bookBalanceAfter: bankDebit?.ledger?.bookBalance ?? money(bookBalance - settlement),
+        },
+        message: settlement > 0
+          ? `Exit completed. ${formatMoney(settlement, 2)} paid from society bank. Departing balances zeroed; ownership seat redistributed among remaining members (no second credit to their wallets).`
+          : 'Exit completed with zero settlement. Share seat removed among remaining members.',
+      };
     });
-
-    exitRequest.status = 'completed';
-    exitRequest.cashierNote = String(cashierNote || '').trim();
-    exitRequest.cashierProcessedBy = String(processedBy || 'Cashier').trim();
-    exitRequest.cashierProcessedAt = new Date();
-    exitRequest.paymentMethod = String(paymentMethod || '').trim();
-    exitRequest.transferReference = String(transferReference || '').trim();
-    exitRequest.exitDepositId = exitDeposit?._id || null;
-    exitRequest.bankLedgerEntryId = bankDebit?.entry?._id || null;
-    await exitRequest.save();
 
     await createAdminNotification({
       type: 'general',
       title: 'Member exit payout completed',
-      message: `Cashier completed exit payout for ${removed.name || member.name}: ${formatMoney(settlement, 2)}. Shares redistributed to remaining members.`,
-      relatedId: exitRequest._id,
+      message: `Cashier completed exit payout for ${result.departingMember?.name || memberName}: ${formatMoney(settlement, 2)}. Ownership seat redistributed; balances were not double-credited.`,
+      relatedId: claimed._id,
       relatedModel: 'MemberExitRequest',
       targetRoles: ['ceo'],
     });
 
-    return {
-      exitRequest: serializeExitRequest(exitRequest),
-      departingMember: removed,
-      bankLedger: {
-        debit: bankDebit,
-        bookBalanceAfter: bankDebit?.ledger?.bookBalance ?? money(bookBalance - settlement),
-      },
-      message: settlement > 0
-        ? `Exit completed. ${formatMoney(settlement, 2)} paid; shares redistributed to remaining members.`
-        : 'Exit completed with zero settlement. Share seat removed and redistributed.',
-    };
+    return result;
   } catch (err) {
     if (settlement > 0 && bankDebit) {
       try {
-        await credit({
+        await creditInbound({
           type: 'deposit',
           amount: settlement,
           referenceType: 'Deposit',
           referenceId: exitDeposit?._id || null,
-          note: `Rollback member-exit payout for ${member.name}`,
+          note: `Rollback member-exit payout for ${memberName}`,
           createdBy: processedBy,
         });
       } catch (_) {
         // preserve original error
       }
     }
+    if (exitDeposit?._id) {
+      await Deposit.deleteOne({ _id: exitDeposit._id }).catch(() => {});
+    }
+    await releaseClaim();
     throw err;
   }
 }
