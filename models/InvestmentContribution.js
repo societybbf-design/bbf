@@ -32,6 +32,12 @@ const InvestmentContributionSchema = new mongoose.Schema({
     default: 0,
     min: 0,
   },
+  /** Portion of the equal share reinvested from the member's profit balance. */
+  paidFromProfit: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   paidFromAdvance: {
     type: Number,
     default: 0,

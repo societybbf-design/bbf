@@ -24,8 +24,10 @@ function splitAmountEqually(amount, memberCount) {
  * Example: ৳50,000 across 5 members → ৳10,000 each.
  * A member with only ৳5,000 available has shareDeficit ৳5,000.
  *
+ * Available for reinvestment = deposit/savings + profit + advance.
+ *
  * @param {number} requiredAmount Society project amount to fund
- * @param {Array<{id?:*, name?:string, email?:string, savings?:number, advanceBalance?:number}>} memberBalances
+ * @param {Array<{id?:*, name?:string, email?:string, savings?:number, profit?:number, advanceBalance?:number}>} memberBalances
  */
 function calculateEqualShareMemberAudit(requiredAmount, memberBalances = []) {
   const projectAmount = Number((Number(requiredAmount) || 0).toFixed(2));
@@ -52,8 +54,9 @@ function calculateEqualShareMemberAudit(requiredAmount, memberBalances = []) {
   const rows = members.map((member, index) => {
     const expectedShare = Number(equalShares[index] || 0);
     const savings = Number((Number(member.savings || 0)).toFixed(2));
+    const profit = Number((Number(member.profit || 0)).toFixed(2));
     const advanceBalance = Number((Number(member.advanceBalance || 0)).toFixed(2));
-    const available = Number((savings + advanceBalance).toFixed(2));
+    const available = Number((savings + profit + advanceBalance).toFixed(2));
     // Exact deficit for this member's equal share (never negative).
     const shareDeficit = Number(Math.max(0, expectedShare - available).toFixed(2));
     const isShort = shareDeficit > 0.001;
@@ -64,6 +67,7 @@ function calculateEqualShareMemberAudit(requiredAmount, memberBalances = []) {
       email: member.email || '',
       expectedShare,
       savings,
+      profit,
       advanceBalance,
       available,
       shareDeficit,
@@ -161,7 +165,8 @@ async function deductFromTotalSavings(amount) {
 }
 
 /**
- * Fund an investment share-by-share from member savings then advance.
+ * Fund an investment share-by-share by reinvesting member balances.
+ * Deduction order: deposit/savings → profit → advance.
  * Members who cannot cover their equal share are flagged unpaid — project still proceeds.
  */
 async function fundInvestmentFromMembers(investmentId, amount) {
@@ -190,6 +195,7 @@ async function fundInvestmentFromMembers(investmentId, amount) {
     const expected = equalShares[index];
     let remaining = expected;
     let paidFromSavings = 0;
+    let paidFromProfit = 0;
     let paidFromAdvance = 0;
 
     const savingsAvail = Math.max(0, Number(member.savings || 0));
@@ -198,6 +204,14 @@ async function fundInvestmentFromMembers(investmentId, amount) {
       member.savings = Number((savingsAvail - fromSavings).toFixed(2));
       paidFromSavings = fromSavings;
       remaining = Number((remaining - fromSavings).toFixed(2));
+    }
+
+    const profitAvail = Math.max(0, Number(member.profit || 0));
+    const fromProfit = Math.min(profitAvail, remaining);
+    if (fromProfit > 0) {
+      member.profit = Number((profitAvail - fromProfit).toFixed(2));
+      paidFromProfit = fromProfit;
+      remaining = Number((remaining - fromProfit).toFixed(2));
     }
 
     const advanceAvail = Math.max(0, Number(member.advanceBalance || 0));
@@ -212,7 +226,7 @@ async function fundInvestmentFromMembers(investmentId, amount) {
 
     const unpaidAmount = Math.max(0, remaining);
     const status = unpaidAmount > 0.001 ? 'unpaid' : 'paid';
-    collected = Number((collected + paidFromSavings + paidFromAdvance).toFixed(2));
+    collected = Number((collected + paidFromSavings + paidFromProfit + paidFromAdvance).toFixed(2));
     unpaidTotal = Number((unpaidTotal + unpaidAmount).toFixed(2));
 
     const contribution = await InvestmentContribution.findOneAndUpdate(
@@ -223,6 +237,7 @@ async function fundInvestmentFromMembers(investmentId, amount) {
         memberName: member.name,
         expectedAmount: expected,
         paidFromSavings,
+        paidFromProfit,
         paidFromAdvance,
         borrowedAmount: 0,
         unpaidAmount,
@@ -959,13 +974,14 @@ function resolvePayoutReceiver(investment, overrides = {}) {
 
 /**
  * Dry-run backend audit: split project amount equally across active members and
- * compute each member's exact share deficit (savings + advance vs equal share).
+ * compute each member's exact share deficit
+ * (deposit/savings + profit + advance vs equal share).
  * Monthly contribution dues are attached as context only — they do not alone
  * block direct completion; equal-share deficit does.
  */
 async function previewMemberShareFunding(requiredAmount) {
   const members = await User.find({ role: 'member', status: 'active' })
-    .select('name email savings advanceBalance')
+    .select('name email savings profit advanceBalance')
     .sort({ createdAt: 1 })
     .lean();
 
@@ -976,6 +992,7 @@ async function previewMemberShareFunding(requiredAmount) {
       name: member.name,
       email: member.email,
       savings: member.savings,
+      profit: member.profit,
       advanceBalance: member.advanceBalance,
     }))
   );
