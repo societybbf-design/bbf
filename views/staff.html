@@ -819,10 +819,32 @@
                 </label>
               </div>
             </div>
-            <p class="text-secondary" id="cashierDepositHint">Smart payment splits across internal lenders, project/emergency dues, loan, this month’s fixed target, then Advance surplus.</p>
-            <div id="cashierDepositSplitPreview" class="panel-card u-mb-1" hidden>
-              <p class="table-subtitle" style="margin:0"><strong>Smart allocation preview</strong></p>
-              <p class="table-subtitle" style="margin:0" id="cashierDepositSplitPreviewText"></p>
+            <div id="cashierDepositSplitPreview" class="smart-alloc-card u-mb-1" hidden>
+              <div class="smart-alloc-card-head">
+                <div>
+                  <p class="smart-alloc-eyebrow">Before you record</p>
+                  <h3 class="smart-alloc-title">Smart payment &amp; allocation</h3>
+                </div>
+                <span class="smart-alloc-total-chip" id="cashierDepositSplitTotal">—</span>
+              </div>
+              <p class="smart-alloc-rules" id="cashierDepositHint">
+                Clears lenders → project dues → loan → monthly target; any leftover goes to Advance Balance.
+              </p>
+              <div class="smart-alloc-meta" id="cashierDepositSplitMeta">
+                <div class="smart-alloc-meta-item">
+                  <span>Active month target</span>
+                  <strong id="cashierDepositSplitTarget">—</strong>
+                </div>
+                <div class="smart-alloc-meta-item">
+                  <span>Member remaining due</span>
+                  <strong id="cashierDepositSplitRemainingDue">—</strong>
+                </div>
+              </div>
+              <ul class="smart-alloc-rows" id="cashierDepositSplitRows" aria-live="polite"></ul>
+              <p class="smart-alloc-empty" id="cashierDepositSplitEmpty" hidden>
+                Select a member and amount to see how this payment will split.
+              </p>
+              <p class="smart-alloc-fallback" id="cashierDepositSplitPreviewText" hidden></p>
             </div>
             <button type="submit" class="primary-btn">Record smart payment</button>
             <p id="cashierDepositMessage" class="message"></p>

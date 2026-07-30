@@ -2862,12 +2862,16 @@ async function loadDepositsModule(options = {}) {
       yearSelect?.addEventListener('change', () => void loadCashierYearTargetPlan());
     }
 
-    if (hint && target.amount != null) {
-      hint.textContent = `Active month target: ${money(target.amount)}. Smart payment clears lenders, project dues, loan, then monthly target; surplus → Advance.`;
+    if (hint) {
+      hint.textContent = target.amount != null
+        ? 'Clears lenders → project dues → loan → monthly target; leftover goes to Advance Balance.'
+        : 'No month target set yet — payment still clears lenders/loans first; remainder may go to Advance.';
     }
     if (amountInput && target.amount != null && !amountInput.value) {
       amountInput.value = Number(target.amount).toFixed(2);
     }
+    const splitPreview = document.getElementById('cashierDepositSplitPreview');
+    if (splitPreview) splitPreview.hidden = false;
     updateDepositSplitPreview();
 
     const dues = (duesData.dues || []).filter((d) => Number(d.unpaidAmount || 0) > 0);
@@ -2940,48 +2944,190 @@ function computeClientDepositSplit(totalAmount, remainingDue, targetAmount) {
   };
 }
 
+function smartAllocKindClass(kind = '') {
+  if (kind === 'internal_borrowing') return 'is-lenders';
+  if (kind === 'unpaid_contribution') return 'is-project';
+  if (kind === 'loan_repayment') return 'is-loan';
+  if (kind === 'monthly_deposit') return 'is-monthly';
+  if (kind === 'advance_surplus') return 'is-advance';
+  return '';
+}
+
+function smartAllocKindCaption(kind = '') {
+  if (kind === 'internal_borrowing') return 'Internal lender refund';
+  if (kind === 'unpaid_contribution') return 'Project / emergency dues';
+  if (kind === 'loan_repayment') return 'Loan settlement';
+  if (kind === 'monthly_deposit') return 'Mandatory monthly deposit';
+  if (kind === 'advance_surplus') return 'Surplus → Advance Balance';
+  return 'Allocation';
+}
+
+function renderSmartAllocRows(rows = []) {
+  const list = document.getElementById('cashierDepositSplitRows');
+  if (!list) return;
+  if (!rows.length) {
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = rows.map((row) => {
+    const amount = Number(row.amount || 0);
+    const zeroClass = amount <= 0 ? ' is-zero' : '';
+    const detail = row.lenderName
+      ? `Lender: ${escapeHtml(row.lenderName)}`
+      : escapeHtml(smartAllocKindCaption(row.kind));
+    return `
+      <li class="smart-alloc-row ${smartAllocKindClass(row.kind)}${zeroClass}">
+        <div class="smart-alloc-row-label">
+          <strong>${escapeHtml(row.label || smartAllocKindCaption(row.kind))}</strong>
+          <span>${detail}</span>
+        </div>
+        <div class="smart-alloc-row-amount">${money(amount)}</div>
+      </li>
+    `;
+  }).join('');
+}
+
+function setSmartAllocMeta({ targetLabel = '—', remainingDue = '—', total = '—' } = {}) {
+  const targetEl = document.getElementById('cashierDepositSplitTarget');
+  const dueEl = document.getElementById('cashierDepositSplitRemainingDue');
+  const totalEl = document.getElementById('cashierDepositSplitTotal');
+  if (targetEl) targetEl.textContent = targetLabel;
+  if (dueEl) dueEl.textContent = remainingDue;
+  if (totalEl) totalEl.textContent = total;
+}
+
 function updateDepositSplitPreview() {
   const preview = document.getElementById('cashierDepositSplitPreview');
   const previewText = document.getElementById('cashierDepositSplitPreviewText');
+  const emptyEl = document.getElementById('cashierDepositSplitEmpty');
+  const rowsEl = document.getElementById('cashierDepositSplitRows');
   const memberSelect = document.getElementById('cashierDepositMember');
   const amountInput = document.getElementById('cashierDepositAmount');
-  if (!preview || !previewText) return;
+  if (!preview) return;
 
   const amount = Number(amountInput?.value || 0);
   const memberId = memberSelect?.value || '';
+
+  // Always show the card shell once deposits module is open; fill when inputs ready.
+  preview.hidden = false;
+
   if (!(amount > 0) || !memberId) {
-    preview.hidden = true;
-    previewText.textContent = '';
+    if (rowsEl) rowsEl.innerHTML = '';
+    if (previewText) {
+      previewText.hidden = true;
+      previewText.textContent = '';
+    }
+    if (emptyEl) emptyEl.hidden = false;
+    const targetLabel = depositMonthTargetCache?.amount != null
+      ? money(depositMonthTargetCache.amount)
+      : 'Not set';
+    setSmartAllocMeta({
+      targetLabel,
+      remainingDue: '—',
+      total: amount > 0 ? money(amount) : '—',
+    });
     return;
   }
 
+  if (emptyEl) emptyEl.hidden = true;
   clearTimeout(smartPreviewTimer);
   smartPreviewTimer = setTimeout(async () => {
+    const targetLabel = depositMonthTargetCache?.amount != null
+      ? `${money(depositMonthTargetCache.amount)}${depositMonthTargetCache.monthLabel ? ` · ${depositMonthTargetCache.monthLabel}` : ''}`
+      : 'Not set';
+    const remainingDue = getMemberRemainingMonthlyDue(memberId);
+    setSmartAllocMeta({
+      targetLabel,
+      remainingDue: remainingDue == null ? '—' : money(remainingDue),
+      total: money(amount),
+    });
+
     try {
       const res = await fetch(
         `/api/admin/deposits/smart-payment/preview?memberId=${encodeURIComponent(memberId)}&amount=${encodeURIComponent(amount)}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Preview failed');
-      const parts = (data.plan?.allocations || []).map((row) => `${row.label}: ${money(row.amount)}`);
-      previewText.textContent = parts.length
-        ? parts.join(' · ')
-        : 'No liabilities — full amount → Advance balance.';
+
+      const allocations = data.plan?.allocations || [];
+      const summary = data.plan?.summary || {};
+      const structured = [];
+
+      const lenders = Number(summary.toLenders || 0);
+      const project = Number(summary.toProjectDues || 0);
+      const loan = Number(summary.toLoan || 0);
+      const monthly = Number(summary.toMonthly || 0);
+      const advance = Number(summary.toAdvance || 0);
+
+      // Prefer summarized buckets for a clean card; expand lender detail when present.
+      const lenderLegs = allocations.filter((a) => a.kind === 'internal_borrowing');
+      if (lenderLegs.length) {
+        lenderLegs.forEach((leg) => structured.push(leg));
+      } else if (lenders > 0) {
+        structured.push({ kind: 'internal_borrowing', label: 'Internal lenders', amount: lenders });
+      }
+
+      const projectLegs = allocations.filter((a) => a.kind === 'unpaid_contribution');
+      if (projectLegs.length) {
+        projectLegs.forEach((leg) => structured.push(leg));
+      } else if (project > 0) {
+        structured.push({ kind: 'unpaid_contribution', label: 'Project / emergency dues', amount: project });
+      }
+
+      if (loan > 0) {
+        structured.push({ kind: 'loan_repayment', label: 'Loan repayment', amount: loan });
+      }
+      if (monthly > 0) {
+        structured.push({
+          kind: 'monthly_deposit',
+          label: `Monthly deposit${data.liabilities?.yearMonth ? ` (${data.liabilities.yearMonth})` : ''}`,
+          amount: monthly,
+        });
+      }
+      if (advance > 0 || !structured.length) {
+        structured.push({
+          kind: 'advance_surplus',
+          label: 'Advance balance (surplus)',
+          amount: advance > 0 ? advance : amount,
+        });
+      }
+
+      renderSmartAllocRows(structured);
+      if (previewText) {
+        previewText.hidden = true;
+        previewText.textContent = '';
+      }
       preview.hidden = false;
     } catch (_error) {
       if (!depositMonthTargetCache) {
-        preview.hidden = true;
+        renderSmartAllocRows([{
+          kind: 'advance_surplus',
+          label: 'Advance balance (surplus)',
+          amount,
+        }]);
         return;
       }
       const remaining = getMemberRemainingMonthlyDue(memberId);
       const split = computeClientDepositSplit(amount, remaining, depositMonthTargetCache.amount);
       const monthLabel = depositMonthTargetCache.monthLabel || depositMonthTargetCache.yearMonth;
-      if (split.surplus > 0 && split.towardTarget > 0) {
-        previewText.textContent = `Monthly: ${money(split.towardTarget)} ${monthLabel} + ${money(split.surplus)} → Advance.`;
-      } else if (split.remainingUnpaid > 0) {
-        previewText.textContent = `Monthly: ${money(split.towardTarget)} toward ${monthLabel} · still due ${money(split.remainingUnpaid)}.`;
-      } else {
-        previewText.textContent = `Monthly: ${money(split.towardTarget)} toward ${monthLabel}.`;
+      const fallbackRows = [];
+      if (split.towardTarget > 0) {
+        fallbackRows.push({
+          kind: 'monthly_deposit',
+          label: `Monthly deposit (${monthLabel})`,
+          amount: split.towardTarget,
+        });
+      }
+      if (split.surplus > 0) {
+        fallbackRows.push({
+          kind: 'advance_surplus',
+          label: 'Advance balance (surplus)',
+          amount: split.surplus,
+        });
+      }
+      renderSmartAllocRows(fallbackRows);
+      if (previewText) {
+        previewText.hidden = true;
       }
       preview.hidden = false;
     }
