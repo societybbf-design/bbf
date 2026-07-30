@@ -27,6 +27,169 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
+function moneyFmt(value) {
+  if (window.formatMoney) return window.formatMoney(Number(value || 0), 2);
+  return `৳${Number(value || 0).toFixed(2)}`;
+}
+
+let pendingDeletionContext = null;
+
+function closeDeletionSettlementModal() {
+  const settleModal = document.getElementById('devDeleteSettleModal');
+  if (settleModal) settleModal.classList.add('hidden');
+  pendingDeletionContext = null;
+}
+
+async function openDeletionSettlementModal({
+  userId,
+  displayName,
+  displayEmail,
+  role,
+  onSuccess,
+  onError,
+}) {
+  const settleModal = document.getElementById('devDeleteSettleModal');
+  const body = document.getElementById('devDeleteSettleBody');
+  const confirmGroup = document.getElementById('devDeleteSettleConfirmGroup');
+  const confirmInput = document.getElementById('devDeleteSettleConfirmAmount');
+  const reasonInput = document.getElementById('devDeleteSettleReason');
+  const msg = document.getElementById('devDeleteSettleMessage');
+  const confirmBtn = document.getElementById('devDeleteSettleConfirmBtn');
+
+  if (!settleModal || !body) {
+    throw new Error('Settlement confirmation UI is missing.');
+  }
+
+  pendingDeletionContext = { userId, displayName, displayEmail, role, onSuccess, onError };
+  if (msg) {
+    msg.classList.remove('success', 'error');
+    msg.textContent = '';
+  }
+  if (reasonInput) reasonInput.value = '';
+  if (confirmInput) confirmInput.value = '';
+  settleModal.classList.remove('hidden');
+  body.innerHTML = '<p class="table-subtitle">Calculating financial standing…</p>';
+  if (confirmBtn) confirmBtn.disabled = true;
+
+  if (role !== 'member') {
+    body.innerHTML = `
+      <p><strong>${escapeHtml(displayName)}</strong> (${escapeHtml(displayEmail)})</p>
+      <p class="table-subtitle">Staff account — no society balances to settle. Soft-delete preserves the account record for restore.</p>
+    `;
+    if (confirmGroup) confirmGroup.hidden = true;
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm soft-delete';
+    }
+    pendingDeletionContext.preview = { requiresSettlement: false, settlementAmount: 0, canDelete: true };
+    return;
+  }
+
+  try {
+    const preview = await api(`/api/developer/users/${userId}/deletion-settlement`);
+    pendingDeletionContext.preview = preview;
+    const b = preview.settlementBreakdown || {};
+    const blockers = preview.blockers || [];
+    body.innerHTML = `
+      <p><strong>${escapeHtml(preview.member?.name || displayName)}</strong> · ${escapeHtml(preview.member?.email || displayEmail)}</p>
+      <p class="table-subtitle">${escapeHtml(preview.formula || '')}</p>
+      <div class="table-wrapper u-mt-1">
+        <table class="data-table">
+          <tbody>
+            <tr><td>Lifetime deposits</td><td>${moneyFmt(preview.lifetimeDeposits)}</td></tr>
+            <tr><td>Savings</td><td>${moneyFmt(b.savings)}</td></tr>
+            <tr><td>Profit</td><td>${moneyFmt(b.profit)}</td></tr>
+            <tr><td>Advance balance</td><td>${moneyFmt(b.advance)}</td></tr>
+            <tr><td>Emergency reserve share</td><td>${moneyFmt(b.emergencyReserveShare)}</td></tr>
+            <tr><td><strong>Total payable to member</strong></td><td><strong>${moneyFmt(preview.settlementAmount)}</strong></td></tr>
+            <tr><td>Central book debit (savings+profit+advance)</td><td>${moneyFmt(preview.bookPayable)}</td></tr>
+            <tr><td>Current central book balance</td><td>${preview.bookBalance == null ? '—' : moneyFmt(preview.bookBalance)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      ${blockers.length
+        ? `<div class="status-fail u-mt-1">${blockers.map((row) => escapeHtml(row)).join('<br>')}</div>`
+        : preview.requiresSettlement
+          ? `<div class="status-warn u-mt-1">Confirming will debit the Central Book Balance by ${moneyFmt(preview.bookPayable)}`
+            + (Number(b.emergencyReserveShare) > 0
+              ? ` and pay ${moneyFmt(b.emergencyReserveShare)} from the Emergency / Reserve Fund`
+              : '')
+            + `, zero the member balances, then soft-delete the account.</div>`
+          : '<div class="status-pass u-mt-1">No positive balances — soft-delete will not change the Central Book Balance.</div>'}
+    `;
+
+    if (confirmGroup) confirmGroup.hidden = !preview.requiresSettlement;
+    if (confirmInput && preview.requiresSettlement) {
+      confirmInput.value = Number(preview.settlementAmount || 0).toFixed(2);
+    }
+    if (confirmBtn) {
+      confirmBtn.disabled = !preview.canDelete;
+      confirmBtn.textContent = preview.requiresSettlement
+        ? 'Confirm settlement & soft-delete'
+        : 'Confirm soft-delete';
+    }
+  } catch (error) {
+    body.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
+    if (confirmBtn) confirmBtn.disabled = true;
+  }
+}
+
+async function submitDeletionSettlement() {
+  if (!pendingDeletionContext) return;
+  const { userId, preview, onSuccess, onError } = pendingDeletionContext;
+  const msg = document.getElementById('devDeleteSettleMessage');
+  const reasonInput = document.getElementById('devDeleteSettleReason');
+  const confirmInput = document.getElementById('devDeleteSettleConfirmAmount');
+  const confirmBtn = document.getElementById('devDeleteSettleConfirmBtn');
+
+  if (preview && preview.canDelete === false) {
+    if (msg) {
+      msg.classList.add('error');
+      msg.textContent = (preview.blockers && preview.blockers[0]) || 'Cannot delete until blockers are cleared.';
+    }
+    return;
+  }
+
+  const payload = {
+    reason: reasonInput?.value || '',
+  };
+  if (preview?.requiresSettlement) {
+    payload.confirmSettlementAmount = confirmInput?.value;
+  }
+
+  if (confirmBtn) confirmBtn.disabled = true;
+  if (msg) {
+    msg.classList.remove('success', 'error');
+    msg.textContent = 'Processing settlement…';
+  }
+
+  try {
+    const data = await api(`/api/developer/users/${userId}/soft-delete`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    closeDeletionSettlementModal();
+    if (typeof onSuccess === 'function') {
+      await onSuccess(data.message || 'Account soft-deleted.');
+    }
+  } catch (error) {
+    if (msg) {
+      msg.classList.add('error');
+      msg.textContent = error.message;
+    }
+    if (typeof onError === 'function') onError(error.message);
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+}
+
+function bindDeletionSettlementModal() {
+  document.getElementById('closeDevDeleteSettleModal')?.addEventListener('click', closeDeletionSettlementModal);
+  document.getElementById('devDeleteSettleCancelBtn')?.addEventListener('click', closeDeletionSettlementModal);
+  document.getElementById('devDeleteSettleConfirmBtn')?.addEventListener('click', () => {
+    void submitDeletionSettlement();
+  });
+}
+
 function formatDate(value) {
   if (!value) return '—';
   try {
@@ -586,19 +749,24 @@ function openUserModal(userId) {
 
   document.querySelector('#devUserModalBody [data-action="soft-delete"]')?.addEventListener('click', async () => {
     const msg = document.getElementById('devModalMessage');
-    const reason = window.prompt('Optional reason for soft-delete (financial records are preserved):', '') || '';
-    if (!window.confirm(`Soft-delete ${displayName} (${displayEmail})? It can be restored later from User Management.`)) return;
     try {
-      await api(`/api/developer/users/${selectedUserId}/soft-delete`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
+      await openDeletionSettlementModal({
+        userId: selectedUserId,
+        displayName,
+        displayEmail,
+        role: user.role,
+        onSuccess: async (resultMessage) => {
+          if (msg) msg.textContent = resultMessage || t('um.softDelete', 'Account soft-deleted.');
+          modal.classList.add('hidden');
+          await loadUsers();
+          await loadStats();
+        },
+        onError: (errorMessage) => {
+          if (msg) msg.textContent = errorMessage;
+        },
       });
-      msg.textContent = t('um.softDelete', 'Account soft-deleted. Financial records preserved.');
-      modal.classList.add('hidden');
-      await loadUsers();
-      await loadStats();
     } catch (error) {
-      msg.textContent = error.message;
+      if (msg) msg.textContent = error.message;
     }
   });
 
@@ -677,6 +845,8 @@ function bindUi() {
   document.getElementById('closeDevUserModal')?.addEventListener('click', () => {
     document.getElementById('devUserModal')?.classList.add('hidden');
   });
+
+  bindDeletionSettlementModal();
 
   document.getElementById('closeUmProxyModal')?.addEventListener('click', closeProxyApprovalModal);
   document.getElementById('umProxyApprovalModal')?.addEventListener('click', (event) => {

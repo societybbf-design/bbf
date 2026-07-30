@@ -141,23 +141,71 @@ router.patch('/users/:id/status', async (req, res) => {
   }
 });
 
-router.post('/users/:id/soft-delete', async (req, res) => {
+router.get('/users/:id/deletion-settlement', async (req, res) => {
   try {
-    const user = await softDeleteUser(
+    const user = await User.findById(req.params.id).select('role name email status');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (user.role !== 'member') {
+      return res.json({
+        requiresSettlement: false,
+        settlementAmount: 0,
+        canDelete: user.status !== 'deleted',
+        blockers: user.status === 'deleted' ? ['Account is already soft-deleted.'] : [],
+        member: null,
+        nonMember: true,
+        message: 'Non-member staff accounts have no society balances to settle.',
+      });
+    }
+    const {
+      getMemberDeletionSettlementPreview,
+    } = require('../services/memberLifecycleService');
+    const preview = await getMemberDeletionSettlementPreview(req.params.id);
+    return res.json(preview);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load deletion settlement preview.',
+      settlementPreview: error.settlementPreview || null,
+    });
+  }
+});
+
+router.post('/users/:id/soft-delete', requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await softDeleteUser(
       req.params.id,
       {
         reason: req.body?.reason || '',
         deletedBy: req.session?.user?.name || req.session?.user?.email || '',
+        confirmSettlementAmount: req.body?.confirmSettlementAmount,
+        settleBalances: req.body?.settleBalances !== false,
       },
       req.session.user,
       clientIp(req)
     );
+    const settlement = result.settlement;
+    let message = 'Account soft-deleted. Financial records were preserved and can be restored from User Management.';
+    if (settlement && Number(settlement.settlementAmount) > 0) {
+      message = `Member settled and soft-deleted. Payout ${Number(settlement.settlementAmount).toFixed(2)} `
+        + `(book debit ${Number(settlement.bookPayable || 0).toFixed(2)}`
+        + (Number(settlement.reserveShare) > 0
+          ? ` + reserve ${Number(settlement.reserveShare).toFixed(2)}`
+          : '')
+        + `). Central book balance now ${
+          settlement.bookBalanceAfter != null ? Number(settlement.bookBalanceAfter).toFixed(2) : '—'
+        }.`;
+    }
     return res.json({
-      message: 'Account soft-deleted. Financial records were preserved and can be restored from User Management.',
-      user,
+      message,
+      user: result.user || result,
+      settlement: settlement || null,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to soft-delete account.' });
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to soft-delete account.',
+      settlementPreview: error.settlementPreview || null,
+    });
   }
 });
 

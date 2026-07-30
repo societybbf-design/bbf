@@ -568,7 +568,12 @@ async function createManagedUser({
   };
 }
 
-async function softDeleteUser(userId, { reason = '', deletedBy = '' } = {}, actor, ip) {
+async function softDeleteUser(userId, {
+  reason = '',
+  deletedBy = '',
+  confirmSettlementAmount = null,
+  settleBalances = true,
+} = {}, actor, ip) {
   const user = await User.findById(userId);
   if (!user) {
     const err = new Error('User not found.');
@@ -591,26 +596,82 @@ async function softDeleteUser(userId, { reason = '', deletedBy = '' } = {}, acto
     throw err;
   }
 
-  const previous = user.status;
-  user.status = 'deleted';
-  user.deletedAt = new Date();
-  user.deletedReason = String(reason || 'Soft-deleted via User Management').trim();
-  user.deletedBy = String(deletedBy || actor?.name || actor?.email || 'User Management').trim();
-  user.restoredAt = null;
-  await user.save();
+  let settlement = null;
+  if (user.role === 'member' && settleBalances !== false) {
+    const {
+      getMemberDeletionSettlementPreview,
+      settleMemberBalancesForDeletion,
+    } = require('./memberLifecycleService');
+
+    const preview = await getMemberDeletionSettlementPreview(user._id);
+    if (!preview.canDelete) {
+      const err = new Error(preview.blockers[0] || 'Member cannot be deleted until financial blockers are cleared.');
+      err.status = 400;
+      err.settlementPreview = preview;
+      throw err;
+    }
+
+    // Positive balances require explicit confirmation of the payout amount.
+    if (preview.requiresSettlement) {
+      settlement = await settleMemberBalancesForDeletion(user._id, {
+        confirmedAmount: confirmSettlementAmount,
+        processedBy: deletedBy || actor?.name || actor?.email || 'User Management',
+        reason: reason || 'Soft-deleted via User Management with central book settlement',
+      });
+    } else {
+      // Zero balances — still assert no loans/borrows.
+      await settleMemberBalancesForDeletion(user._id, {
+        confirmedAmount: 0,
+        processedBy: deletedBy || actor?.name || actor?.email || 'User Management',
+        reason: reason || 'Soft-deleted via User Management (zero balance)',
+      }).catch(async (error) => {
+        // settle with 0 still runs loan/borrow checks; rethrow blockers
+        throw error;
+      });
+    }
+  }
+
+  // Re-load in case settlement mutated balances / exit fields
+  const fresh = await User.findById(userId);
+  const previous = fresh.status;
+  fresh.status = 'deleted';
+  fresh.deletedAt = new Date();
+  fresh.deletedReason = String(reason || 'Soft-deleted via User Management').trim();
+  fresh.deletedBy = String(deletedBy || actor?.name || actor?.email || 'User Management').trim();
+  fresh.restoredAt = null;
+  await fresh.save();
 
   await recordAudit({
     action: 'account_soft_deleted',
     actorId: actor?.id,
     actorEmail: actor?.email,
     actorRole: actor?.role,
-    targetUserId: user._id,
-    targetEmail: user.email,
-    details: { previous, reason: user.deletedReason },
+    targetUserId: fresh._id,
+    targetEmail: fresh.email,
+    details: {
+      previous,
+      reason: fresh.deletedReason,
+      settlementAmount: settlement?.settlementAmount || 0,
+      bookPayable: settlement?.bookPayable || 0,
+      bookBalanceAfter: settlement?.bookBalanceAfter ?? null,
+      exitDepositId: settlement?.exitDeposit?._id || null,
+    },
     ip: ip || '',
   });
 
-  return sanitizeUserForDeveloper(user);
+  return {
+    user: sanitizeUserForDeveloper(fresh),
+    settlement: settlement
+      ? {
+        settlementAmount: settlement.settlementAmount,
+        bookPayable: settlement.bookPayable,
+        reserveShare: settlement.reserveShare,
+        bookBalanceAfter: settlement.bookBalanceAfter,
+        breakdown: settlement.preview?.settlementBreakdown || null,
+        exitDepositId: settlement.exitDeposit?._id || null,
+      }
+      : null,
+  };
 }
 
 async function restoreSoftDeletedUser(userId, actor, ip) {
