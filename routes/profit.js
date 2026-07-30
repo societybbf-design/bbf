@@ -15,9 +15,37 @@ const { getDistributionType } = require('../services/societyConfig');
 const { notifyMemberByEmailAndSms } = require('../services/notificationService');
 const User = require('../models/User');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
+const {
+  beginProfitCloseIdempotency,
+  completeProfitCloseIdempotency,
+  failProfitCloseIdempotency,
+} = require('../services/profitCloseIdempotencyService');
+const { clientIp } = require('../services/securityService');
 
 router.use(requireAuth, requirePermission('can_manage_profit', 'can_view_reports'));
 const manageProfit = requirePermission('can_manage_profit');
+
+function resolveIdempotencyKey(req) {
+  return req.get?.('Idempotency-Key')
+    || req.headers?.['idempotency-key']
+    || req.body?.clientRequestId
+    || '';
+}
+
+async function withProfitCloseIdempotency(req, meta, work) {
+  const claim = await beginProfitCloseIdempotency(resolveIdempotencyKey(req), meta);
+  if (claim.kind === 'replay') {
+    return { replay: true, status: claim.status, body: claim.body };
+  }
+  try {
+    const body = await work();
+    await completeProfitCloseIdempotency(claim.key, 201, body);
+    return { replay: false, status: 201, body };
+  } catch (error) {
+    await failProfitCloseIdempotency(claim.key);
+    throw error;
+  }
+}
 
 router.get('/investment-lookup/:code', async (req, res) => {
   try {
@@ -30,32 +58,68 @@ router.get('/investment-lookup/:code', async (req, res) => {
 
 router.post('/investment', manageProfit, requirePasswordConfirmation, async (req, res) => {
   try {
-    const { investmentCode, saleAmount, profitAmount, distributionType, notes } = req.body;
-    const result = await recordInvestmentProfit({
+    const {
       investmentCode,
       saleAmount,
       profitAmount,
-      distributionType: getDistributionType(),
+      principalToClose,
       notes,
-      recordedBy: req.session?.user?.name || 'Admin',
+    } = req.body;
+
+    const outcome = await withProfitCloseIdempotency(req, {
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
+      investmentCode: String(investmentCode || ''),
+      amount: Number(saleAmount) || 0,
+    }, async () => {
+      const result = await recordInvestmentProfit({
+        investmentCode,
+        saleAmount,
+        profitAmount,
+        principalToClose,
+        distributionType: getDistributionType(),
+        notes,
+        recordedBy: req.session?.user?.name || 'Admin',
+        recordedByUserId: req.session?.user?.id || req.session?.user?._id || null,
+        clientRequestId: resolveIdempotencyKey(req),
+        actor: req.session?.user || null,
+        ip: clientIp(req),
+      });
+
+      const shareSummary = (result.updatedMembers || [])
+        .map((member) => `${member.memberName}: ${formatMoney(member.share, 2)}`)
+        .join(', ');
+
+      const outcomeLabel = result.outcomeType || 'profit';
+      const amountLabel = outcomeLabel === 'loss'
+        ? formatMoney(result.calculatedLoss || 0, 2)
+        : formatMoney(result.calculatedProfit || 0, 2);
+
+      await createNotice({
+        title: `${result.isPartial ? 'Partial ' : ''}Investment ${outcomeLabel} — ${result.investment.investmentCode}`,
+        message: outcomeLabel === 'loss'
+          ? `Loss of ${amountLabel} from ${result.investment.investmentCode} was shared equally. ${shareSummary}`
+          : `Profit of ${amountLabel} from ${result.investment.investmentCode} was distributed. ${shareSummary}`,
+        author: req.session?.user?.name || 'Admin',
+      });
+
+      let message = result.isPartial
+        ? `Partial close recorded (${outcomeLabel}). Remaining principal ${formatMoney(result.remainingPrincipal || 0, 2)}.`
+        : `Investment return recorded (${outcomeLabel}).`;
+      if (result.bookBalance != null) {
+        message += ` Book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+      }
+
+      return {
+        ...result,
+        message,
+        idempotentReplay: false,
+      };
     });
 
-    const shareSummary = result.updatedMembers
-      .map((member) => `${member.memberName}: ${formatMoney(member.share, 2)}`)
-      .join(', ');
-
-    await createNotice({
-      title: `Profit Recorded for ${result.investment.investmentCode}`,
-      message: `Profit of ${formatMoney(result.calculatedProfit, 2)} from investment ${result.investment.investmentCode} was distributed. ${shareSummary}`,
-      author: req.session?.user?.name || 'Admin',
-    });
-
-    let message = `Investment return recorded. Sale proceeds credited to the bank ledger.`;
-    if (result.bookBalance != null) {
-      message += ` Book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
     }
-
-    return res.status(201).json({ ...result, message });
+    return res.status(201).json(outcome.body);
   } catch (error) {
     return res.status(error.status || 500).json({
       error: error.message || 'Could not record investment profit.',
@@ -65,26 +129,54 @@ router.post('/investment', manageProfit, requirePasswordConfirmation, async (req
 
 router.post('/investment-loss', manageProfit, requirePasswordConfirmation, async (req, res) => {
   try {
-    const { investmentCode, saleAmount, lossAmount, notes } = req.body;
-    const result = await recordInvestmentLoss({
-      investmentCode,
-      saleAmount,
-      lossAmount,
-      notes,
-      recordedBy: req.session?.user?.name || 'Admin',
+    const { investmentCode, saleAmount, lossAmount, principalToClose, notes } = req.body;
+
+    const outcome = await withProfitCloseIdempotency(req, {
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
+      investmentCode: String(investmentCode || ''),
+      amount: Number(saleAmount) || 0,
+    }, async () => {
+      const result = await recordInvestmentLoss({
+        investmentCode,
+        saleAmount,
+        lossAmount,
+        principalToClose,
+        notes,
+        recordedBy: req.session?.user?.name || 'Admin',
+        recordedByUserId: req.session?.user?.id || req.session?.user?._id || null,
+        clientRequestId: resolveIdempotencyKey(req),
+        actor: req.session?.user || null,
+        ip: clientIp(req),
+      });
+
+      const shareSummary = (result.updatedMembers || [])
+        .map((member) => `${member.memberName}: -${formatMoney(member.share, 2)}`)
+        .join(', ');
+
+      await createNotice({
+        title: `Loss Recorded for ${result.investment.investmentCode}`,
+        message: `Loss of ${formatMoney(result.calculatedLoss, 2)} from investment ${result.investment.investmentCode} was shared equally. ${shareSummary}`,
+        author: req.session?.user?.name || 'Admin',
+      });
+
+      let message = result.isPartial
+        ? `Partial loss close recorded. Remaining principal ${formatMoney(result.remainingPrincipal || 0, 2)}.`
+        : 'Investment loss recorded and shared.';
+      if (result.bookBalance != null) {
+        message += ` Book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+      }
+
+      return {
+        ...result,
+        message,
+        idempotentReplay: false,
+      };
     });
 
-    const shareSummary = result.updatedMembers
-      .map((member) => `${member.memberName}: -${formatMoney(member.share, 2)}`)
-      .join(', ');
-
-    await createNotice({
-      title: `Loss Recorded for ${result.investment.investmentCode}`,
-      message: `Loss of ${formatMoney(result.calculatedLoss, 2)} from investment ${result.investment.investmentCode} was shared equally. ${shareSummary}`,
-      author: req.session?.user?.name || 'Admin',
-    });
-
-    return res.status(201).json(result);
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
+    }
+    return res.status(201).json(outcome.body);
   } catch (error) {
     return res.status(error.status || 500).json({
       error: error.message || 'Could not record investment loss.',
@@ -145,7 +237,7 @@ router.post('/distribute', manageProfit, requirePasswordConfirmation, async (req
         memberCount: result.updatedMembers?.length || 0,
         distributionId: result.distribution?._id,
       },
-      ip: require('../services/securityService').clientIp(req),
+      ip: clientIp(req),
     });
 
     return res.status(201).json(result);
@@ -209,7 +301,7 @@ router.post('/dividend/distribute', manageProfit, requirePasswordConfirmation, a
         memberCount: result.updatedMembers?.length || 0,
         distributionId: result.distribution?._id,
       },
-      ip: require('../services/securityService').clientIp(req),
+      ip: clientIp(req),
     });
 
     return res.status(201).json(result);

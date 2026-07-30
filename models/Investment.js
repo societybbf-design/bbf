@@ -200,6 +200,18 @@ const InvestmentSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  /** Cumulative principal closed via Record & Distribute / loss / partial liquidation. */
+  liquidatedPrincipal: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  /** Cumulative sale / return proceeds recorded across closes. */
+  cumulativeSaleAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   status: {
     type: String,
     enum: [

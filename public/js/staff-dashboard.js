@@ -5266,10 +5266,14 @@ function bindProfitPoolForms() {
       dobInput: form.querySelector('.profit-dob-input'),
       locationInput: form.querySelector('.profit-location-input'),
       amountInput: form.querySelector('.profit-amount-input'),
+      remainingInput: form.querySelector('.profit-remaining-input'),
       saleInput: form.querySelector('.profit-sale-input'),
+      principalInput: form.querySelector('.profit-principal-input'),
       profitInput: form.querySelector('.profit-profit-input'),
       statusEl: form.querySelector('.profit-lookup-status'),
+      outcomeHint: form.querySelector('.profit-outcome-hint'),
       messageEl: form.querySelector('.profit-form-message'),
+      submitBtn: form.querySelector('#staffInvestmentProfitSubmitBtn') || form.querySelector('[type="submit"]'),
     };
   }
 
@@ -5280,17 +5284,41 @@ function bindProfitPoolForms() {
     if (fields.dobInput) fields.dobInput.value = '';
     if (fields.locationInput) fields.locationInput.value = '';
     if (fields.amountInput) fields.amountInput.value = '';
+    if (fields.remainingInput) fields.remainingInput.value = '';
+    if (fields.principalInput) fields.principalInput.value = '';
     if (fields.profitInput) fields.profitInput.value = '';
+    if (fields.outcomeHint) {
+      fields.outcomeHint.hidden = true;
+      fields.outcomeHint.textContent = '';
+    }
   }
 
   function updateStaffCalculatedProfit(form) {
     const fields = getStaffProfitFields(form);
     const selected = staffProfitFormState.get(form);
     if (!selected || !fields.saleInput || !fields.profitInput) return;
-    const invested = Number(selected.amount || selected.investmentAmount || 0);
+    const remaining = Number(
+      selected.remainingPrincipal != null
+        ? selected.remainingPrincipal
+        : (selected.amount || selected.investmentAmount || 0)
+    );
+    const principalRaw = fields.principalInput?.value;
+    const principal = principalRaw === '' || principalRaw == null
+      ? remaining
+      : Number(principalRaw || 0);
     const sale = Number(fields.saleInput.value || 0);
-    if (Number.isFinite(sale) && Number.isFinite(invested)) {
-      fields.profitInput.value = Number((sale - invested).toFixed(2));
+    if (!Number.isFinite(sale) || !Number.isFinite(principal)) return;
+    const pnl = Number((sale - principal).toFixed(2));
+    fields.profitInput.value = pnl;
+    if (fields.outcomeHint) {
+      fields.outcomeHint.hidden = false;
+      if (pnl > 0) {
+        fields.outcomeHint.textContent = `Outcome: PROFIT ${money(pnl)} will be distributed equally.`;
+      } else if (pnl < 0) {
+        fields.outcomeHint.textContent = `Outcome: LOSS ${money(Math.abs(pnl))} will be shared equally (sale below principal closed).`;
+      } else {
+        fields.outcomeHint.textContent = 'Outcome: break-even (no profit or loss to distribute).';
+      }
     }
   }
 
@@ -5317,8 +5345,20 @@ function bindProfitPoolForms() {
       if (fields.dobInput) fields.dobInput.value = investment.dateOfBirth || '';
       if (fields.locationInput) fields.locationInput.value = investment.location || '';
       if (fields.amountInput) fields.amountInput.value = money(investment.amount || investment.investmentAmount);
+      const remaining = Number(
+        investment.remainingPrincipal != null
+          ? investment.remainingPrincipal
+          : (investment.amount || investment.investmentAmount || 0)
+      );
+      if (fields.remainingInput) fields.remainingInput.value = money(remaining);
+      if (fields.principalInput && !fields.principalInput.value) {
+        fields.principalInput.value = Number(remaining.toFixed(2));
+        fields.principalInput.max = String(remaining);
+      }
       updateStaffCalculatedProfit(form);
-      if (fields.statusEl) fields.statusEl.textContent = `Loaded ${investment.investmentCode || normalized}.`;
+      if (fields.statusEl) {
+        fields.statusEl.textContent = `Loaded ${investment.investmentCode || normalized}. Remaining principal ${money(remaining)}.`;
+      }
     } catch (error) {
       clearStaffProfitAutofill(form);
       if (fields.statusEl) fields.statusEl.textContent = error.message;
@@ -5337,40 +5377,85 @@ function bindProfitPoolForms() {
       void lookupStaffInvestmentForProfit(form, fields.codeInput.value);
     });
     fields.saleInput?.addEventListener('input', () => updateStaffCalculatedProfit(form));
+    fields.principalInput?.addEventListener('input', () => updateStaffCalculatedProfit(form));
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const msg = fields.messageEl;
+      const submitBtn = fields.submitBtn;
       if (msg) {
         msg.textContent = '';
         msg.classList.remove('success', 'error');
       }
       const formData = new FormData(form);
+      const saleAmount = Number(formData.get('saleAmount')) || 0;
+      const principalRaw = formData.get('principalToClose');
+      const principalToClose = principalRaw === '' || principalRaw == null
+        ? undefined
+        : Number(principalRaw);
+      const pnl = Number(formData.get('profitAmount'));
+      const outcomeLabel = pnl < 0 ? 'loss' : pnl > 0 ? 'profit' : 'break-even';
+      if (!window.confirm(
+        `Confirm ${outcomeLabel} close?\n\n`
+        + `Sale: ${money(saleAmount)}\n`
+        + `Principal closed: ${principalToClose != null ? money(principalToClose) : 'remaining'}\n`
+        + `P&L: ${money(pnl)}\n\n`
+        + 'This updates member balances and the bank ledger.'
+      )) {
+        return;
+      }
+
+      const defaultLabel = submitBtn?.dataset?.defaultLabel
+        || submitBtn?.textContent
+        || 'Record & Distribute Profit';
+      if (submitBtn) {
+        submitBtn.dataset.defaultLabel = defaultLabel;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Recording…';
+      }
+      if (!form.dataset.idempotencyKey) {
+        form.dataset.idempotencyKey = (window.crypto?.randomUUID?.()
+          || `pnl-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+      }
+
       try {
         const response = await fetch('/api/admin/profit/investment', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': form.dataset.idempotencyKey,
+          },
           body: JSON.stringify({
             investmentCode: formData.get('investmentCode'),
-            saleAmount: Number(formData.get('saleAmount')) || 0,
-            profitAmount: Number(formData.get('profitAmount')) || 0,
+            saleAmount,
+            principalToClose,
+            profitAmount: Number.isFinite(pnl) ? pnl : undefined,
             distributionType: 'equal',
             notes: formData.get('notes'),
+            clientRequestId: form.dataset.idempotencyKey,
           }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to record investment profit.');
+        delete form.dataset.idempotencyKey;
         form.reset();
         clearStaffProfitAutofill(form);
         if (msg) {
           msg.classList.add('success');
-          msg.textContent = data.message || 'Investment profit recorded and distributed.';
+          msg.textContent = data.idempotentReplay
+            ? `${data.message || 'Investment close recorded.'} (replayed safe retry)`
+            : (data.message || 'Investment close recorded and distributed.');
         }
         await loadProfitPool();
       } catch (error) {
         if (msg) {
           msg.classList.add('error');
           msg.textContent = error.message;
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.defaultLabel || defaultLabel;
         }
       }
     });
@@ -5422,24 +5507,40 @@ function bindProfitPoolForms() {
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      const submitBtn = form.querySelector('[type="submit"]');
       if (messageEl) {
         messageEl.textContent = '';
         messageEl.classList.remove('success', 'error');
       }
       const formData = new FormData(form);
+      const defaultLabel = submitBtn?.dataset?.defaultLabel || submitBtn?.textContent || 'Record Loss';
+      if (submitBtn) {
+        submitBtn.dataset.defaultLabel = defaultLabel;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Recording…';
+      }
+      if (!form.dataset.idempotencyKey) {
+        form.dataset.idempotencyKey = (window.crypto?.randomUUID?.()
+          || `loss-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+      }
       try {
         const response = await fetch('/api/admin/profit/investment-loss', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': form.dataset.idempotencyKey,
+          },
           body: JSON.stringify({
             investmentCode: formData.get('investmentCode'),
             saleAmount: Number(formData.get('saleAmount')) || 0,
             lossAmount: Number(formData.get('lossAmount')) || 0,
             notes: formData.get('notes'),
+            clientRequestId: form.dataset.idempotencyKey,
           }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to record investment loss.');
+        delete form.dataset.idempotencyKey;
         form.reset();
         investedAmount = 0;
         if (messageEl) {
@@ -5451,6 +5552,11 @@ function bindProfitPoolForms() {
         if (messageEl) {
           messageEl.classList.add('error');
           messageEl.textContent = error.message;
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.defaultLabel || defaultLabel;
         }
       }
     });

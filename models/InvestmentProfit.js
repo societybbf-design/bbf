@@ -62,11 +62,33 @@ const InvestmentProfitSchema = new mongoose.Schema({
   profitAmount: {
     type: Number,
     required: true,
-    min: 0.01,
+    min: 0,
+  },
+  /** Absolute loss when outcomeType is loss; otherwise 0. */
+  lossAmount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  /** Principal closed in this transaction (supports partial liquidation). */
+  principalClosed: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  remainingPrincipalAfter: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  isPartial: {
+    type: Boolean,
+    default: false,
+    index: true,
   },
   outcomeType: {
     type: String,
-    enum: ['profit', 'loss'],
+    enum: ['profit', 'loss', 'break_even'],
     default: 'profit',
     index: true,
   },
@@ -111,9 +133,32 @@ const InvestmentProfitSchema = new mongoose.Schema({
     trim: true,
     default: 'Admin',
   },
+  recordedByUserId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true,
+  },
+  clientRequestId: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true,
+  },
+  bankLedgerEntryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BankLedgerEntry',
+    default: null,
+  },
+  /** Snapshot of close math for audit (principal, pnl, shares summary). */
+  breakdown: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
+    index: true,
   },
 });
 
