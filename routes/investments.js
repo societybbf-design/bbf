@@ -172,7 +172,34 @@ router.post('/:id/monthly-return', requirePermission('can_manage_deposits', 'can
   }
 });
 
-router.post('/:id/liquidate', requirePermission('can_manage_investments', 'can_manage_deposits'), requirePasswordConfirmation, async (req, res) => {
+// Project sale/liquidation is a financial settlement action — require profit permission
+// (CEO + cashier). Project managers with investments-only access cannot sell projects.
+router.post('/:id/liquidate', requirePermission('can_manage_profit'), requirePasswordConfirmation, async (req, res) => {
+  const {
+    beginProfitCloseIdempotency,
+    completeProfitCloseIdempotency,
+    failProfitCloseIdempotency,
+  } = require('../services/profitCloseIdempotencyService');
+
+  const rawKey = req.get?.('Idempotency-Key')
+    || req.headers?.['idempotency-key']
+    || req.body?.clientRequestId
+    || '';
+  let claim;
+  try {
+    claim = await beginProfitCloseIdempotency(rawKey, {
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
+      investmentCode: String(req.params.id || ''),
+      amount: Number(req.body?.saleAmount) || 0,
+    });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message || 'Invalid idempotency key.' });
+  }
+
+  if (claim.kind === 'replay') {
+    return res.status(claim.status || 200).json({ ...claim.body, idempotentReplay: true });
+  }
+
   try {
     const result = await liquidateProject({
       investmentId: req.params.id,
@@ -180,10 +207,19 @@ router.post('/:id/liquidate', requirePermission('can_manage_investments', 'can_m
       additionalCosts: req.body?.additionalCosts,
       tax: req.body?.tax,
       notes: req.body?.notes,
+      productName: req.body?.productName,
       recordedBy: req.session?.user?.name || 'Admin',
     });
-    return res.json(result);
+    const body = {
+      ...result,
+      sale: result.sale,
+      bookBalance: result.bankLedger?.ledger?.bookBalance ?? null,
+      idempotentReplay: false,
+    };
+    await completeProfitCloseIdempotency(claim.key, 200, body);
+    return res.json(body);
   } catch (error) {
+    await failProfitCloseIdempotency(claim.key);
     return res.status(error.status || 500).json({ error: error.message || 'Unable to liquidate project.' });
   }
 });

@@ -541,8 +541,8 @@ function bindInvestmentProfitForm(form) {
     const formData = new FormData(form);
     const payload = {
       investmentCode: formData.get('investmentCode')?.trim(),
-      saleAmount: Number(formData.get('saleAmount')) || 0,
-      profitAmount: Number(formData.get('profitAmount')) || 0,
+      saleAmount: Number(Number(formData.get('saleAmount') || 0).toFixed(2)),
+      profitAmount: Number(Number(formData.get('profitAmount') || 0).toFixed(2)),
       distributionType: formData.get('distributionType'),
       notes: formData.get('notes'),
     };
@@ -555,11 +555,24 @@ function bindInvestmentProfitForm(form) {
       return;
     }
 
+    if (!form.dataset.idempotencyKey) {
+      form.dataset.idempotencyKey = window.crypto?.randomUUID?.()
+        || `pnl-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+
     try {
       const response = await fetch('/api/admin/profit/investment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': form.dataset.idempotencyKey,
+        },
+        body: JSON.stringify({
+          ...payload,
+          clientRequestId: form.dataset.idempotencyKey,
+        }),
       });
       const data = await response.json();
 
@@ -570,6 +583,7 @@ function bindInvestmentProfitForm(form) {
         }
         return;
       }
+      delete form.dataset.idempotencyKey;
 
       form.reset();
       clearProfitAutofill(form);
@@ -588,13 +602,15 @@ function bindInvestmentProfitForm(form) {
 
       if (fields.messageEl) {
         fields.messageEl.classList.add('success');
-        fields.messageEl.textContent = `Profit of ${formatMoney(Number(data.calculatedProfit || 0), 2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
+        fields.messageEl.textContent = `${data.idempotentReplay ? '(Replayed safe retry) ' : ''}Profit of ${formatMoney(Number(data.calculatedProfit || 0), 2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
       }
     } catch (error) {
       if (fields.messageEl) {
         fields.messageEl.classList.add('error');
         fields.messageEl.textContent = 'Unable to record investment profit.';
       }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 }
@@ -734,8 +750,8 @@ function bindInvestmentLossForm(form) {
     const formData = new FormData(form);
     const payload = {
       investmentCode: formData.get('investmentCode')?.trim(),
-      saleAmount: Number(formData.get('saleAmount')) || 0,
-      lossAmount: Number(formData.get('lossAmount')) || 0,
+      saleAmount: Number(Number(formData.get('saleAmount') || 0).toFixed(2)),
+      lossAmount: Number(Number(formData.get('lossAmount') || 0).toFixed(2)),
       notes: formData.get('notes'),
     };
 
@@ -747,11 +763,24 @@ function bindInvestmentLossForm(form) {
       return;
     }
 
+    if (!form.dataset.idempotencyKey) {
+      form.dataset.idempotencyKey = window.crypto?.randomUUID?.()
+        || `loss-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+
     try {
       const response = await fetch('/api/admin/profit/investment-loss', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': form.dataset.idempotencyKey,
+        },
+        body: JSON.stringify({
+          ...payload,
+          clientRequestId: form.dataset.idempotencyKey,
+        }),
       });
       const data = await response.json();
 
@@ -762,6 +791,7 @@ function bindInvestmentLossForm(form) {
         }
         return;
       }
+      delete form.dataset.idempotencyKey;
 
       form.reset();
       clearLossAutofill(form);
@@ -780,13 +810,15 @@ function bindInvestmentLossForm(form) {
 
       if (fields.messageEl) {
         fields.messageEl.classList.add('success');
-        fields.messageEl.textContent = `Loss of ${formatMoney(Number(data.calculatedLoss || 0), 2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
+        fields.messageEl.textContent = `${data.idempotentReplay ? '(Replayed safe retry) ' : ''}Loss of ${formatMoney(Number(data.calculatedLoss || 0), 2)} recorded for ${data.investment?.investmentCode || payload.investmentCode}.${savingsNote} ${shareSummary}`;
       }
     } catch (error) {
       if (fields.messageEl) {
         fields.messageEl.classList.add('error');
         fields.messageEl.textContent = 'Unable to record investment loss.';
       }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 }
@@ -814,7 +846,11 @@ function updateSellNetCalculation() {
   if (!netEl) return;
 
   const totalInvestment = sellProjectState
-    ? Number(sellProjectState.totalInvestment || 0)
+    ? Number(
+      sellProjectState.activeTotalInvestment
+      ?? sellProjectState.totalInvestment
+      ?? 0
+    )
     : 0;
   const saleAmount = Number(saleEl?.value || 0);
   const costs = Number(costsEl?.value || 0);
@@ -862,19 +898,25 @@ async function lookupSellProject(code) {
     if (!response.ok) throw new Error(data.error || 'Lookup failed.');
 
     sellProjectState = data.project;
+    const activeCapital = Number(
+      data.project.activeTotalInvestment ?? data.project.totalInvestment ?? 0
+    );
     if (investorEl) investorEl.value = data.project.primary?.investorName || '';
     if (projectEl) projectEl.value = data.project.projectLabel || '';
-    if (totalEl) totalEl.value = `${formatMoney(Number(data.project.totalInvestment || 0), 2)}`;
+    if (totalEl) totalEl.value = `${formatMoney(activeCapital, 2)}`;
     if (productEl && !productEl.value) productEl.value = data.project.projectLabel || '';
 
     const lines = data.project.investments || [];
+    const activeLines = lines.filter((line) => line.status === 'active');
     if (linesEl) {
-      linesEl.innerHTML = lines.length
-        ? `<strong>Included investments:</strong> ${lines.map((line) => `${escapeHtml(line.investmentCode)} (${formatMoney(Number(line.amount || 0), 2)})`).join(', ')}`
-        : '';
+      linesEl.innerHTML = activeLines.length
+        ? `<strong>Active capital being sold:</strong> ${activeLines.map((line) => `${escapeHtml(line.investmentCode)} (${formatMoney(Number(line.amount || 0), 2)})`).join(', ')}`
+        : '<strong>No active investments available to sell.</strong>';
     }
     if (statusEl) {
-      statusEl.textContent = `Loaded ${lines.length} investment(s). Total invested: ${formatMoney(Number(data.project.totalInvestment || 0), 2)}.`;
+      statusEl.textContent = data.project.canSell === false
+        ? 'This project has no active investments left to sell.'
+        : `Loaded ${activeLines.length} active investment(s). Capital in sale: ${formatMoney(activeCapital, 2)}.`;
     }
     updateSellNetCalculation();
   } catch (error) {
@@ -965,15 +1007,26 @@ function bindSellProductForm() {
       if (messageEl) messageEl.textContent = 'Load a valid Investment ID before recording the sale.';
       return;
     }
+    if (sellProjectState.canSell === false) {
+      if (messageEl) messageEl.textContent = 'This project has no active investments left to sell.';
+      return;
+    }
 
     const payload = {
       investmentCode: document.getElementById('sellInvestmentCode')?.value?.trim(),
       productName: document.getElementById('sellProductName')?.value?.trim(),
-      saleAmount: Number(document.getElementById('sellSaleAmount')?.value || 0),
-      additionalCosts: Number(document.getElementById('sellAdditionalCosts')?.value || 0),
-      tax: Number(document.getElementById('sellTax')?.value || 0),
+      saleAmount: Number(Number(document.getElementById('sellSaleAmount')?.value || 0).toFixed(2)),
+      additionalCosts: Number(Number(document.getElementById('sellAdditionalCosts')?.value || 0).toFixed(2)),
+      tax: Number(Number(document.getElementById('sellTax')?.value || 0).toFixed(2)),
       notes: document.getElementById('sellNotes')?.value?.trim() || '',
     };
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    if (!form.dataset.idempotencyKey) {
+      form.dataset.idempotencyKey = window.crypto?.randomUUID?.()
+        || `sell-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
 
     try {
       const primaryId = sellProjectState?.primary?.id || sellProjectState?.primary?._id || sellProjectState?.investments?.[0]?._id;
@@ -981,23 +1034,31 @@ function bindSellProductForm() {
         primaryId ? `/api/admin/investments/${primaryId}/liquidate` : '/api/admin/sales',
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': form.dataset.idempotencyKey,
+          },
+          body: JSON.stringify({
+            ...payload,
+            clientRequestId: form.dataset.idempotencyKey,
+          }),
         }
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to record sale.');
+      delete form.dataset.idempotencyKey;
 
       if (messageEl) {
         const settlement = data.settlement;
+        const prefix = data.idempotentReplay ? '(Replayed safe retry) ' : '';
         if (settlement) {
-          messageEl.textContent = data.message
-            || `Sold/closed. Net ${formatMoney(Number(settlement.netProceeds || 0), 2)}. Society profit ${formatMoney(Number(settlement.societyProfitShare || 0), 2)} · Investor payout ${formatMoney(Number(settlement.investorPayout || 0), 2)}. Ledger locked.`;
+          messageEl.textContent = prefix + (data.message
+            || `Sold/closed. Capital ${formatMoney(Number(settlement.capital || 0), 2)}. Net ${formatMoney(Number(settlement.netProceeds || 0), 2)}. Society profit ${formatMoney(Number(settlement.societyProfitShare || 0), 2)} · Investor payout ${formatMoney(Number(settlement.investorPayout || 0), 2)}. Ledger locked.`);
         } else {
           const book = data.bookBalance ?? data.bankLedger?.ledger?.bookBalance;
-          messageEl.textContent = data.message
+          messageEl.textContent = prefix + (data.message
             || `Sale ${data.sale?.saleCode || ''} recorded. Net: ${formatMoney(Number(data.sale?.netProfitLoss || 0), 2)}.`
-              + (book != null ? ` Bank book balance now ${formatMoney(Number(book), 2)}.` : '');
+              + (book != null ? ` Bank book balance now ${formatMoney(Number(book), 2)}.` : ''));
         }
       }
       form.reset();
@@ -1014,6 +1075,8 @@ function bindSellProductForm() {
       await fetchSummary();
     } catch (error) {
       if (messageEl) messageEl.textContent = error.message;
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 }
@@ -2266,9 +2329,9 @@ function bindProjectsModule() {
     }
 
     const payload = {
-      saleAmount: Number(document.getElementById('projectLiquidateSaleAmount')?.value || 0),
-      additionalCosts: Number(document.getElementById('projectLiquidateCosts')?.value || 0),
-      tax: Number(document.getElementById('projectLiquidateTax')?.value || 0),
+      saleAmount: Number(Number(document.getElementById('projectLiquidateSaleAmount')?.value || 0).toFixed(2)),
+      additionalCosts: Number(Number(document.getElementById('projectLiquidateCosts')?.value || 0).toFixed(2)),
+      tax: Number(Number(document.getElementById('projectLiquidateTax')?.value || 0).toFixed(2)),
       notes: document.getElementById('projectLiquidateNotes')?.value?.trim() || '',
     };
     if (!(payload.saleAmount >= 0) || !Number.isFinite(payload.saleAmount)) {
@@ -2279,22 +2342,38 @@ function bindProjectsModule() {
       return;
     }
 
+    const form = event.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    if (!form.dataset.idempotencyKey) {
+      form.dataset.idempotencyKey = window.crypto?.randomUUID?.()
+        || `liq-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
     try {
       const response = await fetch(`/api/admin/investments/${id}/liquidate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': form.dataset.idempotencyKey,
+        },
+        body: JSON.stringify({
+          ...payload,
+          clientRequestId: form.dataset.idempotencyKey,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to liquidate project.');
+      delete form.dataset.idempotencyKey;
 
       const settlement = data.settlement || {};
       if (messageEl) {
         messageEl.classList.add('success');
-        messageEl.textContent = data.message
-          || `Sold/closed. Net ${formatMoney(Number(settlement.netProceeds || 0), 2)}. Society profit ${formatMoney(Number(settlement.societyProfitShare || 0), 2)} · Investor payout ${formatMoney(Number(settlement.investorPayout || 0), 2)}. Ledgers locked.`;
+        messageEl.textContent = (data.idempotentReplay ? '(Replayed safe retry) ' : '')
+          + (data.message
+            || `Sold/closed. Net ${formatMoney(Number(settlement.netProceeds || 0), 2)}. Society profit ${formatMoney(Number(settlement.societyProfitShare || 0), 2)} · Investor payout ${formatMoney(Number(settlement.investorPayout || 0), 2)}. Ledgers locked.`);
       }
-      event.target.reset();
+      form.reset();
       document.getElementById('projectLiquidateCosts').value = '0';
       document.getElementById('projectLiquidateTax').value = '0';
       document.getElementById('projectLiquidateCode').value = '';
@@ -2308,6 +2387,8 @@ function bindProjectsModule() {
         messageEl.classList.add('error');
         messageEl.textContent = error.message;
       }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 

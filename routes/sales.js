@@ -12,7 +12,8 @@ const { generateSaleReportPdf } = require('../services/notificationService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 
 router.use(requireAuth, requirePermission('can_manage_investments', 'can_manage_profit', 'can_view_reports'));
-const writeSales = requirePermission('can_manage_investments', 'can_manage_profit');
+// Writing a sale settles capital / P&L — profit permission required (not investments-only).
+const writeSales = requirePermission('can_manage_profit');
 
 router.get('/lookup/:investmentCode', async (req, res) => {
   try {
@@ -82,8 +83,32 @@ router.get('/:id/report.pdf', async (req, res) => {
 });
 
 router.post('/', writeSales, requirePasswordConfirmation, async (req, res) => {
+  const {
+    beginProfitCloseIdempotency,
+    completeProfitCloseIdempotency,
+    failProfitCloseIdempotency,
+  } = require('../services/profitCloseIdempotencyService');
+
+  const rawKey = req.get?.('Idempotency-Key')
+    || req.headers?.['idempotency-key']
+    || req.body?.clientRequestId
+    || '';
+  let claim;
   try {
-    const { sale, bankLedger, bookBalance, ledgerWarning } = await createSale({
+    claim = await beginProfitCloseIdempotency(rawKey, {
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
+      investmentCode: String(req.body?.investmentCode || ''),
+      amount: Number(req.body?.saleAmount) || 0,
+    });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message || 'Invalid idempotency key.' });
+  }
+  if (claim.kind === 'replay') {
+    return res.status(claim.status || 201).json({ ...claim.body, idempotentReplay: true });
+  }
+
+  try {
+    const result = await createSale({
       investmentCode: req.body?.investmentCode,
       productName: req.body?.productName,
       saleAmount: req.body?.saleAmount,
@@ -92,21 +117,26 @@ router.post('/', writeSales, requirePasswordConfirmation, async (req, res) => {
       notes: req.body?.notes,
       recordedBy: req.session?.user?.name || 'Admin',
     });
-    let message = `Sale recorded. Full proceeds credited to the central bank ledger.`;
+    const bookBalance = result.bookBalance;
+    let message = result.message
+      || 'Sale settled. Proceeds credited, ownership splits applied, and ledgers locked.';
     if (bookBalance != null) {
       message += ` Book balance now ${formatMoney(Number(bookBalance), 2)}.`;
     }
-    if (ledgerWarning) {
-      message += ` Ledger warning: ${ledgerWarning}`;
-    }
-    return res.status(201).json({
-      sale,
-      bankLedger,
+    const body = {
+      sale: result.sale,
+      investment: result.investment,
+      settlement: result.settlement,
+      bankLedger: result.bankLedger,
       bookBalance,
-      ledgerWarning: ledgerWarning || null,
+      ledgerWarning: null,
       message,
-    });
+      idempotentReplay: false,
+    };
+    await completeProfitCloseIdempotency(claim.key, 201, body);
+    return res.status(201).json(body);
   } catch (error) {
+    await failProfitCloseIdempotency(claim.key);
     return res.status(error.status || 500).json({ error: error.message || 'Unable to record sale.' });
   }
 });
