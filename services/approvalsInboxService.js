@@ -475,35 +475,78 @@ async function collectStaffItems(user) {
     }
   }
 
-  if (userHasPermission(user, 'can_manage_refunds')) {
-    const pendingRefunds = await Refund.find({ status: { $in: ['pending', 'processing'] } })
+  // CEO: approve/reject pending member refund requests.
+  if (userHasPermission(user, 'can_manage_refunds') && !isCashier) {
+    const pendingRefunds = await Refund.find({ status: 'pending' })
       .populate('member', 'name email')
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
     for (const refund of pendingRefunds) {
-      const nextStatus = refund.status === 'pending' ? 'processing' : 'completed';
       items.push(item({
         id: `refund:${refund._id}`,
         type: 'refund',
-        title: `Refund — ${refund.member?.name || 'Member'}`,
-        subtitle: refund.status === 'pending' ? 'Awaiting processing' : 'In processing — mark completed',
+        title: `Refund request — ${refund.member?.name || 'Member'}`,
+        subtitle: refund.reason
+          ? `Awaiting CEO approval · ${refund.reason}`
+          : 'Awaiting CEO approval',
         amount: refund.amount,
         status: refund.status,
-        priority: 'normal',
+        priority: 'high',
+        createdAt: refund.createdAt,
+        entityId: refund._id,
+        actions: [
+          {
+            key: 'approve',
+            label: 'Approve',
+            method: 'POST',
+            path: `/api/admin/refunds/${refund._id}/approve`,
+            body: { adminNote: 'Approved from Approvals inbox' },
+            requiresPassword: true,
+          },
+          {
+            key: 'reject',
+            label: 'Reject',
+            method: 'POST',
+            path: `/api/admin/refunds/${refund._id}/reject`,
+            body: { adminNote: 'Rejected from Approvals inbox' },
+            requiresPassword: true,
+          },
+        ],
+        deepLink: { dashboard: 'admin', hash: '#approvals' },
+      }));
+    }
+  }
+
+  // Cashier: payout only after CEO approval.
+  if (userHasPermission(user, 'can_disburse_refunds') && isCashier) {
+    const approvedRefunds = await Refund.find({ status: { $in: ['approved', 'processing'] } })
+      .populate('member', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    for (const refund of approvedRefunds) {
+      items.push(item({
+        id: `refund_payout:${refund._id}`,
+        type: 'refund',
+        title: `Refund payout — ${refund.member?.name || 'Member'}`,
+        subtitle: 'CEO approved — ready for Cashier disbursement',
+        amount: refund.amount,
+        status: refund.status === 'processing' ? 'approved' : refund.status,
+        priority: 'high',
         createdAt: refund.createdAt,
         entityId: refund._id,
         actions: [
           {
             key: 'complete',
-            label: nextStatus === 'processing' ? 'Start processing' : 'Mark completed',
-            method: 'PATCH',
-            path: `/api/admin/refunds/${refund._id}`,
-            body: { status: nextStatus, adminNote: 'Updated from Approvals inbox' },
+            label: 'Pay from bank',
+            method: 'POST',
+            path: `/api/admin/refunds/${refund._id}/cashier-complete`,
+            body: { paymentMethod: 'cash', adminNote: 'Paid from Approvals inbox' },
             requiresPassword: true,
           },
         ],
-        deepLink: { dashboard: isCashier ? 'staff' : 'admin', hash: isCashier ? '#refunds' : '#members' },
+        deepLink: { dashboard: 'staff', hash: '#refunds' },
       }));
     }
   }

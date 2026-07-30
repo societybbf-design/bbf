@@ -11,6 +11,7 @@ const ENTRY_TYPES = [
   'investor_payout',
   'loan_disbursement',
   'loan_repayment',
+  'member_refund',
   'reserve_allocation',
   'reserve_disbursement',
   'operational_expense',

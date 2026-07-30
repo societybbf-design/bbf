@@ -103,8 +103,13 @@ const PERMISSIONS = Object.freeze([
   },
   {
     key: 'can_manage_refunds',
-    label: 'Manage refunds',
-    description: 'Create and complete member refunds.',
+    label: 'Review refund requests',
+    description: 'Approve or reject member refund requests (CEO). Cashier disbursement is separate.',
+  },
+  {
+    key: 'can_disburse_refunds',
+    label: 'Disburse refunds',
+    description: 'Pay CEO-approved refunds from the society bank ledger (Cashier only).',
   },
   {
     key: 'can_manage_kyc',
@@ -141,7 +146,11 @@ const PERMISSIONS = Object.freeze([
 const PERMISSION_KEYS = Object.freeze(PERMISSIONS.map((p) => p.key));
 
 /** Permissions that must never be auto-granted via CEO/developer full-access bypass. */
-const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_disburse_loans', 'can_manage_deposits']);
+const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze([
+  'can_disburse_loans',
+  'can_manage_deposits',
+  'can_disburse_refunds',
+]);
 
 /** User Management–only permissions (developer role or explicit grant — not CEO full-access bypass). */
 const UM_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_manage_security', 'can_proxy_member_approvals']);
@@ -166,7 +175,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
   cashier: [
     'can_manage_deposits',
     'can_manage_withdrawals',
-    'can_manage_refunds',
+    'can_disburse_refunds',
     'can_disburse_loans',
     'can_manage_profit',
     'can_view_reports',
@@ -285,6 +294,13 @@ function publicUserPayload(userDoc) {
   // Ensure cashiers retain deposit management even if stored permissions predate the exclusive grant.
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_manage_deposits')) {
     permissions = [...permissions, 'can_manage_deposits'];
+  }
+  if (normalizeRole(role) === 'cashier' && !permissions.includes('can_disburse_refunds')) {
+    permissions = [...permissions, 'can_disburse_refunds'];
+  }
+  // Refund review stays with CEO; strip legacy can_manage_refunds from cashier sessions.
+  if (normalizeRole(role) === 'cashier') {
+    permissions = permissions.filter((key) => key !== 'can_manage_refunds');
   }
   // Ensure cashiers retain Profit & Loss management even if stored permissions predate the grant.
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_manage_profit')) {
