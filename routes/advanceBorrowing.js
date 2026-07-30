@@ -54,6 +54,26 @@ router.get('/borrowings', async (req, res) => {
   }
 });
 
+router.get('/report.pdf', async (req, res) => {
+  try {
+    const { generateAdvancesBorrowingsPdf } = require('../services/documentPdfService');
+    const [members, borrowings] = await Promise.all([
+      listMemberAdvanceBalances(),
+      listInternalBorrowings({ openOnly: false }),
+    ]);
+    const pdfBuffer = await generateAdvancesBorrowingsPdf(
+      { members, borrowings },
+      req.session?.user?.name || 'Cashier',
+      req.query.lang || 'bn'
+    );
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="advances-borrowings-report.pdf"');
+    return res.send(pdfBuffer);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to generate advances report PDF.' });
+  }
+});
+
 router.post('/borrowings', requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await createInternalBorrowing({

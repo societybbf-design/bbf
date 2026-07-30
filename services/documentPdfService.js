@@ -406,8 +406,81 @@ async function generateAuditTrailPdf(auditData, generatedBy = 'Cashier', lang = 
   });
 }
 
+async function generateAdvancesBorrowingsPdf(data, generatedBy = 'Cashier', lang = 'bn') {
+  return createPdfBuffer((doc) => {
+    const settings = getOrganizationSettings();
+    drawBrandHeader(doc, {
+      title: 'Advances & Borrowings Report',
+      subtitle: 'Member advance balances and internal borrowing history',
+      generatedBy,
+      lang,
+    });
+
+    const members = data.members || [];
+    const borrowings = data.borrowings || [];
+    const totalAdvance = members.reduce((sum, row) => sum + Number(row.advanceBalance || 0), 0);
+    const openBorrowings = borrowings.filter((row) => ['open', 'partial'].includes(row.status));
+    const openOutstanding = openBorrowings.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.amount || 0) - Number(row.amountSettled || 0)),
+      0
+    );
+
+    drawSummaryCards(doc, [
+      { label: 'Members', value: String(members.length) },
+      { label: 'Total advance', value: money(totalAdvance) },
+      { label: 'Open borrowings', value: String(openBorrowings.length) },
+      { label: 'Open outstanding', value: money(openOutstanding) },
+    ]);
+
+    drawSectionTitle(doc, 'Member advance balances');
+    drawDataTable(doc, {
+      columns: [
+        { label: 'Member', key: 'name' },
+        { label: 'Savings', format: (row) => money(row.savings) },
+        { label: 'Advance', format: (row) => money(row.advanceBalance) },
+        { label: 'Profit', format: (row) => money(row.profit) },
+      ],
+      rows: members,
+      emptyText: 'No members.',
+    });
+
+    drawSectionTitle(doc, 'Internal borrowings history');
+    drawDataTable(doc, {
+      columns: [
+        {
+          label: 'Context',
+          format: (row) => (
+            row.loan
+              ? `Loan · ${row.loan?.loanType || 'member loan'}`
+              : (row.investment?.investmentCode || row.note || '—')
+          ),
+        },
+        { label: 'Borrower', format: (row) => row.borrowerName || row.borrower?.name || '—' },
+        { label: 'Lender', format: (row) => row.lenderName || row.lender?.name || '—' },
+        { label: 'Amount', format: (row) => money(row.amount) },
+        {
+          label: 'Outstanding',
+          format: (row) => money(Math.max(0, Number(row.amount || 0) - Number(row.amountSettled || 0))),
+        },
+        { label: 'Status', key: 'status' },
+        { label: 'When', format: (row) => formatShortDate(row.createdAt) },
+      ],
+      rows: borrowings,
+      emptyText: 'No borrowings recorded.',
+    });
+
+    usePdfLatinFont(doc).fontSize(9).fillColor(BRAND.muted).text(
+      `This is an official advances & borrowings report of ${settings.nameBn} (${settings.nameEn}) for auditing and record-keeping.`,
+      { align: 'center' }
+    );
+
+    addPageNumbers(doc);
+  });
+}
+
 module.exports = {
   generateMemberLedgerPdf,
   generateInvestorPortfolioPdf,
   generateAuditTrailPdf,
+  generateAdvancesBorrowingsPdf,
 };
