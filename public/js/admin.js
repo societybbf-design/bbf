@@ -2532,26 +2532,24 @@ async function loadSocietyFundExitValuation(memberId) {
     const breakdown = preview.settlementBreakdown || {};
     const plan = preview.redistributionPlan || [];
     const planRows = plan.length
-      ? `<div class="table-wrapper"><table class="data-table"><thead><tr><th>Member</th><th>Weight</th><th>Savings+</th><th>Profit+</th><th>Advance+</th><th>Total</th></tr></thead><tbody>${
+      ? `<div class="table-wrapper"><table class="data-table"><thead><tr><th>Member</th><th>Ownership weight</th><th>Settlement share (audit)</th></tr></thead><tbody>${
         plan.map((row) => `
           <tr>
             <td>${escapeCeoHtml(row.memberName || '')}</td>
             <td>${(Number(row.weight || 0) * 100).toFixed(1)}%</td>
-            <td>${formatMoney(Number(row.savingsCredit || 0), 2)}</td>
-            <td>${formatMoney(Number(row.profitCredit || 0), 2)}</td>
-            <td>${formatMoney(Number(row.advanceCredit || 0), 2)}</td>
             <td>${formatMoney(Number(row.totalCredit || 0), 2)}</td>
           </tr>
         `).join('')
-      }</tbody></table></div>`
-      : '<p class="table-subtitle">No remaining members available for redistribution.</p>';
+      }</tbody></table></div>
+      <p class="table-subtitle">Audit weights only — Cashier pays the departing member in cash; remaining wallets are not increased by these amounts.</p>`
+      : '<p class="table-subtitle">No remaining members available for ownership redistribution.</p>';
 
     box.innerHTML = `
       <p><strong>Exit settlement: ${formatMoney(Number(preview.settlementAmount || 0), 2)}</strong></p>
       <p class="table-subtitle">${escapeCeoHtml(preview.formula || '')}</p>
       <p class="table-subtitle">Breakdown — Savings ${formatMoney(Number(breakdown.savings || 0), 2)} · Profit ${formatMoney(Number(breakdown.profit || 0), 2)} · Advance ${formatMoney(Number(breakdown.advance || 0), 2)}</p>
-      <p class="table-subtitle">Remaining members: ${preview.remainingMemberCount || 0}. After departing + unanimous member approvals, Cashier pays this amount.</p>
-      <h4>Redistribution preview</h4>
+      <p class="table-subtitle">Remaining members: ${preview.remainingMemberCount || 0}. After departing + unanimous member approvals, Cashier pays this amount once from the society bank.</p>
+      <h4>Ownership redistribution (audit)</h4>
       ${planRows}
     `;
     if (amountInput) {

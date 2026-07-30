@@ -8,9 +8,6 @@ const {
   listUnpaidContributions,
   listMemberAdvanceBalances,
 } = require('../services/advanceBorrowingService');
-const {
-  replaceMember,
-} = require('../services/memberMigrationService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 
 router.use(requireAuth, requirePermission('can_manage_deposits', 'can_manage_refunds'));
@@ -131,18 +128,9 @@ router.post('/unpaid-contributions/:id/repay', requirePasswordConfirmation, asyn
 });
 
 router.post('/member-replace', requirePasswordConfirmation, async (req, res) => {
-  try {
-    const result = await replaceMember({
-      departingMemberId: req.body?.departingMemberId,
-      newMemberId: req.body?.newMemberId,
-      entryAmountPaid: req.body?.entryAmountPaid,
-      notes: req.body?.notes || '',
-      recordedBy: req.session?.user?.name || 'Cashier',
-    });
-    return res.status(201).json(result);
-  } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to settle member replacement.' });
-  }
+  return res.status(403).json({
+    error: 'Member replacement must be initiated from the CEO panel. Cashier cannot replace members.',
+  });
 });
 
 module.exports = router;

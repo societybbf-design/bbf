@@ -21,7 +21,12 @@ const {
 } = require('../services/documentPdfService');
 const { resolveRequestLanguage } = require('../services/i18nService');
 const { listInvestorUsers, getInvestorPortfolio } = require('../services/investmentService');
-const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
+const {
+  requireAuth,
+  requirePermission,
+  requirePasswordConfirmation,
+  requireRoles,
+} = require('../middleware/auth');
 const {
   getEntryValuation,
   replaceMember,
@@ -35,6 +40,7 @@ const manageMembers = requirePermission('can_manage_members');
 const manageNotices = requirePermission('can_manage_notices');
 const manageRefunds = requirePermission('can_manage_refunds');
 const manageMemberOperations = requirePermission('can_manage_members');
+const ceoOnly = requireRoles('ceo');
 
 function stripSensitiveMemberFields(member) {
   if (!member) return member;
@@ -74,7 +80,7 @@ router.get('/members/entry-valuation', manageMemberOperations, async (req, res) 
   }
 });
 
-router.post('/members/replace', manageMemberOperations, requirePasswordConfirmation, async (req, res) => {
+router.post('/members/replace', ceoOnly, manageMemberOperations, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await replaceMember({
       departingMemberId: req.body?.departingMemberId,

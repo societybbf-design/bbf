@@ -1,5 +1,10 @@
 const router = require('express').Router();
-const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
+const {
+  requireAuth,
+  requirePermission,
+  requirePasswordConfirmation,
+  requireRoles,
+} = require('../middleware/auth');
 const {
   previewMemberExit,
   initiateMemberExit,
@@ -12,7 +17,8 @@ const {
 
 router.use(requireAuth);
 
-const ceoInitiate = requirePermission('can_manage_members');
+const ceoOnly = requireRoles('ceo');
+const ceoInitiate = [ceoOnly, requirePermission('can_manage_members')];
 const cashierPay = requirePermission('can_manage_deposits');
 
 function requireCashierRole(req, res, next) {
@@ -24,8 +30,8 @@ function requireCashierRole(req, res, next) {
   });
 }
 
-/** CEO (and members managers): preview + initiate + track open exits. No payout. */
-router.get('/preview', ceoInitiate, async (req, res) => {
+/** CEO only: preview + initiate + track open exits. No payout. */
+router.get('/preview', ...ceoInitiate, async (req, res) => {
   try {
     const preview = await previewMemberExit(req.query.memberId);
     return res.json({ preview });
@@ -34,7 +40,7 @@ router.get('/preview', ceoInitiate, async (req, res) => {
   }
 });
 
-router.get('/', ceoInitiate, async (req, res) => {
+router.get('/', ...ceoInitiate, async (req, res) => {
   try {
     const exits = await listOpenExitRequests();
     return res.json({ exits });
@@ -52,7 +58,7 @@ router.get('/cashier-queue', cashierPay, requireCashierRole, async (req, res) =>
   }
 });
 
-router.get('/:id', ceoInitiate, async (req, res) => {
+router.get('/:id', ...ceoInitiate, async (req, res) => {
   try {
     const exitRequest = await getExitRequestById(req.params.id);
     return res.json({ exitRequest });
@@ -61,7 +67,7 @@ router.get('/:id', ceoInitiate, async (req, res) => {
   }
 });
 
-router.post('/', ceoInitiate, requirePasswordConfirmation, async (req, res) => {
+router.post('/', ...ceoInitiate, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await initiateMemberExit({
       memberId: req.body?.memberId || req.body?.departingMemberId,
@@ -75,7 +81,7 @@ router.post('/', ceoInitiate, requirePasswordConfirmation, async (req, res) => {
   }
 });
 
-router.post('/:id/cancel', ceoInitiate, requirePasswordConfirmation, async (req, res) => {
+router.post('/:id/cancel', ...ceoInitiate, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await cancelMemberExit(req.params.id, {
       cancelledBy: req.session?.user?.name || 'CEO',
