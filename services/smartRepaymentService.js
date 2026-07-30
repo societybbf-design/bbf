@@ -259,7 +259,8 @@ async function applySmartMemberPayment({
     }
   }
 
-  let bankLedger = null;
+  // Fail hard — never silently skip the society bank book after cash was accepted.
+  let bankLedger;
   try {
     bankLedger = await creditInbound({
       type: 'deposit',
@@ -269,20 +270,15 @@ async function applySmartMemberPayment({
       note: `Smart cashier payment from ${member.name} · ${plan.allocations.map((a) => `${a.label} ${formatMoney(a.amount, 2)}`).join(' · ')}`,
       createdBy: recordedBy,
       paymentChannel: paymentMethod,
+      paymentReference,
     });
   } catch (error) {
-    const { tryCredit } = require('./bankLedgerService');
-    bankLedger = await tryCredit({
-      type: 'deposit',
-      amount: total,
-      referenceType: 'SmartMemberPayment',
-      referenceId: memberId,
-      note: `Smart cashier payment from ${member.name}`,
-      createdBy: recordedBy,
-    });
-    if (!bankLedger) {
-      console.warn('[smartRepayment] bank ledger credit skipped:', error.message);
-    }
+    const wrapped = new Error(
+      `Payment legs were applied but bank ledger credit failed: ${error.message}. Do not resubmit without checking the ledger and member balances.`
+    );
+    wrapped.status = error.status || 500;
+    wrapped.cause = error;
+    throw wrapped;
   }
 
   const refreshedMember = await User.findById(memberId);

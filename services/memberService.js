@@ -250,7 +250,18 @@ async function saveDeposit(memberId, amount, options = {}) {
       });
     } catch (error) {
       console.error('[saveDeposit] bank ledger credit failed:', error.message);
-      ledgerWarning = error.message;
+      // Member balances already moved — surface a hard error so cashiers do not assume the bank book is correct.
+      const wrapped = new Error(
+        `Deposit recorded for the member, but bank ledger credit failed: ${error.message}. Do not resubmit; reconcile the ledger.`
+      );
+      wrapped.status = error.status || 500;
+      wrapped.partialDeposit = {
+        deposit: deposit || advanceDeposit,
+        regularDeposit: deposit || null,
+        advanceDeposit: advanceDeposit || null,
+        member: updatedMember,
+      };
+      throw wrapped;
     }
   }
 

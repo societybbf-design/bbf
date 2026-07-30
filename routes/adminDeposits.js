@@ -10,6 +10,15 @@ const {
 } = require('../services/smartRepaymentService');
 const { sendDepositReceipt, generateReceiptPdf } = require('../services/notificationService');
 const { paymentChannelLabel } = require('../services/paymentChannelService');
+const {
+  validateManualDepositInput,
+  resolveDepositIdempotencyKey,
+} = require('../services/depositValidation');
+const {
+  beginDepositIdempotency,
+  completeDepositIdempotency,
+  failDepositIdempotency,
+} = require('../services/depositIdempotencyService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const { clientIp } = require('../services/securityService');
 
@@ -77,159 +86,190 @@ router.get('/smart-payment/preview', recordDeposits, requireCashierRole, async (
   }
 });
 
+async function withDepositIdempotency(req, validated, work) {
+  const claim = await beginDepositIdempotency(resolveDepositIdempotencyKey(req), {
+    actorId: req.session?.user?.id || req.session?.user?._id || '',
+    memberId: validated.memberId,
+    amount: validated.amount,
+  });
+  if (claim.kind === 'replay') {
+    return { replay: true, status: claim.status, body: claim.body };
+  }
+
+  try {
+    const body = await work();
+    await completeDepositIdempotency(claim.key, 201, body);
+    return { replay: false, status: 201, body, key: claim.key };
+  } catch (error) {
+    await failDepositIdempotency(claim.key);
+    throw error;
+  }
+}
+
 router.post('/smart-payment', recordDeposits, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
   try {
-    const { memberId, amount, yearMonth, notes, paymentMethod, paymentReference } = req.body;
-    if (!memberId || amount == null) {
-      return res.status(400).json({ error: 'Member and amount are required.' });
-    }
-    const numericAmount = Number(amount);
-    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
-      return res.status(400).json({ error: 'Deposit amount must be a positive number.' });
-    }
+    const validated = validateManualDepositInput(req.body);
+    const yearMonth = req.body?.yearMonth || yearMonthFromDate();
+    const notes = req.body?.notes || '';
 
-    const result = await applySmartMemberPayment({
-      memberId,
-      amount: numericAmount,
-      yearMonth: yearMonth || yearMonthFromDate(),
-      notes: notes || '',
-      recordedBy: req.session?.user?.name || 'Cashier',
-      paymentMethod,
-      paymentReference,
-      actor: req.session?.user || null,
-      ip: clientIp(req),
+    const outcome = await withDepositIdempotency(req, validated, async () => {
+      const result = await applySmartMemberPayment({
+        memberId: validated.memberId,
+        amount: validated.amount,
+        yearMonth,
+        notes,
+        recordedBy: req.session?.user?.name || 'Cashier',
+        paymentMethod: validated.paymentMethod,
+        paymentReference: validated.paymentReference,
+        actor: req.session?.user || null,
+        ip: clientIp(req),
+      });
+
+      let message = result.message || 'Smart payment recorded.';
+      if (result.bookBalance != null) {
+        message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+      }
+
+      return {
+        ...result,
+        smartPayment: true,
+        message,
+        idempotentReplay: false,
+      };
     });
 
-    let message = result.message || 'Smart payment recorded.';
-    if (result.bookBalance != null) {
-      message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
     }
-
-    return res.status(201).json({
-      ...result,
-      smartPayment: true,
-      message,
-    });
+    return res.status(201).json(outcome.body);
   } catch (error) {
     return res.status(error.status || 500).json({
       error: error.message || 'Unable to record smart payment.',
+      partialDeposit: error.partialDeposit || undefined,
     });
   }
 });
 
 router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation, async (req, res) => {
   try {
+    const validated = validateManualDepositInput(req.body);
     const {
-      memberId,
-      amount,
       yearMonth,
       notes,
-      paymentMethod,
-      paymentReference,
       smartSplit,
     } = req.body;
-    if (!memberId || typeof amount === 'undefined' || amount === null) {
-      return res.status(400).json({ error: 'Member and amount are required.' });
-    }
-
-    const numericAmount = Number(amount);
-    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
-      return res.status(400).json({ error: 'Deposit amount must be a positive number.' });
-    }
-
     const useSmartSplit = smartSplit !== false;
     const applyMonth = yearMonth || yearMonthFromDate();
 
-    if (useSmartSplit) {
-      const result = await applySmartMemberPayment({
-        memberId,
-        amount: numericAmount,
+    const outcome = await withDepositIdempotency(req, validated, async () => {
+      if (useSmartSplit) {
+        const result = await applySmartMemberPayment({
+          memberId: validated.memberId,
+          amount: validated.amount,
+          yearMonth: applyMonth,
+          notes: notes || '',
+          recordedBy: req.session?.user?.name || 'Cashier',
+          paymentMethod: validated.paymentMethod,
+          paymentReference: validated.paymentReference,
+          actor: req.session?.user || null,
+          ip: clientIp(req),
+        });
+        let message = result.message || 'Smart payment recorded.';
+        if (result.bookBalance != null) {
+          message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
+        }
+        const monthlyDeposit = result.monthlyResult?.regularDeposit
+          || result.monthlyResult?.deposit
+          || null;
+        const advanceDeposit = result.advanceResult?.deposit
+          || result.monthlyResult?.advanceDeposit
+          || null;
+        return {
+          ...result,
+          smartPayment: true,
+          message,
+          receiptUrl: monthlyDeposit?._id ? `/api/admin/deposits/${monthlyDeposit._id}/receipt` : null,
+          advanceReceiptUrl: advanceDeposit?._id ? `/api/admin/deposits/${advanceDeposit._id}/receipt` : null,
+          receiptNumber: monthlyDeposit?.receiptNumber || advanceDeposit?.receiptNumber || null,
+          idempotentReplay: false,
+        };
+      }
+
+      const target = await getActiveMonthTarget();
+
+      const result = await saveDeposit(validated.memberId, validated.amount, {
         yearMonth: applyMonth,
         notes: notes || '',
         recordedBy: req.session?.user?.name || 'Cashier',
-        paymentMethod,
-        paymentReference,
+        paymentMethod: validated.paymentMethod,
+        paymentReference: validated.paymentReference,
         actor: req.session?.user || null,
         ip: clientIp(req),
       });
-      let message = result.message || 'Smart payment recorded.';
+
+      let emailSent = false;
+      try {
+        const emailResult = await sendDepositReceipt(
+          result.member,
+          result.deposit,
+          req.session.user.name || 'Cashier'
+        );
+        emailSent = Boolean(emailResult?.sent);
+      } catch (error) {
+        console.error('Deposit receipt email failed:', error.message);
+      }
+
+      let message = 'Deposit recorded.';
+      if (result.monthlySplit?.splitApplied) {
+        const s = result.monthlySplit;
+        const bits = [];
+        if (Number(s.towardTarget) > 0) {
+          bits.push(`Fixed deposit ${formatMoney(Number(s.towardTarget), 2)} toward ${s.yearMonth} target`);
+        }
+        if (Number(s.surplus) > 0) {
+          bits.push(`surplus ${formatMoney(Number(s.surplus), 2)} → advance (balance now ${formatMoney(Number(result.member?.advanceBalance || 0), 2)})`);
+        }
+        if (Number(s.remainingUnpaid) > 0) {
+          bits.push(`still due ${formatMoney(Number(s.remainingUnpaid), 2)}`);
+        }
+        if (!bits.length) {
+          bits.push(`Toward ${s.yearMonth} target: ${formatMoney(Number(s.towardTarget), 2)}`);
+        }
+        message = bits.join(' · ');
+      }
       if (result.bookBalance != null) {
         message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
       }
-      return res.status(201).json({
+      if (emailSent) {
+        message += ' Receipt emailed to the member.';
+      }
+
+      const regularId = result.regularDeposit?._id || (result.deposit?.type === 'regular' ? result.deposit._id : null);
+      const advanceId = result.advanceDeposit?._id || null;
+
+      return {
         ...result,
-        smartPayment: true,
         message,
-      });
-    }
-
-    const target = await getActiveMonthTarget();
-
-    const result = await saveDeposit(memberId, numericAmount, {
-      yearMonth: applyMonth,
-      notes: notes || '',
-      recordedBy: req.session?.user?.name || 'Cashier',
-      paymentMethod,
-      paymentReference,
-      actor: req.session?.user || null,
-      ip: clientIp(req),
+        emailSent,
+        paymentChannelLabel: paymentChannelLabel(result.deposit?.paymentMethod),
+        monthTarget: target,
+        receiptNumber: result.deposit?.receiptNumber || null,
+        receiptUrl: regularId || result.deposit?._id
+          ? `/api/admin/deposits/${regularId || result.deposit._id}/receipt`
+          : null,
+        advanceReceiptUrl: advanceId ? `/api/admin/deposits/${advanceId}/receipt` : null,
+        idempotentReplay: false,
+      };
     });
 
-    let emailSent = false;
-    try {
-      const emailResult = await sendDepositReceipt(
-        result.member,
-        result.deposit,
-        req.session.user.name || 'Cashier'
-      );
-      emailSent = Boolean(emailResult?.sent);
-    } catch (error) {
-      console.error('Deposit receipt email failed:', error.message);
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
     }
-
-    let message = 'Deposit recorded.';
-    if (result.monthlySplit?.splitApplied) {
-      const s = result.monthlySplit;
-      const bits = [];
-      if (Number(s.towardTarget) > 0) {
-        bits.push(`Fixed deposit ${formatMoney(Number(s.towardTarget), 2)} toward ${s.yearMonth} target`);
-      }
-      if (Number(s.surplus) > 0) {
-        bits.push(`surplus ${formatMoney(Number(s.surplus), 2)} → advance (balance now ${formatMoney(Number(result.member?.advanceBalance || 0), 2)})`);
-      }
-      if (Number(s.remainingUnpaid) > 0) {
-        bits.push(`still due ${formatMoney(Number(s.remainingUnpaid), 2)}`);
-      }
-      if (!bits.length) {
-        bits.push(`Toward ${s.yearMonth} target: ${formatMoney(Number(s.towardTarget), 2)}`);
-      }
-      message = bits.join(' · ');
-    }
-    if (result.bookBalance != null) {
-      message += ` Bank book balance now ${formatMoney(Number(result.bookBalance), 2)}.`;
-    }
-    if (emailSent) {
-      message += ' Receipt emailed to the member.';
-    }
-
-    const regularId = result.regularDeposit?._id || (result.deposit?.type === 'regular' ? result.deposit._id : null);
-    const advanceId = result.advanceDeposit?._id || null;
-
-    return res.status(201).json({
-      ...result,
-      message,
-      emailSent,
-      paymentChannelLabel: paymentChannelLabel(result.deposit?.paymentMethod),
-      monthTarget: target,
-      receiptNumber: result.deposit?.receiptNumber || null,
-      receiptUrl: regularId || result.deposit?._id
-        ? `/api/admin/deposits/${regularId || result.deposit._id}/receipt`
-        : null,
-      advanceReceiptUrl: advanceId ? `/api/admin/deposits/${advanceId}/receipt` : null,
-    });
+    return res.status(201).json(outcome.body);
   } catch (error) {
     return res.status(error.status || 500).json({
       error: error.message || 'Unable to record deposit.',
+      partialDeposit: error.partialDeposit || undefined,
     });
   }
 });

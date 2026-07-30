@@ -10,7 +10,7 @@ const DepositSchema = new mongoose.Schema({
   amount: {
     type: Number,
     required: true,
-    min: 0,
+    min: 0.01,
   },
   /**
    * regular — monthly / normal digital deposit (toward that month's fixed target)

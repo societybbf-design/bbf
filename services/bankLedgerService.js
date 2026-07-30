@@ -137,22 +137,51 @@ async function postEntry({
     await assertOpeningSet(ledger);
   }
 
-  const nextBalance = direction === 'credit'
-    ? money(ledger.bookBalance + normalized)
-    : money(ledger.bookBalance - normalized);
-
-  if (nextBalance < -0.001) {
-    throw httpError('Insufficient bank ledger balance for this debit.', 400);
+  // Atomic $inc avoids lost bookBalance updates under concurrent cash-in/cash-out.
+  let updatedLedger;
+  if (direction === 'credit') {
+    updatedLedger = await BankLedger.findOneAndUpdate(
+      { key: BankLedger.LEDGER_KEY },
+      {
+        $inc: { bookBalance: normalized },
+        $set: { updatedAt: new Date() },
+      },
+      { new: true }
+    );
+  } else {
+    updatedLedger = await BankLedger.findOneAndUpdate(
+      {
+        key: BankLedger.LEDGER_KEY,
+        bookBalance: { $gte: money(normalized - 0.001) },
+      },
+      {
+        $inc: { bookBalance: -normalized },
+        $set: { updatedAt: new Date() },
+      },
+      { new: true }
+    );
+    if (!updatedLedger) {
+      throw httpError('Insufficient bank ledger balance for this debit.', 400);
+    }
   }
 
-  ledger.bookBalance = Math.max(0, nextBalance);
-  await ledger.save();
+  if (!updatedLedger) {
+    throw httpError('Bank ledger is unavailable.', 500);
+  }
+
+  // Keep non-negative after floating-point noise.
+  if (updatedLedger.bookBalance < 0) {
+    updatedLedger.bookBalance = 0;
+    await updatedLedger.save();
+  } else {
+    updatedLedger.bookBalance = money(updatedLedger.bookBalance);
+  }
 
   const entry = await BankLedgerEntry.create({
     type,
     direction,
     amount: normalized,
-    balanceAfter: ledger.bookBalance,
+    balanceAfter: money(updatedLedger.bookBalance),
     referenceType,
     referenceId,
     note,
@@ -161,7 +190,7 @@ async function postEntry({
     paymentReference: paymentReference || '',
   });
 
-  return { ledger: reconciliationState(ledger), entry };
+  return { ledger: reconciliationState(updatedLedger), entry };
 }
 
 async function credit(params) {
