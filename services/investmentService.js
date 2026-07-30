@@ -115,8 +115,12 @@ function calculateInvestmentPerformance({ amount, withdrawals = 0, profit = 0, a
   };
 }
 
-async function getSavingsPool() {
-  const members = await User.find({ role: 'member', status: { $ne: 'deleted' } });
+async function getSavingsPool({ session = null } = {}) {
+  const { bindSession } = require('./mongoTransaction');
+  const members = await bindSession(
+    User.find({ role: 'member', status: { $ne: 'deleted' } }),
+    session
+  );
   const totalSavings = members.reduce((sum, member) => sum + Number(member.savings || 0), 0);
   const totalAdvance = members.reduce((sum, member) => sum + Number(member.advanceBalance || 0), 0);
 
@@ -1825,15 +1829,16 @@ async function getInvestmentById(investmentId) {
   return investment;
 }
 
-async function refundToTotalSavings(amount) {
-  const normalizedAmount = Number(amount);
+async function refundToTotalSavings(amount, { session = null } = {}) {
+  const { sessionOpt } = require('./mongoTransaction');
+  const normalizedAmount = Number((Number(amount) || 0).toFixed(2));
   if (!normalizedAmount || normalizedAmount <= 0) {
     const error = new Error('Refund amount must be greater than zero.');
     error.status = 400;
     throw error;
   }
 
-  const { members, totalSavings } = await getSavingsPool();
+  const { members, totalSavings } = await getSavingsPool({ session });
   if (!members.length) {
     const error = new Error('No members available to receive refund.');
     error.status = 400;
@@ -1841,14 +1846,22 @@ async function refundToTotalSavings(amount) {
   }
 
   const equalShares = splitAmountEqually(normalizedAmount, members.length);
-  let allocated = 0;
 
   for (let index = 0; index < members.length; index += 1) {
     const member = members[index];
     const refund = equalShares[index];
-    member.savings = Number(member.savings || 0) + refund;
-    await member.save();
-    allocated += refund;
+    if (!(refund > 0)) continue;
+    const updated = await User.findOneAndUpdate(
+      { _id: member._id },
+      { $inc: { savings: refund } },
+      sessionOpt(session, { new: true })
+    );
+    if (!updated) {
+      const error = new Error('Unable to refund savings to a member.');
+      error.status = 409;
+      throw error;
+    }
+    member.savings = updated.savings;
   }
 
   return {

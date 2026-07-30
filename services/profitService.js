@@ -68,7 +68,8 @@ function resolveSocietyDistributionType(requestedType = null, { force = false } 
 }
 
 async function listProfitEligibleMembers(options = {}) {
-  return User.find(getActiveMembersFilter(options));
+  const { bindSession } = require('./mongoTransaction');
+  return bindSession(User.find(getActiveMembersFilter(options)), options.session || null);
 }
 
 function calculateDividendShares(members, totalAmount) {
@@ -398,8 +399,10 @@ async function distributeAmountToMembers({
   asOfDate = null,
   yearMonth = null,
   forceDistributionType = false,
+  session = null,
 }) {
-  const members = await listProfitEligibleMembers({ asOfDate, yearMonth });
+  const { sessionOpt } = require('./mongoTransaction');
+  const members = await listProfitEligibleMembers({ asOfDate, yearMonth, session });
   if (!members.length) {
     const error = new Error('No eligible active members available for profit distribution.');
     error.status = 400;
@@ -413,15 +416,26 @@ async function distributeAmountToMembers({
   const shares = [];
 
   for (const item of sharePlan) {
+    const credit = Number((Number(item.amount || 0)).toFixed(2));
+    if (!(credit > 0)) continue;
     const previousProfit = Number(item.member.profit || 0);
-    const newProfit = previousProfit + Number(item.amount || 0);
+    const updated = await User.findOneAndUpdate(
+      { _id: item.member._id },
+      { $inc: { profit: credit } },
+      sessionOpt(session, { new: true })
+    );
+    if (!updated) {
+      const error = new Error('Unable to credit profit to a member.');
+      error.status = 409;
+      throw error;
+    }
+    const newProfit = Number(updated.profit || 0);
     item.member.profit = newProfit;
-    await item.member.save();
 
     shares.push({
       member: item.member._id,
       memberName: item.member.name,
-      amount: Number(item.amount || 0),
+      amount: credit,
       previousProfit,
       newProfit,
       weight: item.weight,
@@ -447,8 +461,10 @@ async function applyLossToMembers({
   distributedBy = 'Admin',
   asOfDate = null,
   yearMonth = null,
+  session = null,
 }) {
-  const members = await listProfitEligibleMembers({ asOfDate, yearMonth });
+  const { sessionOpt } = require('./mongoTransaction');
+  const members = await listProfitEligibleMembers({ asOfDate, yearMonth, session });
   if (!members.length) {
     const error = new Error('No eligible active members available for loss distribution.');
     error.status = 400;
@@ -460,26 +476,42 @@ async function applyLossToMembers({
   const shares = [];
 
   for (const item of sharePlan) {
-    let remaining = Number(item.amount || 0);
+    let remaining = Number((Number(item.amount || 0)).toFixed(2));
     const previousProfit = Number(item.member.profit || 0);
     const previousSavings = Number(item.member.savings || 0);
 
-    const profitDeduction = Math.min(previousProfit, remaining);
-    item.member.profit = Number((previousProfit - profitDeduction).toFixed(2));
+    const profitDeduction = Number(Math.min(previousProfit, remaining).toFixed(2));
     remaining = Number((remaining - profitDeduction).toFixed(2));
+    const savingsDeduction = remaining > 0
+      ? Number(Math.min(previousSavings, remaining).toFixed(2))
+      : 0;
 
-    if (remaining > 0) {
-      item.member.savings = Math.max(0, Number((previousSavings - remaining).toFixed(2)));
+    const updated = await User.findOneAndUpdate(
+      { _id: item.member._id },
+      {
+        $inc: {
+          ...(profitDeduction > 0 ? { profit: -profitDeduction } : {}),
+          ...(savingsDeduction > 0 ? { savings: -savingsDeduction } : {}),
+        },
+      },
+      sessionOpt(session, { new: true })
+    );
+    if (!updated) {
+      const error = new Error('Unable to apply loss to a member.');
+      error.status = 409;
+      throw error;
     }
-
-    await item.member.save();
+    item.member.profit = updated.profit;
+    item.member.savings = updated.savings;
 
     shares.push({
       member: item.member._id,
       memberName: item.member.name,
       amount: Number(item.amount || 0),
       previousProfit,
-      newProfit: item.member.profit,
+      newProfit: Number(updated.profit || 0),
+      deductedFromProfit: profitDeduction,
+      deductedFromSavings: savingsDeduction,
     });
   }
 
@@ -496,7 +528,7 @@ async function applyLossToMembers({
   };
 }
 
-async function assertInvestmentCanBeSold(investment) {
+async function assertInvestmentCanBeSold(investment, { session = null } = {}) {
   if (investment.ledgerLockedAt || investment.status === 'closed') {
     const error = new Error('This project ledger is locked after sale/settlement.');
     error.status = 409;
@@ -509,219 +541,336 @@ async function assertInvestmentCanBeSold(investment) {
     throw error;
   }
 
-  const existingSale = await InvestmentProfit.findOne({
-    investment: investment._id,
-    distributionKind: { $in: ['sale', 'loss'] },
-  });
-  if (existingSale) {
-    const error = new Error('This investment has already been sold.');
-    error.status = 400;
+  const original = Number((Number(investment.amount || 0)).toFixed(2));
+  const liquidated = Number((Number(investment.liquidatedPrincipal || 0)).toFixed(2));
+  const remaining = Number(Math.max(0, original - liquidated).toFixed(2));
+  if (remaining <= 0.001) {
+    const error = new Error('This investment has no remaining principal to close.');
+    error.status = 409;
     throw error;
+  }
+
+  // Legacy full-close guard: if prior sale/loss exists and liquidatedPrincipal was never tracked, block.
+  if (liquidated <= 0) {
+    const { bindSession } = require('./mongoTransaction');
+    const existingSale = await bindSession(
+      InvestmentProfit.findOne({
+        investment: investment._id,
+        distributionKind: { $in: ['sale', 'loss'] },
+        isPartial: { $ne: true },
+      }),
+      session
+    );
+    if (existingSale) {
+      const error = new Error('This investment has already been sold.');
+      error.status = 400;
+      throw error;
+    }
   }
 }
 
-async function markInvestmentAsSold(investment, { saleAmount, outcomeType, lockLedger = false, recordedBy = 'Admin' }) {
+async function markInvestmentAsSold(investment, {
+  saleAmount,
+  outcomeType,
+  lockLedger = false,
+  recordedBy = 'Admin',
+  session = null,
+}) {
+  const { sessionOpt } = require('./mongoTransaction');
+  const mappedOutcome = outcomeType === 'break_even' ? 'profit' : outcomeType;
   investment.status = lockLedger ? 'closed' : 'sold';
   investment.saleAmount = Number(saleAmount) || 0;
-  investment.outcomeType = outcomeType;
+  investment.outcomeType = ['profit', 'loss'].includes(mappedOutcome) ? mappedOutcome : 'profit';
   investment.soldAt = new Date();
   if (lockLedger) {
     investment.closedAt = new Date();
     investment.ledgerLockedAt = new Date();
     investment.ledgerLockedBy = String(recordedBy || 'Admin').trim();
   }
-  await investment.save();
+  await investment.save(sessionOpt(session));
 }
 
-async function recordInvestmentLoss({
+/**
+ * Unified investment close: profit, loss, break-even, and partial liquidation.
+ * Entire write path runs inside withMongoTransaction for atomic rollback.
+ */
+async function closeInvestmentReturn({
   investmentCode,
   saleAmount,
-  lossAmount,
+  profitAmount = null,
+  lossAmount = null,
+  principalToClose = null,
   notes = '',
   recordedBy = 'Admin',
-}) {
-  const investment = await getInvestmentByCode(investmentCode);
-  await assertInvestmentCanBeSold(investment);
-  const normalizedSaleAmount = Number(saleAmount) || 0;
-  const investedAmount = Number(investment.amount || 0);
-  let normalizedLossAmount = Number(lossAmount);
+  recordedByUserId = null,
+  clientRequestId = '',
+  actor = null,
+  ip = '',
+  forceOutcome = null,
+} = {}) {
+  const { computeInvestmentClosePlan, money } = require('./investmentCloseMath');
+  const { withMongoTransaction, bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
+  const { creditInbound } = require('./bankLedgerService');
 
-  if ((!normalizedLossAmount || normalizedLossAmount <= 0) && normalizedSaleAmount >= 0) {
-    normalizedLossAmount = Number((investedAmount - normalizedSaleAmount).toFixed(2));
-  }
-
-  if (!normalizedLossAmount || normalizedLossAmount <= 0) {
-    const error = new Error('Loss amount must be greater than zero. Enter a sale amount lower than the investment.');
-    error.status = 400;
-    throw error;
-  }
-
-  if (normalizedSaleAmount > investedAmount) {
-    const error = new Error('Sale amount is higher than the investment. Use the profit form instead.');
-    error.status = 400;
-    throw error;
-  }
-
-  const societyDistributionType = getDistributionType();
-  const distribution = await applyLossToMembers({
-    totalLoss: normalizedLossAmount,
-    distributedBy: recordedBy,
-  });
-
-  let savingsUpdate = null;
-  if (normalizedSaleAmount > 0) {
-    savingsUpdate = await refundToTotalSavings(normalizedSaleAmount);
-  }
-
-  investment.profit = Number((Number(investment.profit || 0) - normalizedLossAmount).toFixed(2));
-
-  const record = await InvestmentProfit.create({
-    investment: investment._id,
-    investmentCode: investment.investmentCode,
-    sector: investment.sector,
-    partner: investment.partner,
-    investmentAmount: investedAmount,
-    saleAmount: normalizedSaleAmount,
-    profitAmount: normalizedLossAmount,
-    outcomeType: 'loss',
-    distributionType: societyDistributionType,
-    memberCount: distribution.memberCount,
-    shares: distribution.shares,
-    notes: notes?.trim() || '',
-    recordedBy: recordedBy?.trim() || 'Admin',
-  });
-
-  await markInvestmentAsSold(investment, {
-    saleAmount: normalizedSaleAmount,
-    outcomeType: 'loss',
-  });
-
-  return {
-    record,
-    investment,
-    savingsUpdate,
-    updatedMembers: distribution.updatedMembers,
-    calculatedLoss: normalizedLossAmount,
-    saleReturned: normalizedSaleAmount,
-  };
-}
-
-async function recordInvestmentProfit({
-  investmentCode,
-  saleAmount,
-  profitAmount,
-  distributionType = 'equal',
-  notes = '',
-  recordedBy = 'Admin',
-}) {
-  const investment = await getInvestmentByCode(investmentCode);
-  await assertInvestmentCanBeSold(investment);
+  const investmentProbe = await getInvestmentByCode(investmentCode);
+  await assertInvestmentCanBeSold(investmentProbe);
 
   // Co-funded / ownership projects use the dedicated liquidation settlement path.
-  if (Number(investment.investorOwnershipPct || 0) > 0) {
+  if (Number(investmentProbe.investorOwnershipPct || 0) > 0) {
     const { liquidateProject } = require('./projectFinanceService');
-    const normalizedSaleAmount = Number(saleAmount) || 0;
+    const normalizedSaleAmount = money(saleAmount);
     let inferredSale = normalizedSaleAmount;
     if ((!inferredSale || inferredSale <= 0) && Number(profitAmount) > 0) {
-      inferredSale = Number((Number(investment.amount || 0) + Number(profitAmount)).toFixed(2));
+      inferredSale = money(Number(investmentProbe.amount || 0) + Number(profitAmount));
     }
     return liquidateProject({
-      investmentId: investment._id,
+      investmentId: investmentProbe._id,
       saleAmount: inferredSale,
       notes,
       recordedBy,
     });
   }
 
-  const normalizedSaleAmount = Number(saleAmount) || 0;
-  let normalizedProfitAmount = Number(profitAmount);
+  const result = await withMongoTransaction(async (session) => {
+    const investment = await bindSession(
+      require('../models/Investment').findById(investmentProbe._id),
+      session
+    );
+    if (!investment) {
+      const error = new Error('Investment not found.');
+      error.status = 404;
+      throw error;
+    }
+    await assertInvestmentCanBeSold(investment, { session });
 
-  if ((!normalizedProfitAmount || normalizedProfitAmount <= 0) && normalizedSaleAmount > 0) {
-    normalizedProfitAmount = Number((normalizedSaleAmount - Number(investment.amount || 0)).toFixed(2));
-  }
+    const remaining = money(Math.max(
+      0,
+      money(investment.amount) - money(investment.liquidatedPrincipal || 0)
+    ));
 
-  if (!normalizedProfitAmount || normalizedProfitAmount <= 0) {
-    const error = new Error('Profit amount must be greater than zero.');
-    error.status = 400;
-    throw error;
-  }
+    let sale = money(saleAmount);
+    // Legacy: profit form may omit sale and send profit only → infer sale = remaining + profit.
+    if (!(sale > 0) && Number(profitAmount) > 0 && forceOutcome !== 'loss') {
+      sale = money(remaining + Number(profitAmount));
+    }
+    // Legacy loss form: infer sale from remaining − loss when sale omitted.
+    if (!(sale >= 0) && Number(lossAmount) > 0) {
+      sale = money(Math.max(0, remaining - Number(lossAmount)));
+    }
 
-  const societyDistributionType = getDistributionType();
-  const distribution = await distributeAmountToMembers({
-    totalAmount: normalizedProfitAmount,
-    distributionType: societyDistributionType,
-    distributedBy: recordedBy,
-  });
+    let closePrincipal = principalToClose;
+    // If force loss/profit without explicit principal, close remaining (or principal implied by sale+pnl).
+    if ((closePrincipal === null || closePrincipal === undefined || closePrincipal === '')
+      && forceOutcome === 'loss'
+      && Number(lossAmount) > 0
+      && sale >= 0) {
+      closePrincipal = money(sale + Number(lossAmount));
+    }
 
-  let savingsUpdate = null;
-  const principalReturn = normalizedSaleAmount > 0
-    ? Number((normalizedSaleAmount - normalizedProfitAmount).toFixed(2))
-    : 0;
+    const plan = computeInvestmentClosePlan({
+      originalAmount: investment.amount,
+      liquidatedPrincipal: investment.liquidatedPrincipal || 0,
+      saleAmount: sale,
+      principalToClose: closePrincipal,
+    });
 
-  if (principalReturn > 0) {
-    savingsUpdate = await refundToTotalSavings(principalReturn);
-  }
+    if (forceOutcome === 'loss' && plan.outcomeType !== 'loss') {
+      const error = new Error('Sale amount is not below principal closed. Use the profit form for gains or break-even.');
+      error.status = 400;
+      throw error;
+    }
+    if (forceOutcome === 'profit' && plan.outcomeType === 'loss') {
+      // Allow unified profit button to record losses when sale < principal.
+      // (Cashier "Record & Distribute" can close either outcome.)
+    }
 
-  investment.profit = Number(investment.profit || 0) + normalizedProfitAmount;
+    const societyDistributionType = getDistributionType();
+    let distribution = {
+      shares: [],
+      memberCount: 0,
+      updatedMembers: [],
+      distributionType: societyDistributionType,
+    };
 
-  const record = await InvestmentProfit.create({
-    investment: investment._id,
-    investmentCode: investment.investmentCode,
-    sector: investment.sector,
-    partner: investment.partner,
-    investmentAmount: Number(investment.amount || 0),
-    saleAmount: normalizedSaleAmount,
-    profitAmount: normalizedProfitAmount,
-    outcomeType: 'profit',
-    distributionType: societyDistributionType,
-    memberCount: distribution.memberCount,
-    shares: distribution.shares,
-    societyProfitShare: normalizedProfitAmount,
-    investorProfitShare: 0,
-    societyOwnershipPct: Number(investment.societyOwnershipPct || 100),
-    investorOwnershipPct: Number(investment.investorOwnershipPct || 0),
-    distributionKind: 'sale',
-    notes: notes?.trim() || '',
-    recordedBy: recordedBy?.trim() || 'Admin',
-  });
+    if (plan.outcomeType === 'profit' && plan.profitAmount > 0) {
+      distribution = await distributeAmountToMembers({
+        totalAmount: plan.profitAmount,
+        distributionType: societyDistributionType,
+        distributedBy: recordedBy,
+        session,
+      });
+    } else if (plan.outcomeType === 'loss' && plan.lossAmount > 0) {
+      distribution = await applyLossToMembers({
+        totalLoss: plan.lossAmount,
+        distributedBy: recordedBy,
+        session,
+      });
+    }
 
-  await markInvestmentAsSold(investment, {
-    saleAmount: normalizedSaleAmount,
-    outcomeType: 'profit',
-    lockLedger: true,
-    recordedBy,
-  });
+    let savingsUpdate = null;
+    if (plan.principalRefund > 0) {
+      savingsUpdate = await refundToTotalSavings(plan.principalRefund, { session });
+    }
 
-  let bankLedger = null;
-  let ledgerWarning = null;
-  if (normalizedSaleAmount > 0) {
-    try {
-      const { creditInbound } = require('./bankLedgerService');
+    investment.liquidatedPrincipal = plan.liquidatedPrincipalAfter;
+    investment.cumulativeSaleAmount = money(
+      Number(investment.cumulativeSaleAmount || 0) + plan.saleAmount
+    );
+    investment.saleAmount = investment.cumulativeSaleAmount;
+    if (plan.outcomeType === 'profit') {
+      investment.profit = money(Number(investment.profit || 0) + plan.profitAmount);
+    } else if (plan.outcomeType === 'loss') {
+      investment.profit = money(Number(investment.profit || 0) - plan.lossAmount);
+    }
+
+    const recordedAt = new Date();
+    const distributionKind = plan.outcomeType === 'loss' ? 'loss' : 'sale';
+    const recordAmount = plan.outcomeType === 'loss' ? plan.lossAmount : plan.profitAmount;
+
+    const breakdown = {
+      originalAmount: plan.originalAmount,
+      alreadyLiquidated: plan.alreadyLiquidated,
+      principalClosed: plan.closePrincipal,
+      saleAmount: plan.saleAmount,
+      pnl: plan.pnl,
+      profitAmount: plan.profitAmount,
+      lossAmount: plan.lossAmount,
+      principalRefund: plan.principalRefund,
+      remainingPrincipalAfter: plan.remainingAfter,
+      isPartial: plan.isPartial,
+      outcomeType: plan.outcomeType,
+      memberCount: distribution.memberCount,
+      shareTotal: money((distribution.shares || []).reduce((sum, row) => sum + Number(row.amount || 0), 0)),
+      recordedBy: String(recordedBy || 'Admin').trim(),
+      recordedByUserId: recordedByUserId || actor?.id || actor?._id || null,
+      recordedAt: recordedAt.toISOString(),
+      clientRequestId: String(clientRequestId || '').trim(),
+    };
+
+    const record = await createWithSession(InvestmentProfit, {
+      investment: investment._id,
+      investmentCode: investment.investmentCode,
+      sector: investment.sector,
+      partner: investment.partner,
+      investmentAmount: plan.originalAmount,
+      saleAmount: plan.saleAmount,
+      profitAmount: recordAmount,
+      lossAmount: plan.lossAmount,
+      principalClosed: plan.closePrincipal,
+      remainingPrincipalAfter: plan.remainingAfter,
+      isPartial: plan.isPartial,
+      outcomeType: plan.outcomeType === 'break_even' ? 'break_even' : plan.outcomeType,
+      distributionType: societyDistributionType,
+      memberCount: distribution.memberCount,
+      shares: distribution.shares,
+      societyProfitShare: plan.profitAmount,
+      investorProfitShare: 0,
+      societyOwnershipPct: Number(investment.societyOwnershipPct || 100),
+      investorOwnershipPct: Number(investment.investorOwnershipPct || 0),
+      distributionKind,
+      notes: notes?.trim() || '',
+      recordedBy: String(recordedBy || 'Admin').trim(),
+      recordedByUserId: recordedByUserId || actor?.id || actor?._id || null,
+      clientRequestId: String(clientRequestId || '').trim(),
+      breakdown,
+      createdAt: recordedAt,
+    }, session);
+
+    if (!plan.isPartial) {
+      await markInvestmentAsSold(investment, {
+        saleAmount: investment.cumulativeSaleAmount,
+        outcomeType: plan.outcomeType,
+        lockLedger: true,
+        recordedBy,
+        session,
+      });
+    } else {
+      const mapped = plan.outcomeType === 'break_even' ? 'profit' : plan.outcomeType;
+      if (['profit', 'loss'].includes(mapped)) {
+        investment.outcomeType = mapped;
+      }
+      await investment.save(sessionOpt(session));
+    }
+
+    let bankLedger = null;
+    if (plan.saleAmount > 0) {
       bankLedger = await creditInbound({
         type: 'project_sale',
-        amount: normalizedSaleAmount,
+        amount: plan.saleAmount,
         referenceType: 'InvestmentProfit',
         referenceId: record._id,
-        note: `Project sale/return ${investment.investmentCode || ''}`,
+        note: `${plan.isPartial ? 'Partial' : 'Full'} project sale/return ${investment.investmentCode || ''} (${plan.outcomeType})`,
         createdBy: recordedBy,
+        session,
       });
-    } catch (error) {
-      console.error('[recordInvestmentProfit] bank ledger credit failed:', error.message);
-      ledgerWarning = error.message;
+      record.bankLedgerEntryId = bankLedger?.entry?._id || null;
+      await record.save(sessionOpt(session));
     }
+
+    return {
+      record,
+      investment,
+      savingsUpdate,
+      updatedMembers: distribution.updatedMembers,
+      calculatedProfit: plan.profitAmount,
+      calculatedLoss: plan.lossAmount,
+      principalReturned: plan.principalRefund,
+      principalClosed: plan.closePrincipal,
+      remainingPrincipal: plan.remainingAfter,
+      isPartial: plan.isPartial,
+      outcomeType: plan.outcomeType,
+      saleReturned: plan.saleAmount,
+      bankLedger,
+      bookBalance: bankLedger?.ledger?.bookBalance ?? null,
+      breakdown,
+      transactional: true,
+    };
+  });
+
+  // Post-commit audit (outside the transaction).
+  try {
+    const { recordAdminActivity } = require('./activityLogService');
+    await recordAdminActivity({
+      action: 'investment_close_recorded',
+      actor: actor || null,
+      details: {
+        investmentCode: result.investment?.investmentCode || investmentCode,
+        investmentId: result.investment?._id,
+        recordId: result.record?._id,
+        outcomeType: result.outcomeType,
+        saleAmount: result.saleReturned,
+        principalClosed: result.principalClosed,
+        profitAmount: result.calculatedProfit,
+        lossAmount: result.calculatedLoss,
+        isPartial: result.isPartial,
+        remainingPrincipal: result.remainingPrincipal,
+        memberCount: result.updatedMembers?.length || 0,
+        bankLedgerEntryId: result.record?.bankLedgerEntryId,
+        breakdown: result.breakdown,
+        clientRequestId: String(clientRequestId || '').trim(),
+      },
+      ip: ip || '',
+    });
+  } catch (error) {
+    console.warn('[closeInvestmentReturn] activity log failed:', error.message);
   }
 
-  return {
-    record,
-    investment,
-    savingsUpdate,
-    updatedMembers: distribution.updatedMembers,
-    calculatedProfit: normalizedProfitAmount,
-    principalReturned: principalReturn,
-    bankLedger,
-    bookBalance: bankLedger?.ledger?.bookBalance ?? null,
-    ledgerWarning,
-  };
+  return result;
+}
+
+async function recordInvestmentLoss(params = {}) {
+  const remainingHint = Number(params.saleAmount);
+  return closeInvestmentReturn({
+    ...params,
+    forceOutcome: 'loss',
+    // Prefer explicit lossAmount when provided; math derives principal from sale+loss when needed.
+    lossAmount: params.lossAmount,
+    saleAmount: Number.isFinite(remainingHint) ? remainingHint : params.saleAmount,
+  });
+}
+
+async function recordInvestmentProfit(params = {}) {
+  return closeInvestmentReturn(params);
 }
 
 async function getInvestmentProfitHistory(limit = 20) {
@@ -731,8 +880,12 @@ async function getInvestmentProfitHistory(limit = 20) {
 }
 
 async function lookupInvestmentForProfit(investmentCode) {
+  const { money } = require('./investmentCloseMath');
   const investment = await getInvestmentByCode(investmentCode);
   await assertInvestmentCanBeSold(investment);
+  const originalAmount = money(investment.amount);
+  const liquidatedPrincipal = money(investment.liquidatedPrincipal || 0);
+  const remainingPrincipal = money(Math.max(0, originalAmount - liquidatedPrincipal));
   return {
     _id: investment._id,
     investmentCode: investment.investmentCode,
@@ -742,6 +895,10 @@ async function lookupInvestmentForProfit(investmentCode) {
     sector: investment.sector,
     partner: investment.partner,
     amount: investment.amount,
+    investmentAmount: originalAmount,
+    liquidatedPrincipal,
+    remainingPrincipal,
+    cumulativeSaleAmount: money(investment.cumulativeSaleAmount || 0),
     profit: investment.profit,
     status: investment.status || 'active',
     saleAmount: investment.saleAmount,
@@ -772,4 +929,5 @@ module.exports = {
   distributeAutomaticDividend,
   recordInvestmentLoss,
   recordInvestmentProfit,
+  closeInvestmentReturn,
 };
