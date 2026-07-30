@@ -60,6 +60,20 @@
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
+        <div class="notification-menu">
+          <button type="button" class="notification-bell-btn" id="staffNotificationBtn" title="View Notifications" aria-label="View Notifications" data-i18n-title="common.viewNotifications" data-i18n-aria-label="common.viewNotifications">
+            🔔 <span class="notification-badge hidden" id="staffNotificationBadge">0</span>
+          </button>
+          <div id="staffNotificationPanel" class="notification-panel hidden" hidden>
+            <div class="notification-panel-header">
+              <strong data-i18n="common.notifications">Notifications</strong>
+              <button type="button" class="secondary-btn" id="markAllStaffNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
+            </div>
+            <div id="staffNotificationList" class="notification-list">
+              <p class="table-subtitle notification-empty-state">Click the bell to load updates.</p>
+            </div>
+          </div>
+        </div>
         <div class="cashier-profile-chip">
           <div class="cashier-profile-avatar" id="cashierTopAvatar">C</div>
           <div>
@@ -1450,6 +1464,7 @@
   <script src="/static/js/password-confirm.js"></script>
   <script src="/static/js/approvals-inbox.js"></script>
   <script src="/static/js/chat-shared.js"></script>
+  <script src="/static/js/notification-nav.js"></script>
   <script src="/static/js/money.js"></script>
   <script src="/static/js/cashier-tracking.js"></script>
   <script src="/static/js/cashier-notes-pad.js"></script>

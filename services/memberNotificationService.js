@@ -1,4 +1,8 @@
 const MemberNotification = require('../models/MemberNotification');
+const {
+  sectionForNotification,
+  enrichNotificationForViewer,
+} = require('./notificationLinkService');
 
 async function createMemberNotification({
   memberId,
@@ -7,10 +11,18 @@ async function createMemberNotification({
   message = '',
   relatedId = null,
   relatedModel = '',
+  link = '',
 }) {
   if (!memberId || !title?.trim()) {
     return null;
   }
+
+  const resolvedLink = sectionForNotification({
+    type,
+    relatedModel,
+    title,
+    link,
+  });
 
   return MemberNotification.create({
     member: memberId,
@@ -19,11 +31,16 @@ async function createMemberNotification({
     message: message?.trim() || '',
     relatedId,
     relatedModel,
+    link: resolvedLink,
   });
 }
 
 async function getMemberNotifications(memberId, limit = 30) {
-  return MemberNotification.find({ member: memberId }).sort({ createdAt: -1 }).limit(limit).lean();
+  const docs = await MemberNotification.find({ member: memberId })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+  return docs.map((doc) => enrichNotificationForViewer(doc, 'member'));
 }
 
 async function getUnreadMemberNotificationCount(memberId) {
@@ -31,11 +48,13 @@ async function getUnreadMemberNotificationCount(memberId) {
 }
 
 async function markMemberNotificationRead(memberId, notificationId) {
-  return MemberNotification.findOneAndUpdate(
+  const notification = await MemberNotification.findOneAndUpdate(
     { _id: notificationId, member: memberId },
     { read: true },
     { new: true }
   );
+  if (!notification) return null;
+  return enrichNotificationForViewer(notification.toObject(), 'member');
 }
 
 async function markAllMemberNotificationsRead(memberId) {

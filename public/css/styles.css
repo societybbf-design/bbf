@@ -1659,6 +1659,15 @@ html:not([data-theme="light"]) .theme-toggle-btn .theme-icon-sun,
   background: color-mix(in srgb, var(--primary, #0f766e) 8%, var(--surface-dropdown));
 }
 
+.notification-item-link {
+  cursor: pointer;
+}
+
+.notification-item-link small {
+  color: var(--primary, #0f766e);
+  font-weight: 600;
+}
+
 .member-empty-state {
   text-align: center;
   color: var(--text-secondary);

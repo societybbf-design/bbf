@@ -26,6 +26,12 @@ const AdminNotificationSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /** Portable dashboard section key (e.g. loans, queue, messages). */
+  link: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   /** Optional single staff user recipient (targeted). */
   targetUser: {
     type: mongoose.Schema.Types.ObjectId,

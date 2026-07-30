@@ -1969,11 +1969,8 @@ async function loadMemberNotifications({ openPanel = false } = {}) {
   const list = document.getElementById('memberNotificationList');
   const badge = document.getElementById('memberNotificationBadge');
   const panel = document.getElementById('memberNotificationPanel');
-  if (!openPanel) {
-    return;
-  }
 
-  if (list) {
+  if (openPanel && list) {
     list.innerHTML = '<p class="table-subtitle">Loading notifications...</p>';
   }
 
@@ -1987,21 +1984,17 @@ async function loadMemberNotifications({ openPanel = false } = {}) {
       badge.textContent = unreadCount;
       badge.classList.toggle('hidden', unreadCount === 0);
     }
-    if (list) {
-      list.innerHTML = notifications.length ? notifications.map((item) => `
-        <button type="button" class="notification-item ${item.read ? '' : 'notification-item-unread'}" data-member-notification-id="${item._id}">
-          <strong>${item.title}</strong>
-          <span>${item.message}</span>
-          <small>${new Date(item.createdAt).toLocaleString()}</small>
-        </button>
-      `).join('') : '<p class="table-subtitle">No notifications yet.</p>';
+    if (openPanel && list) {
+      list.innerHTML = window.SocietyNotifications
+        ? window.SocietyNotifications.renderNotificationItems(notifications, { idAttr: 'data-member-notification-id' })
+        : '<p class="table-subtitle">Unable to render notifications.</p>';
     }
-    if (panel) {
+    if (openPanel && panel) {
       panel.classList.remove('hidden');
       panel.hidden = false;
     }
   } catch (error) {
-    if (list) list.innerHTML = '<p class="table-subtitle">Unable to load notifications.</p>';
+    if (openPanel && list) list.innerHTML = '<p class="table-subtitle">Unable to load notifications.</p>';
   }
 }
 
@@ -2010,9 +2003,17 @@ function bindMemberNotificationUi() {
   const panel = document.getElementById('memberNotificationPanel');
   const markAllBtn = document.getElementById('markAllMemberNotificationsReadBtn');
 
+  const closePanel = () => {
+    if (!panel) return;
+    panel.classList.add('hidden');
+    panel.hidden = true;
+  };
+
   const openNotifications = () => {
     void loadMemberNotifications({ openPanel: true });
   };
+
+  void loadMemberNotifications({ openPanel: false });
 
   if (btn && panel) {
     btn.addEventListener('click', (event) => {
@@ -2020,8 +2021,7 @@ function bindMemberNotificationUi() {
       if (panel.classList.contains('hidden')) {
         openNotifications();
       } else {
-        panel.classList.add('hidden');
-        panel.hidden = true;
+        closePanel();
       }
     });
   }
@@ -2031,21 +2031,32 @@ function bindMemberNotificationUi() {
       return;
     }
     if (!panel.contains(event.target) && event.target !== btn) {
-      panel.classList.add('hidden');
-      panel.hidden = true;
+      closePanel();
     }
   });
 
   if (markAllBtn) {
-    markAllBtn.addEventListener('click', async () => {
+    markAllBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
       await fetch('/api/member/notifications/read-all', { method: 'PATCH' });
       await loadMemberNotifications({ openPanel: true });
     });
   }
 
   document.addEventListener('click', async (event) => {
-    const item = event.target.closest('[data-member-notification-id]');
+    const item = event.target.closest('#memberNotificationPanel [data-member-notification-id]');
     if (!item || !panel || panel.classList.contains('hidden')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (window.SocietyNotifications?.handleNotificationClick) {
+      await window.SocietyNotifications.handleNotificationClick(item, {
+        readUrl: (id) => `/api/member/notifications/${id}/read`,
+        closePanel,
+        onSameDashboard: (section) => navigateMemberPage(section),
+      });
+      void loadMemberNotifications({ openPanel: false });
+      return;
+    }
     await fetch(`/api/member/notifications/${item.dataset.memberNotificationId}/read`, { method: 'PATCH' });
     await loadMemberNotifications({ openPanel: true });
   });

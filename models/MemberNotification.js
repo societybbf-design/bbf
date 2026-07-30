@@ -32,6 +32,12 @@ const MemberNotificationSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /** Portable dashboard section key (e.g. loans, portfolio, messages). */
+  link: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   read: {
     type: Boolean,
     default: false,
