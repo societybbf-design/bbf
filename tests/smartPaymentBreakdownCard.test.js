@@ -26,6 +26,16 @@ test('staff dashboard renders structured allocation rows from preview API', () =
   assert.match(staffJs, /Advance balance \(surplus\)/);
   assert.match(staffJs, /Monthly deposit/);
   assert.match(staffJs, /smart-payment\/preview/);
+  assert.doesNotMatch(staffJs, /Loan repayment/);
+  assert.doesNotMatch(staffJs, /loan_repayment/);
+  assert.doesNotMatch(staffJs, /summary\.toLoan/);
+});
+
+test('deposit copy excludes formal loans from smart allocation flow', () => {
+  assert.match(staffHtml, /project\/emergency internal dues/);
+  assert.match(staffHtml, /Formal loans are not deducted here/);
+  assert.doesNotMatch(staffHtml, /→ loan →/);
+  assert.match(staffJs, /Formal loans stay in the Loans module/);
 });
 
 test('smart allocation card has theme-aware styles', () => {
