@@ -619,14 +619,10 @@ async function softDeleteUser(userId, {
         reason: reason || 'Soft-deleted via User Management with central book settlement',
       });
     } else {
-      // Zero balances — still assert no loans/borrows.
       await settleMemberBalancesForDeletion(user._id, {
         confirmedAmount: 0,
         processedBy: deletedBy || actor?.name || actor?.email || 'User Management',
         reason: reason || 'Soft-deleted via User Management (zero balance)',
-      }).catch(async (error) => {
-        // settle with 0 still runs loan/borrow checks; rethrow blockers
-        throw error;
       });
     }
   }
