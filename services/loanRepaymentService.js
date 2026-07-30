@@ -7,6 +7,12 @@ const User = require('../models/User');
 const { createAdminNotification } = require('./adminNotificationService');
 const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms, generateLoanRepaymentReceiptPdf, formatPaymentMethodLabel } = require('./notificationService');
+const {
+  withMongoTransaction,
+  bindSession,
+  sessionOpt,
+  createWithSession,
+} = require('./mongoTransaction');
 
 function getLoanOutstandingBalance(loan = {}) {
   if (loan.status === 'completed' || loan.repaymentStatus === 'paid_off') {
@@ -318,7 +324,7 @@ async function getRepaymentReceiptFile(repaymentId) {
   return { repayment, fullPath };
 }
 
-async function settleLoanFundingOnRepayment(loan, repaymentAmount, reviewedBy = 'Cashier') {
+async function settleLoanFundingOnRepayment(loan, repaymentAmount, reviewedBy = 'Cashier', session = null) {
   const InternalBorrowing = require('../models/InternalBorrowing');
   const { settleInternalBorrowing } = require('./advanceBorrowingService');
   const { allocateFromBookBalance } = require('./emergencyReserveService');
@@ -327,51 +333,68 @@ async function settleLoanFundingOnRepayment(loan, repaymentAmount, reviewedBy = 
   const settlements = [];
   let reserveReplenished = 0;
 
-  const openBorrowings = await InternalBorrowing.find({
-    loan: loan._id,
-    status: { $in: ['open', 'partial'] },
-  }).sort({ createdAt: 1 });
+  const openBorrowings = await bindSession(
+    InternalBorrowing.find({
+      loan: loan._id,
+      status: { $in: ['open', 'partial'] },
+    }).sort({ createdAt: 1 }),
+    session
+  );
 
   for (const borrowing of openBorrowings) {
     if (remaining <= 0.001) break;
     const outstanding = money2(Number(borrowing.amount || 0) - Number(borrowing.amountSettled || 0));
     if (!(outstanding > 0.001)) continue;
     const pay = money2(Math.min(remaining, outstanding));
-    try {
-      const settled = await settleInternalBorrowing(borrowing._id, {
-        amount: pay,
-        recordedBy: reviewedBy,
-        notes: `Loan repayment settlement · refund lender advance for loan ${loan._id}`,
-        cashReceived: true,
-        skipBankCredit: true,
-      });
-      settlements.push({
-        borrowingId: borrowing._id,
-        settledAmount: settled.settledAmount,
-        lenderName: settled.lender?.name,
-        refundedAmount: settled.lender?.refundedAmount,
-      });
-      remaining = money2(remaining - pay);
-    } catch (error) {
-      console.warn('[settleLoanFundingOnRepayment] borrow settle failed:', error.message);
-    }
+    const settled = await settleInternalBorrowing(borrowing._id, {
+      amount: pay,
+      recordedBy: reviewedBy,
+      notes: `Loan repayment settlement · refund lender advance for loan ${loan._id}`,
+      cashReceived: true,
+      skipBankCredit: true,
+      skipNotifications: Boolean(session),
+      session,
+    });
+    settlements.push({
+      borrowingId: borrowing._id,
+      settledAmount: settled.settledAmount,
+      lenderName: settled.lender?.name,
+      refundedAmount: settled.lender?.refundedAmount,
+    });
+    remaining = money2(remaining - pay);
   }
 
-  const reserveDue = money2(loan.fundingReserveOutstanding || 0);
+  // Re-read reserve outstanding from DB when in a session (loan doc may be stale).
+  const loanFresh = session
+    ? await bindSession(LoanApplication.findById(loan._id).select('fundingReserveOutstanding'), session)
+    : loan;
+  const reserveDue = money2(loanFresh?.fundingReserveOutstanding || loan.fundingReserveOutstanding || 0);
   if (reserveDue > 0.001 && remaining > 0.001) {
     const replenish = money2(Math.min(reserveDue, remaining));
-    try {
-      await allocateFromBookBalance(replenish, {
-        note: `Loan repayment replenish Emergency / Reserve Fund · loan ${loan._id}`,
-        createdBy: reviewedBy,
-      });
-      loan.fundingReserveOutstanding = money2(Math.max(0, reserveDue - replenish));
-      await loan.save();
-      reserveReplenished = replenish;
-      remaining = money2(remaining - replenish);
-    } catch (error) {
-      console.warn('[settleLoanFundingOnRepayment] reserve replenish failed:', error.message);
+    await allocateFromBookBalance(replenish, {
+      note: `Loan repayment replenish Emergency / Reserve Fund · loan ${loan._id}`,
+      createdBy: reviewedBy,
+      session,
+    });
+    const updated = await LoanApplication.findOneAndUpdate(
+      {
+        _id: loan._id,
+        fundingReserveOutstanding: { $gte: money2(replenish - 0.001) },
+      },
+      {
+        $inc: { fundingReserveOutstanding: -replenish },
+        $set: { updatedAt: new Date() },
+      },
+      sessionOpt(session, { new: true })
+    );
+    if (!updated) {
+      const err = new Error('Unable to update reserve outstanding after replenishment.');
+      err.status = 409;
+      throw err;
     }
+    loan.fundingReserveOutstanding = money2(updated.fundingReserveOutstanding);
+    reserveReplenished = replenish;
+    remaining = money2(remaining - replenish);
   }
 
   return {
@@ -383,33 +406,106 @@ async function settleLoanFundingOnRepayment(loan, repaymentAmount, reviewedBy = 
 
 async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Admin', {
   skipBankCredit = false,
+  session = null,
+  skipNotifications = false,
 } = {}) {
+  const pay = money2(repayment.amount);
+  if (!(pay > 0)) {
+    const error = new Error('Repayment amount must be greater than zero.');
+    error.status = 400;
+    throw error;
+  }
+
   const outstandingBalance = getLoanOutstandingBalance(loan);
   const pendingOthers = await getPendingRepaymentAmount(loan._id, repayment._id);
-  const availableToPay = Math.max(0, outstandingBalance - pendingOthers);
+  const availableToPay = Math.max(0, money2(outstandingBalance - pendingOthers));
 
-  if (Number(repayment.amount) > availableToPay) {
+  if (pay > availableToPay + 0.001) {
     const error = new Error(`Repayment exceeds available outstanding balance (${formatMoney(availableToPay, 2)}).`);
     error.status = 400;
     throw error;
   }
 
-  const balanceAfter = Math.max(0, Number((outstandingBalance - Number(repayment.amount)).toFixed(2)));
-  loan.outstandingBalance = balanceAfter;
-  loan.totalRepaid = Number((Number(loan.totalRepaid || 0) + Number(repayment.amount)).toFixed(2));
-  loan.repaymentStatus = balanceAfter <= 0 ? 'paid_off' : 'active';
-  if (balanceAfter <= 0) {
-    loan.status = 'completed';
+  // Atomic outstanding decrement prevents concurrent over-apply.
+  const updatedLoan = await LoanApplication.findOneAndUpdate(
+    {
+      _id: loan._id,
+      status: 'disbursed',
+      outstandingBalance: { $gte: money2(pay - 0.001) },
+    },
+    {
+      $inc: {
+        outstandingBalance: -pay,
+        totalRepaid: pay,
+      },
+      $set: { updatedAt: new Date() },
+    },
+    sessionOpt(session, { new: true })
+  );
+  if (!updatedLoan) {
+    const error = new Error(
+      'Unable to apply repayment — outstanding balance changed or loan is no longer disbursed. Refresh and retry.'
+    );
+    error.status = 409;
+    throw error;
   }
-  await loan.save();
+
+  const balanceAfter = money2(Math.max(0, updatedLoan.outstandingBalance));
+  const clearSet = balanceAfter <= 0.001
+    ? { outstandingBalance: 0, repaymentStatus: 'paid_off', status: 'completed' }
+    : { repaymentStatus: 'active' };
+  if (balanceAfter <= 0.001) {
+    updatedLoan.outstandingBalance = 0;
+    updatedLoan.repaymentStatus = 'paid_off';
+    updatedLoan.status = 'completed';
+  } else {
+    updatedLoan.repaymentStatus = 'active';
+  }
+  await LoanApplication.updateOne(
+    { _id: loan._id },
+    { $set: { ...clearSet, updatedAt: new Date() } },
+    sessionOpt(session)
+  );
+
+  // Keep caller's loan doc in sync for receipt / settlement.
+  loan.outstandingBalance = updatedLoan.outstandingBalance;
+  loan.totalRepaid = updatedLoan.totalRepaid;
+  loan.repaymentStatus = updatedLoan.repaymentStatus;
+  loan.status = updatedLoan.status;
 
   repayment.status = 'approved';
   repayment.balanceBefore = outstandingBalance;
-  repayment.balanceAfter = balanceAfter;
+  repayment.balanceAfter = balanceAfter <= 0.001 ? 0 : balanceAfter;
   repayment.approvedAt = new Date();
   repayment.reviewedBy = reviewedBy?.trim() || 'Admin';
-  repayment.receiptNumber = `REP-${new Date().getFullYear()}-${String(repayment._id).slice(-6).toUpperCase()}`;
+  repayment.receiptNumber = repayment.receiptNumber
+    || `REP-${new Date().getFullYear()}-${String(repayment._id).slice(-6).toUpperCase()}`;
+  await repayment.save(sessionOpt(session));
 
+  let bankLedger = null;
+  if (!skipBankCredit) {
+    const { creditInbound } = require('./bankLedgerService');
+    bankLedger = await creditInbound({
+      type: 'loan_repayment',
+      amount: pay,
+      referenceType: 'LoanRepayment',
+      referenceId: repayment._id,
+      note: `Loan repayment ${repayment.receiptNumber || repayment._id} · ${member?.name || 'member'}`,
+      createdBy: reviewedBy,
+      paymentChannel: repayment.paymentMethod === 'cash'
+        ? 'cash'
+        : (repayment.paymentMethod === 'bank_transfer' ? 'bank' : (repayment.paymentMethod === 'mobile_banking' ? 'mfs' : '')),
+      session,
+    });
+  }
+
+  // Hard-fail: lender refunds / reserve replenish must succeed with the repayment.
+  const fundingSettlement = await settleLoanFundingOnRepayment(loan, pay, reviewedBy, session);
+
+  return { repayment, bankLedger, fundingSettlement, loan, balanceAfter: repayment.balanceAfter };
+}
+
+async function finalizeRepaymentArtifacts(repayment, loan, member, reviewedBy, fundingSettlement) {
   const pdfBuffer = await generateLoanRepaymentReceiptPdf({
     repayment,
     loan,
@@ -419,68 +515,39 @@ async function applyApprovedRepayment(repayment, loan, member, reviewedBy = 'Adm
   repayment.receiptPath = saveRepaymentReceiptFile(repayment._id, pdfBuffer);
   await repayment.save();
 
-  let bankLedger = null;
-  if (!skipBankCredit) {
-    try {
-      const { creditInbound } = require('./bankLedgerService');
-      bankLedger = await creditInbound({
-        type: 'loan_repayment',
-        amount: Number(repayment.amount),
-        referenceType: 'LoanRepayment',
-        referenceId: repayment._id,
-        note: `Loan repayment ${repayment.receiptNumber || repayment._id} · ${member?.name || 'member'}`,
-        createdBy: reviewedBy,
-        paymentChannel: repayment.paymentMethod === 'cash'
-          ? 'cash'
-          : (repayment.paymentMethod === 'bank_transfer' ? 'bank' : (repayment.paymentMethod === 'mobile_banking' ? 'mfs' : '')),
-      });
-    } catch (error) {
-      console.warn('[applyApprovedRepayment] ledger credit failed:', error.message);
-    }
-  }
+  if (!member) return;
 
-  // Refund lenders / replenish reserve when this loan was funded via advance or reserve.
-  let fundingSettlement = null;
-  try {
-    fundingSettlement = await settleLoanFundingOnRepayment(loan, Number(repayment.amount), reviewedBy);
-  } catch (error) {
-    console.warn('[applyApprovedRepayment] funding settlement failed:', error.message);
+  const balanceAfter = money2(repayment.balanceAfter);
+  const clearedNote = balanceAfter <= 0
+    ? ' Loan status is now Completed / Paid.'
+    : ` Remaining outstanding balance: ${formatMoney(balanceAfter, 2)}.`;
+  const fundingNoteParts = [];
+  if (fundingSettlement?.settlements?.length) {
+    fundingNoteParts.push(
+      `Refunded lender advance ${formatMoney(
+        fundingSettlement.settlements.reduce((s, row) => s + Number(row.refundedAmount || 0), 0),
+        2
+      )}.`
+    );
   }
-
-  if (member) {
-    const clearedNote = balanceAfter <= 0
-      ? ' Loan status is now Completed / Paid.'
-      : ` Remaining outstanding balance: ${formatMoney(balanceAfter, 2)}.`;
-    const fundingNoteParts = [];
-    if (fundingSettlement?.settlements?.length) {
-      fundingNoteParts.push(
-        `Refunded lender advance ${formatMoney(
-          fundingSettlement.settlements.reduce((s, row) => s + Number(row.refundedAmount || 0), 0),
-          2
-        )}.`
-      );
-    }
-    if (fundingSettlement?.reserveReplenished > 0) {
-      fundingNoteParts.push(
-        `Replenished Emergency / Reserve Fund ${formatMoney(fundingSettlement.reserveReplenished, 2)}.`
-      );
-    }
-    const fundingNote = fundingNoteParts.length ? ` ${fundingNoteParts.join(' ')}` : '';
-    await notifyMemberByEmailAndSms(member, {
-      subject: balanceAfter <= 0 ? 'Loan Fully Paid' : 'Loan Repayment Recorded',
-      message: `Dear ${member.name}, your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded.${clearedNote}${fundingNote}`,
-    });
-    await createMemberNotification({
-      memberId: member._id,
-      type: 'repayment',
-      title: balanceAfter <= 0 ? 'Loan Completed / Paid' : 'Loan Repayment Recorded',
-      message: `Your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded by cashier.${clearedNote}${fundingNote}`,
-      relatedId: repayment._id,
-      relatedModel: 'LoanRepayment',
-    });
+  if (fundingSettlement?.reserveReplenished > 0) {
+    fundingNoteParts.push(
+      `Replenished Emergency / Reserve Fund ${formatMoney(fundingSettlement.reserveReplenished, 2)}.`
+    );
   }
-
-  return { repayment, bankLedger, fundingSettlement };
+  const fundingNote = fundingNoteParts.length ? ` ${fundingNoteParts.join(' ')}` : '';
+  await notifyMemberByEmailAndSms(member, {
+    subject: balanceAfter <= 0 ? 'Loan Fully Paid' : 'Loan Repayment Recorded',
+    message: `Dear ${member.name}, your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded.${clearedNote}${fundingNote}`,
+  });
+  await createMemberNotification({
+    memberId: member._id,
+    type: 'repayment',
+    title: balanceAfter <= 0 ? 'Loan Completed / Paid' : 'Loan Repayment Recorded',
+    message: `Your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded by cashier.${clearedNote}${fundingNote}`,
+    relatedId: repayment._id,
+    relatedModel: 'LoanRepayment',
+  });
 }
 
 async function recordAdminLoanRepayment({
@@ -505,13 +572,6 @@ async function recordAdminLoanRepayment({
     throw error;
   }
 
-  const loan = await getActiveOutstandingLoan(memberId);
-  if (!loan) {
-    const error = new Error('No active disbursed loan with outstanding balance.');
-    error.status = 400;
-    throw error;
-  }
-
   const { parseLooseMoney } = require('./loanService');
   const normalizedAmount = parseLooseMoney(amount);
   if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
@@ -520,39 +580,83 @@ async function recordAdminLoanRepayment({
     throw error;
   }
 
-  const outstandingBalance = getLoanOutstandingBalance(loan);
-  const pendingRepaymentAmount = await getPendingRepaymentAmount(loan._id);
-  const availableToPay = Math.max(0, outstandingBalance - pendingRepaymentAmount);
-
   const rawType = String(repaymentType || 'partial').toLowerCase().trim();
-  // Legacy 'installment' clients map to flexible partial / custom amount.
   const normalizedType = rawType === 'full' ? 'full' : 'partial';
 
-  // Full clears the loan; partial accepts any cashier-typed amount up to remaining due.
-  const finalAmount = normalizedType === 'full' ? availableToPay : money2(normalizedAmount);
-
-  if (finalAmount <= 0 || finalAmount > availableToPay + 0.001) {
-    const error = new Error(
-      `Payment amount must be between ৳0.01 and ${formatMoney(availableToPay, 2)} (current remaining due).`
+  const appliedBundle = await withMongoTransaction(async (session) => {
+    const sessionLoan = await bindSession(
+      LoanApplication.findOne({
+        member: memberId,
+        status: 'disbursed',
+        repaymentStatus: { $in: ['active', 'none'] },
+      }).sort({ disbursedAt: -1, createdAt: -1 }),
+      session
     );
-    error.status = 400;
-    throw error;
-  }
+    if (!sessionLoan) {
+      const error = new Error('No active disbursed loan with outstanding balance.');
+      error.status = 400;
+      throw error;
+    }
 
-  const repayment = await LoanRepayment.create({
-    member: memberId,
-    loan: loan._id,
-    amount: money2(finalAmount),
-    repaymentType: normalizedType,
-    paymentMethod,
-    adminNote: adminNote?.trim() || '',
-    adminManual: true,
-    status: 'pending',
+    const outstandingBalance = getLoanOutstandingBalance(sessionLoan);
+    if (!(outstandingBalance > 0.001)) {
+      const error = new Error('No active disbursed loan with outstanding balance.');
+      error.status = 400;
+      throw error;
+    }
+
+    const pendingRepaymentAmount = await getPendingRepaymentAmount(sessionLoan._id);
+    const availableToPay = Math.max(0, money2(outstandingBalance - pendingRepaymentAmount));
+    const finalAmount = normalizedType === 'full' ? availableToPay : money2(normalizedAmount);
+
+    if (finalAmount <= 0 || finalAmount > availableToPay + 0.001) {
+      const error = new Error(
+        `Payment amount must be between ৳0.01 and ${formatMoney(availableToPay, 2)} (current remaining due).`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const repayment = await createWithSession(LoanRepayment, {
+      member: memberId,
+      loan: sessionLoan._id,
+      amount: money2(finalAmount),
+      repaymentType: normalizedType,
+      paymentMethod,
+      adminNote: adminNote?.trim() || '',
+      adminManual: true,
+      status: 'pending',
+    }, session);
+
+    const applied = await applyApprovedRepayment(
+      repayment,
+      sessionLoan,
+      member,
+      reviewedBy,
+      { skipBankCredit, session, skipNotifications: true }
+    );
+
+    return {
+      repayment: applied.repayment,
+      loan: applied.loan || sessionLoan,
+      fundingSettlement: applied.fundingSettlement || null,
+      finalAmount: money2(finalAmount),
+    };
   });
 
-  const applied = await applyApprovedRepayment(repayment, loan, member, reviewedBy, { skipBankCredit });
-  const fundingSettlement = applied?.fundingSettlement || null;
+  try {
+    await finalizeRepaymentArtifacts(
+      appliedBundle.repayment,
+      appliedBundle.loan,
+      member,
+      reviewedBy,
+      appliedBundle.fundingSettlement
+    );
+  } catch (error) {
+    console.warn('[recordAdminLoanRepayment] receipt/notify failed after commit:', error.message);
+  }
 
+  const fundingSettlement = appliedBundle.fundingSettlement;
   const summary = await getMemberOutstandingSummary(memberId);
   const settlementBits = [];
   const advanceRefunded = money2(
@@ -575,16 +679,16 @@ async function recordAdminLoanRepayment({
 
   const remainingDue = Number(summary.outstandingBalance || 0);
   const baseMessage = summary.hasOutstandingLoan
-    ? `Partial payment of ${formatMoney(money2(finalAmount), 2)} recorded. Remaining due ${formatMoney(remainingDue, 2)}.`
-    : `Payment of ${formatMoney(money2(finalAmount), 2)} recorded. Loan is now Completed / Paid.`;
+    ? `Partial payment of ${formatMoney(money2(appliedBundle.finalAmount), 2)} recorded. Remaining due ${formatMoney(remainingDue, 2)}.`
+    : `Payment of ${formatMoney(money2(appliedBundle.finalAmount), 2)} recorded. Loan is now Completed / Paid.`;
 
   return {
-    repayment: applied?.repayment || repayment,
+    repayment: appliedBundle.repayment,
     summary,
     fundingSettlement,
     advanceRefunded,
     reserveReplenished: Number(fundingSettlement?.reserveReplenished || 0),
-    amountPaid: money2(finalAmount),
+    amountPaid: money2(appliedBundle.finalAmount),
     remainingDue,
     loanCleared: Boolean(summary.loanCleared || !summary.hasOutstandingLoan),
     displayStatus: summary.displayStatus,
@@ -649,7 +753,35 @@ async function updateLoanRepaymentStatus(repaymentId, status, adminNote = '', re
   }
 
   repayment.adminNote = adminNote?.trim() || repayment.adminNote || '';
-  const applied = await applyApprovedRepayment(repayment, loan, repayment.member, reviewedBy);
+
+  const applied = await withMongoTransaction(async (session) => {
+    const sessionRepayment = await bindSession(LoanRepayment.findById(repayment._id), session);
+    const sessionLoan = await bindSession(LoanApplication.findById(loan._id), session);
+    if (!sessionRepayment || sessionRepayment.status !== 'pending') {
+      const error = new Error('This repayment request has already been processed.');
+      error.status = 400;
+      throw error;
+    }
+    sessionRepayment.adminNote = repayment.adminNote;
+    sessionRepayment.reviewedBy = repayment.reviewedBy;
+    return applyApprovedRepayment(sessionRepayment, sessionLoan, repayment.member, reviewedBy, {
+      session,
+      skipNotifications: true,
+    });
+  });
+
+  try {
+    await finalizeRepaymentArtifacts(
+      applied.repayment,
+      applied.loan || loan,
+      repayment.member,
+      reviewedBy,
+      applied.fundingSettlement
+    );
+  } catch (error) {
+    console.warn('[updateLoanRepaymentStatus] receipt/notify failed after commit:', error.message);
+  }
+
   return applied.repayment || repayment;
 }
 

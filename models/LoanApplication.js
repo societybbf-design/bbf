@@ -190,4 +190,17 @@ LoanApplicationSchema.pre('save', function (next) {
   next();
 });
 
+/** At most one live (pending/approved) application per member — blocks duplicate apply races. */
+LoanApplicationSchema.index(
+  { member: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ['pending', 'approved'] },
+      autoRejected: false,
+    },
+    name: 'uniq_active_loan_per_member',
+  }
+);
+
 module.exports = mongoose.model('LoanApplication', LoanApplicationSchema);

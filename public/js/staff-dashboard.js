@@ -1959,15 +1959,31 @@ function renderLoanDisburseShortfallModal(funding) {
     }
   });
 
-  const postCover = async (url, body) => {
+  const newLoanIdempotencyKey = (prefix) => (
+    window.crypto?.randomUUID?.()
+    || `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  );
+
+  const postCover = async (url, body, formEl = null) => {
     setLoanDisburseShortfallMessage('');
+    if (formEl && !formEl.dataset.idempotencyKey) {
+      formEl.dataset.idempotencyKey = newLoanIdempotencyKey('loan-cover');
+    }
+    const idempotencyKey = formEl?.dataset?.idempotencyKey || newLoanIdempotencyKey('loan-cover');
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify({
+        ...body,
+        clientRequestId: idempotencyKey,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Unable to apply funding.');
+    if (formEl) delete formEl.dataset.idempotencyKey;
     setLoanDisburseShortfallMessage(data.message || 'Funding applied.', false);
     renderLoanDisburseShortfallModal(data.funding || data);
   };
@@ -1991,7 +2007,10 @@ function renderLoanDisburseShortfallModal(funding) {
   document.getElementById('loanShortfallAdvanceForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const loanId = loanDisburseShortfallState.loanId;
-    const formData = new FormData(event.target);
+    const form = event.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    if (submitBtn) submitBtn.disabled = true;
     try {
       const amount = normalizeCoverAmount(formData.get('amount'));
       if (!amount || !(Number(amount) > 0)) {
@@ -2000,16 +2019,21 @@ function renderLoanDisburseShortfallModal(funding) {
       await postCover(`/api/loans/admin/${loanId}/disburse-cover-advance`, {
         lenderId: formData.get('lenderId'),
         amount,
-      });
+      }, form);
     } catch (error) {
       setLoanDisburseShortfallMessage(error.message, true);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 
   document.getElementById('loanShortfallReserveForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const loanId = loanDisburseShortfallState.loanId;
-    const formData = new FormData(event.target);
+    const form = event.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    if (submitBtn) submitBtn.disabled = true;
     try {
       const amount = normalizeCoverAmount(formData.get('amount'));
       if (!amount || !(Number(amount) > 0)) {
@@ -2017,9 +2041,11 @@ function renderLoanDisburseShortfallModal(funding) {
       }
       await postCover(`/api/loans/admin/${loanId}/disburse-cover-reserve`, {
         amount,
-      });
+      }, form);
     } catch (error) {
       setLoanDisburseShortfallMessage(error.message, true);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 }
@@ -2027,14 +2053,21 @@ function renderLoanDisburseShortfallModal(funding) {
 async function executeLoanDisburse(loanId, body = {}, { messageEl = null } = {}) {
   const requestedSource = String(body.fundingSource || '').toLowerCase();
   const fundingSource = requestedSource === 'bank' ? '' : requestedSource;
+  const idempotencyKey = body.clientRequestId
+    || window.crypto?.randomUUID?.()
+    || `loan-disburse-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const res = await fetch(`/api/loans/admin/${encodeURIComponent(loanId)}/disburse`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
     body: JSON.stringify({
       paymentMethod: body.paymentMethod || 'bank_transfer',
       transferReference: body.transferReference || '',
       disbursementNote: body.disbursementNote || 'Disbursed after external funding',
       fundingSource,
+      clientRequestId: idempotencyKey,
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -2200,11 +2233,19 @@ function bindLoanDisburseShortfallModal() {
         return;
       }
       setLoanDisburseShortfallMessage('Disbursing loan…');
+      if (!loanDisburseShortfallState.idempotencyKey) {
+        loanDisburseShortfallState.idempotencyKey = window.crypto?.randomUUID?.()
+          || `loan-disburse-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      }
       const queueMsg = document.getElementById('cashierLoanDisburseMessage');
       const approvalsMsg = document.querySelector('#staffApprovalsInbox [data-approvals-message], [data-approvals-inbox] [data-approvals-message]');
-      const payload = await executeLoanDisburse(loanId, loanDisburseShortfallState.disburseBody || {}, {
+      const payload = await executeLoanDisburse(loanId, {
+        ...(loanDisburseShortfallState.disburseBody || {}),
+        clientRequestId: loanDisburseShortfallState.idempotencyKey,
+      }, {
         messageEl: queueMsg || approvalsMsg,
       });
+      loanDisburseShortfallState.idempotencyKey = '';
       closeLoanDisburseShortfallModal({ completed: true, payload });
     } catch (error) {
       if (error.funding) {
@@ -5080,33 +5121,45 @@ function bindCashierLoansUi() {
 
     const submitBtn = document.getElementById('cashierLoanRepaySubmitBtn');
     if (submitBtn) submitBtn.disabled = true;
+    const form = event.target;
+    if (!form.dataset.idempotencyKey) {
+      form.dataset.idempotencyKey = window.crypto?.randomUUID?.()
+        || `loan-repay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
 
     try {
       const response = await fetch(`/api/loans/admin/member/${encodeURIComponent(memberId)}/repayments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': form.dataset.idempotencyKey,
+        },
         body: JSON.stringify({
           amount: amount.toFixed(2),
           repaymentType,
           paymentMethod: formData.get('paymentMethod'),
           adminNote: formData.get('adminNote'),
+          clientRequestId: form.dataset.idempotencyKey,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to record loan payment.');
+      delete form.dataset.idempotencyKey;
 
       const summary = data.summary || {};
       const remaining = Number(data.remainingDue ?? summary.outstandingBalance ?? 0);
       if (msg) {
         msg.classList.add('success');
-        msg.textContent = data.message
-          || (data.loanCleared || !summary.hasOutstandingLoan
-            ? `Payment of ${money(data.amountPaid || amount)} recorded. Loan is now Completed / Paid.`
-            : `Payment of ${money(data.amountPaid || amount)} recorded. Remaining due: ${money(remaining)}.`);
+        msg.textContent = data.idempotentReplay
+          ? `${data.message || 'Payment recorded.'} (replayed safe retry)`
+          : (data.message
+            || (data.loanCleared || !summary.hasOutstandingLoan
+              ? `Payment of ${money(data.amountPaid || amount)} recorded. Loan is now Completed / Paid.`
+              : `Payment of ${money(data.amountPaid || amount)} recorded. Remaining due: ${money(remaining)}.`));
       }
 
       cashierLoanRepayAmountDirty = false;
-      event.target.reset();
+      form.reset();
       const typeSelect = document.getElementById('cashierLoanRepayType');
       if (typeSelect) typeSelect.value = 'partial';
       document.getElementById('cashierLoanRepayMemberId').value = memberId;

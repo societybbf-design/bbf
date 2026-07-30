@@ -31,6 +31,7 @@ const { saveUploadedFiles } = require('../middleware/upload');
 const LoanApplication = require('../models/LoanApplication');
 const { requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const { requireActiveMember } = require('../middleware/memberAccess');
+const { withLoanIdempotency } = require('../services/loanIdempotencyService');
 
 /** CEO (and loan reviewers): approve / reject applications. */
 const loanReview = requirePermission('can_manage_loans');
@@ -270,15 +271,27 @@ router.get('/admin/member/:memberId/repayments', loanOpsRead, async (req, res) =
 
 router.post('/admin/member/:memberId/repayments', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
-    const result = await recordAdminLoanRepayment({
+    const outcome = await withLoanIdempotency(req, {
+      operation: 'repay',
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
       memberId: req.params.memberId,
-      amount: req.body.amount,
-      repaymentType: req.body.repaymentType,
-      paymentMethod: req.body.paymentMethod,
-      adminNote: req.body.adminNote,
-      reviewedBy: req.session?.user?.name || 'Cashier',
-    });
-    return res.status(201).json(result);
+      amount: Number(req.body?.amount) || 0,
+    }, async () => {
+      const result = await recordAdminLoanRepayment({
+        memberId: req.params.memberId,
+        amount: req.body.amount,
+        repaymentType: req.body.repaymentType,
+        paymentMethod: req.body.paymentMethod,
+        adminNote: req.body.adminNote,
+        reviewedBy: req.session?.user?.name || 'Cashier',
+      });
+      return { ...result, idempotentReplay: false };
+    }, { successStatus: 201 });
+
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
+    }
+    return res.status(201).json(outcome.body);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to record loan payment.' });
   }
@@ -330,21 +343,33 @@ router.patch('/admin/:id', loanReview, requirePasswordConfirmation, async (req, 
 
 router.post('/admin/:id/disburse', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
-    const result = await disburseLoanApplication(req.params.id, {
-      paymentMethod: req.body.paymentMethod,
-      transferReference: req.body.transferReference,
-      disbursementNote: req.body.disbursementNote,
-      fundingSource: req.body.fundingSource || '',
-      disbursedBy: req.session?.user?.name || 'Cashier',
-    });
-    const loan = result?.loan || result;
-    return res.json({
-      loan,
-      fundingSource: result?.fundingSource || loan?.fundingSource || '',
-      fundingSourceLabel: result?.fundingSourceLabel || null,
-      reserveBalance: result?.reserveBalance ?? null,
-      bookBalance: null,
-    });
+    const outcome = await withLoanIdempotency(req, {
+      operation: 'disburse',
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
+      loanId: req.params.id,
+    }, async () => {
+      const result = await disburseLoanApplication(req.params.id, {
+        paymentMethod: req.body.paymentMethod,
+        transferReference: req.body.transferReference,
+        disbursementNote: req.body.disbursementNote,
+        fundingSource: req.body.fundingSource || '',
+        disbursedBy: req.session?.user?.name || 'Cashier',
+      });
+      const loan = result?.loan || result;
+      return {
+        loan,
+        fundingSource: result?.fundingSource || loan?.fundingSource || '',
+        fundingSourceLabel: result?.fundingSourceLabel || null,
+        reserveBalance: result?.reserveBalance ?? null,
+        bookBalance: null,
+        idempotentReplay: false,
+      };
+    }, { successStatus: 200 });
+
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
+    }
+    return res.json(outcome.body);
   } catch (error) {
     const payload = { error: error.message || 'Unable to disburse loan.' };
     if (error.funding) payload.funding = error.funding;
@@ -365,14 +390,26 @@ router.get('/admin/:id/disburse-check', loanCashier, async (req, res) => {
 
 router.post('/admin/:id/disburse-cover-advance', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
-    const result = await coverLoanDisbursementFromAdvance({
+    const outcome = await withLoanIdempotency(req, {
+      operation: 'cover_advance',
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
       loanId: req.params.id,
-      lenderId: req.body.lenderId,
-      amount: req.body.amount,
-      note: req.body.note,
-      createdBy: req.session?.user?.name || 'Cashier',
-    });
-    return res.json(result);
+      amount: Number(req.body?.amount) || 0,
+    }, async () => {
+      const result = await coverLoanDisbursementFromAdvance({
+        loanId: req.params.id,
+        lenderId: req.body.lenderId,
+        amount: req.body.amount,
+        note: req.body.note,
+        createdBy: req.session?.user?.name || 'Cashier',
+      });
+      return { ...result, idempotentReplay: false };
+    }, { successStatus: 200 });
+
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
+    }
+    return res.json(outcome.body);
   } catch (error) {
     const payload = { error: error.message || 'Unable to cover loan shortfall from advance.' };
     if (error.funding) payload.funding = error.funding;
@@ -382,13 +419,25 @@ router.post('/admin/:id/disburse-cover-advance', loanCashier, requirePasswordCon
 
 router.post('/admin/:id/disburse-cover-reserve', loanCashier, requirePasswordConfirmation, async (req, res) => {
   try {
-    const result = await coverLoanDisbursementFromReserve({
+    const outcome = await withLoanIdempotency(req, {
+      operation: 'cover_reserve',
+      actorId: req.session?.user?.id || req.session?.user?._id || '',
       loanId: req.params.id,
-      amount: req.body.amount,
-      note: req.body.note,
-      createdBy: req.session?.user?.name || 'Cashier',
-    });
-    return res.json(result);
+      amount: Number(req.body?.amount) || 0,
+    }, async () => {
+      const result = await coverLoanDisbursementFromReserve({
+        loanId: req.params.id,
+        amount: req.body.amount,
+        note: req.body.note,
+        createdBy: req.session?.user?.name || 'Cashier',
+      });
+      return { ...result, idempotentReplay: false };
+    }, { successStatus: 200 });
+
+    if (outcome.replay) {
+      return res.status(outcome.status).json({ ...outcome.body, idempotentReplay: true });
+    }
+    return res.json(outcome.body);
   } catch (error) {
     const payload = { error: error.message || 'Unable to cover loan shortfall from reserve.' };
     if (error.funding) payload.funding = error.funding;

@@ -48,6 +48,8 @@ test('recordAdminLoanRepayment accepts partial typed amounts and settles funding
   assert.match(repayServiceJs, /advanceRefunded/);
   assert.match(repayServiceJs, /reserveReplenished/);
   assert.match(repayServiceJs, /Remaining due/);
+  assert.match(repayServiceJs, /withMongoTransaction/);
+  assert.match(repayServiceJs, /outstandingBalance:\s*\{\s*\$gte:/);
 });
 
 test('cashier route records member repayments', () => {
