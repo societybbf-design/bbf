@@ -17,9 +17,10 @@ test('contributionRemainingDue falls back to expected minus prior payments', () 
   assert.equal(contributionRemainingDue({
     expectedAmount: 100,
     paidFromSavings: 40,
+    paidFromProfit: 15,
     paidFromAdvance: 10,
     borrowedAmount: 20,
-  }), 30);
+  }), 15);
 });
 
 test('contributionIsBorrowable allows partial/past payment shares with remaining due', () => {

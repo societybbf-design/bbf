@@ -27,6 +27,7 @@ function contributionRemainingDue(contribution) {
   const expected = money(contribution.expectedAmount);
   const covered = money(
     Number(contribution.paidFromSavings || 0)
+    + Number(contribution.paidFromProfit || 0)
     + Number(contribution.paidFromAdvance || 0)
     + Number(contribution.borrowedAmount || 0)
   );
@@ -569,6 +570,7 @@ async function listUnpaidContributions({ investmentId } = {}) {
                 {
                   $add: [
                     { $ifNull: ['$paidFromSavings', 0] },
+                    { $ifNull: ['$paidFromProfit', 0] },
                     { $ifNull: ['$paidFromAdvance', 0] },
                     { $ifNull: ['$borrowedAmount', 0] },
                   ],
@@ -584,7 +586,7 @@ async function listUnpaidContributions({ investmentId } = {}) {
   if (investmentId) filter.investment = investmentId;
 
   return InvestmentContribution.find(filter)
-    .populate('member', 'name email savings advanceBalance')
+    .populate('member', 'name email savings profit advanceBalance')
     .populate('investment', 'investmentCode amount status')
     .populate('borrowing')
     .sort({ createdAt: -1 });

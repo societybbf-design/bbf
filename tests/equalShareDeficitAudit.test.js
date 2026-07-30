@@ -21,11 +21,11 @@ test('splitAmountEqually keeps remainder on the last member', () => {
 
 test('equal-share audit: one member short by exactly 5000 on a 50000/5 project', () => {
   const audit = calculateEqualShareMemberAudit(50000, [
-    { id: '1', name: 'A', savings: 10000, advanceBalance: 0 },
-    { id: '2', name: 'B', savings: 10000, advanceBalance: 0 },
-    { id: '3', name: 'C', savings: 10000, advanceBalance: 0 },
-    { id: '4', name: 'D', savings: 10000, advanceBalance: 0 },
-    { id: '5', name: 'E', savings: 5000, advanceBalance: 0 },
+    { id: '1', name: 'A', savings: 10000, profit: 0, advanceBalance: 0 },
+    { id: '2', name: 'B', savings: 10000, profit: 0, advanceBalance: 0 },
+    { id: '3', name: 'C', savings: 10000, profit: 0, advanceBalance: 0 },
+    { id: '4', name: 'D', savings: 10000, profit: 0, advanceBalance: 0 },
+    { id: '5', name: 'E', savings: 5000, profit: 0, advanceBalance: 0 },
   ]);
 
   assert.equal(audit.equalShareBase, 10000);
@@ -46,11 +46,11 @@ test('equal-share audit: one member short by exactly 5000 on a 50000/5 project',
 
 test('equal-share audit: all members funded → no deficit, direct complete allowed', () => {
   const audit = calculateEqualShareMemberAudit(50000, [
-    { id: '1', name: 'A', savings: 8000, advanceBalance: 2000 },
-    { id: '2', name: 'B', savings: 10000, advanceBalance: 0 },
-    { id: '3', name: 'C', savings: 5000, advanceBalance: 5000 },
-    { id: '4', name: 'D', savings: 12000, advanceBalance: 0 },
-    { id: '5', name: 'E', savings: 9000, advanceBalance: 1000 },
+    { id: '1', name: 'A', savings: 8000, profit: 0, advanceBalance: 2000 },
+    { id: '2', name: 'B', savings: 10000, profit: 0, advanceBalance: 0 },
+    { id: '3', name: 'C', savings: 5000, profit: 0, advanceBalance: 5000 },
+    { id: '4', name: 'D', savings: 12000, profit: 0, advanceBalance: 0 },
+    { id: '5', name: 'E', savings: 9000, profit: 0, advanceBalance: 1000 },
   ]);
 
   assert.equal(audit.hasMemberShortfall, false);
@@ -62,13 +62,26 @@ test('equal-share audit: all members funded → no deficit, direct complete allo
   });
 });
 
-test('equal-share audit counts savings + advance as available for the share', () => {
+test('equal-share audit counts deposit/savings + profit + advance as available', () => {
   const audit = calculateEqualShareMemberAudit(20000, [
-    { id: '1', name: 'A', savings: 5000, advanceBalance: 5000 },
-    { id: '2', name: 'B', savings: 3000, advanceBalance: 2000 },
+    { id: '1', name: 'A', savings: 5000, profit: 0, advanceBalance: 5000 },
+    { id: '2', name: 'B', savings: 3000, profit: 2000, advanceBalance: 0 },
   ]);
   assert.equal(audit.equalShareBase, 10000);
   assert.equal(audit.members[0].shareDeficit, 0);
   assert.equal(audit.members[1].available, 5000);
+  assert.equal(audit.members[1].profit, 2000);
   assert.equal(audit.members[1].shareDeficit, 5000);
+});
+
+test('equal-share audit: profit can cover a deposit shortfall for reinvestment', () => {
+  const audit = calculateEqualShareMemberAudit(20000, [
+    { id: '1', name: 'A', savings: 4000, profit: 6000, advanceBalance: 0 },
+    { id: '2', name: 'B', savings: 2000, profit: 3000, advanceBalance: 5000 },
+  ]);
+  assert.equal(audit.hasMemberShortfall, false);
+  assert.equal(audit.members[0].available, 10000);
+  assert.equal(audit.members[0].shareDeficit, 0);
+  assert.equal(audit.members[1].available, 10000);
+  assert.equal(audit.members[1].shareDeficit, 0);
 });

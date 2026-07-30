@@ -1304,7 +1304,7 @@ function renderCashierPaymentShortfallModal(funding) {
       <p class="table-subtitle">
         Project ${money(funding.requiredAmount)} ÷ ${Number(funding.memberFunding?.memberCount || shortMembers.length)} members
         = <strong>${money(funding.equalShareBase || funding.memberFunding?.equalShareBase || 0)}</strong> each.
-        Deficit = equal share − (savings + advance).
+        Deficit = equal share − (deposit/savings + profit + advance).
       </p>
       <div class="table-responsive">
         <table class="data-table">
@@ -1322,7 +1322,7 @@ function renderCashierPaymentShortfallModal(funding) {
               <tr>
                 <td>${escapeHtml(m.name || '')}<br><span class="text-secondary">${escapeHtml(m.email || '')}</span></td>
                 <td>${money(m.expectedShare)}</td>
-                <td>${money(m.available)} <span class="text-secondary">(sav ${money(m.savings)} + adv ${money(m.advanceBalance)})</span></td>
+                <td>${money(m.available)} <span class="text-secondary">(dep ${money(m.savings)} + profit ${money(m.profit)} + adv ${money(m.advanceBalance)})</span></td>
                 <td class="message error"><strong>${money(m.shareDeficit)}</strong></td>
                 <td class="${Number(m.monthlyUnpaid || 0) > 0 ? 'message error' : ''}">${money(m.monthlyUnpaid)}</td>
               </tr>
@@ -3159,6 +3159,7 @@ function contributionDueAmount(contribution) {
   }
   const expected = Number(contribution.expectedAmount || 0);
   const covered = Number(contribution.paidFromSavings || 0)
+    + Number(contribution.paidFromProfit || 0)
     + Number(contribution.paidFromAdvance || 0)
     + Number(contribution.borrowedAmount || 0);
   return Math.max(0, Number((expected - covered).toFixed(2)));
