@@ -3121,20 +3121,50 @@ async function settleBorrowingRepayment(button) {
   const borrowerName = button.dataset.borrowerName || 'the borrower';
   const outstanding = Number(button.dataset.outstanding || 0);
   const msg = document.getElementById('cashierSettleMessage') || document.getElementById('cashierUnpaidMessage');
+  const isLoanBorrow = String(button.dataset.loanBorrow || '') === '1';
+
+  const defaultAmount = outstanding > 0 ? String(outstanding) : '';
+  const entered = window.prompt(
+    `Enter custom repayment amount for ${borrowerName}.\n`
+    + `Outstanding: ${money(outstanding)}.\n`
+    + `Funds checked: borrower Savings + Advance Balance`
+    + (isLoanBorrow ? ' (or cash at desk for loan funding).' : '.')
+    + `\nExact amount is instantly refunded to ${lenderName}'s Advance Balance.`,
+    defaultAmount
+  );
+  if (entered === null) {
+    return null;
+  }
+  const payAmount = Number(String(entered).replace(/,/g, '').trim());
+  if (!(payAmount > 0)) {
+    if (msg) {
+      msg.classList.remove('success');
+      msg.classList.add('error');
+      msg.textContent = 'Repayment amount must be greater than zero.';
+    }
+    return null;
+  }
+  if (outstanding > 0 && payAmount > outstanding + 0.001) {
+    if (msg) {
+      msg.classList.remove('success');
+      msg.classList.add('error');
+      msg.textContent = `Amount exceeds outstanding ${money(outstanding)}.`;
+    }
+    return null;
+  }
 
   if (msg) {
     msg.classList.remove('success', 'error');
-    msg.textContent = `Settling repayment${outstanding > 0 ? ` of ${money(outstanding)}` : ''}…`;
+    msg.textContent = `Settling repayment of ${money(payAmount)}…`;
   }
 
   button.disabled = true;
   try {
-    const isLoanBorrow = String(button.dataset.loanBorrow || '') === '1';
     const res = await fetch(`/api/admin/funding/borrowings/${encodeURIComponent(id)}/repay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        amount: outstanding > 0 ? outstanding : undefined,
+        amount: payAmount,
         notes: isLoanBorrow
           ? `Loan funding settle — refund to ${lenderName} (cash at desk)`
           : `Settled by cashier — refund to ${lenderName}`,
@@ -3146,11 +3176,18 @@ async function settleBorrowingRepayment(button) {
 
     const refunded = data.lender?.refundedAmount ?? data.settledAmount;
     const deducted = data.borrower?.deductedAmount ?? data.settledAmount;
+    const fromSavings = data.borrower?.deductedFromSavings;
+    const fromAdvance = data.borrower?.deductedFromAdvance;
     const lenderLabel = data.lender?.name || lenderName;
     const borrowerLabel = data.borrower?.name || borrowerName;
+    const fundBits = data.cashReceived
+      ? 'cash at desk'
+      : (fromSavings != null || fromAdvance != null
+        ? `savings ${money(fromSavings || 0)} + advance ${money(fromAdvance || 0)}`
+        : `funds ${money(deducted)}`);
     const successText = data.fullySettled
-      ? `Settled ${money(data.settledAmount)}. Deducted ${money(deducted)} from ${borrowerLabel}'s savings, credited the bank ledger, and refunded ${money(refunded)} to ${lenderLabel}'s advance (now ${money(data.lender?.advanceBalance)}).`
-      : `Partial settlement ${money(data.settledAmount)}. Deducted ${money(deducted)} from ${borrowerLabel}, refunded ${money(refunded)} to ${lenderLabel}. Outstanding ${money(data.outstandingAfter)}.`;
+      ? `Settled ${money(data.settledAmount)} from ${borrowerLabel} (${fundBits}). Instantly refunded ${money(refunded)} to ${lenderLabel}'s Advance Balance (now ${money(data.lender?.advanceBalance)}). Lender notified.`
+      : `Partial settlement ${money(data.settledAmount)} from ${borrowerLabel} (${fundBits}). Refunded ${money(refunded)} to ${lenderLabel}'s Advance Balance. Outstanding ${money(data.outstandingAfter)}. Lender notified.`;
 
     if (msg) {
       msg.classList.remove('error');

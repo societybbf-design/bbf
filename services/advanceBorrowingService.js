@@ -5,6 +5,8 @@ const InternalBorrowing = require('../models/InternalBorrowing');
 const InvestmentContribution = require('../models/InvestmentContribution');
 const Investment = require('../models/Investment');
 const { creditInbound, tryCredit } = require('./bankLedgerService');
+const { createMemberNotification } = require('./memberNotificationService');
+const { notifyMemberByEmailAndSms } = require('./notificationService');
 
 function money(value) {
   return Number((Number(value) || 0).toFixed(2));
@@ -211,12 +213,75 @@ async function createInternalBorrowing({
 
 /**
  * Record repayment from a borrowing member.
- * - Deducts the repaid amount from the borrower's savings (source of repayment)
- *   unless `cashReceived` (cash already taken at the cashier desk / loan repay)
+ * - Deducts from borrower Savings + Advance Balance (savings first) unless `cashReceived`
+ *   (cash already taken at the cashier desk / loan repay)
  * - Credits the society bank/book ledger unless `skipBankCredit`
- * - Restores the exact amount to the original lender's advance balance
+ * - Instantly restores the exact amount to the original lender's advance balance
+ * - Notifies the lender with a clickable link to their portfolio / advance ledger
  * - Settles (or partially settles) the borrowing record
  */
+async function resolveFundingContextLabel(borrowing = {}) {
+  if (borrowing.loan) {
+    try {
+      const LoanApplication = require('../models/LoanApplication');
+      const loan = await LoanApplication.findById(borrowing.loan).select('loanType amount').lean();
+      if (loan) {
+        return `${loan.loanType || 'general'} loan of ${formatMoney(Number(loan.amount || 0), 2)}`;
+      }
+    } catch (_error) {
+      // fall through
+    }
+    return 'loan funding';
+  }
+  if (borrowing.investment) {
+    try {
+      const investment = await Investment.findById(borrowing.investment)
+        .select('investmentCode investmentType')
+        .lean();
+      if (investment) {
+        return `project ${investment.investmentCode || investment.investmentType || ''}`.trim();
+      }
+    } catch (_error) {
+      // fall through
+    }
+    return 'project funding';
+  }
+  return 'internal advance funding';
+}
+
+async function notifyLenderAdvanceRefund({
+  lender,
+  borrower,
+  payAmount,
+  fundingLabel,
+  borrowingId,
+  lenderAdvanceAfter,
+}) {
+  if (!lender?._id || !(payAmount > 0)) return null;
+
+  const message = `Your funded amount of ${formatMoney(payAmount, 2)} for ${fundingLabel}`
+    + ` has been successfully returned and added to your Advance Balance.`
+    + ` Current advance balance: ${formatMoney(lenderAdvanceAfter, 2)}.`
+    + (borrower?.name ? ` (Repaid by ${borrower.name}.)` : '');
+
+  await createMemberNotification({
+    memberId: lender._id,
+    type: 'deposit',
+    title: 'Advance balance refunded',
+    message,
+    relatedId: borrowingId,
+    relatedModel: 'InternalBorrowing',
+    link: 'portfolio',
+  });
+
+  await notifyMemberByEmailAndSms(lender, {
+    subject: 'Advance balance refunded',
+    message: `Dear ${lender.name}, ${message}`,
+  }).catch(() => null);
+
+  return true;
+}
+
 async function settleInternalBorrowing(borrowingId, {
   amount = null,
   recordedBy = 'Cashier',
@@ -253,27 +318,42 @@ async function settleInternalBorrowing(borrowingId, {
   }
 
   const borrowerSavingsBefore = money(borrower.savings);
+  const borrowerAdvanceBefore = money(borrower.advanceBalance);
+  let deductedFromSavings = 0;
+  let deductedFromAdvance = 0;
+
   if (!cashReceived) {
-    if (borrowerSavingsBefore + 0.001 < payAmount) {
+    const available = money(borrowerSavingsBefore + borrowerAdvanceBefore);
+    if (available + 0.001 < payAmount) {
       throw httpError(
-        `${borrower.name} has only ${formatMoney(borrowerSavingsBefore, 2)} in savings, but ${formatMoney(payAmount, 2)} is needed to settle. Record a deposit for the borrower first, then settle.`
+        `${borrower.name} has only ${formatMoney(available, 2)} available `
+        + `(savings ${formatMoney(borrowerSavingsBefore, 2)} + advance ${formatMoney(borrowerAdvanceBefore, 2)}), `
+        + `but ${formatMoney(payAmount, 2)} is needed. Record a deposit, receive cash at the desk, or lower the amount.`
       );
     }
-    // Deduct repayment from the borrower
-    borrower.savings = money(borrowerSavingsBefore - payAmount);
+    // Flexible: draw savings first, then the borrower's own advance balance.
+    let left = payAmount;
+    deductedFromSavings = money(Math.min(borrowerSavingsBefore, left));
+    left = money(left - deductedFromSavings);
+    deductedFromAdvance = money(Math.min(borrowerAdvanceBefore, left));
+    borrower.savings = money(borrowerSavingsBefore - deductedFromSavings);
+    borrower.advanceBalance = money(borrowerAdvanceBefore - deductedFromAdvance);
     await borrower.save();
   }
 
+  const fundingLabel = await resolveFundingContextLabel(borrowing);
   const deposit = await Deposit.create({
     member: borrower._id,
     amount: payAmount,
     type: 'borrow_repayment',
     notes: notes?.trim()
-      || `Repayment of internal borrow to ${lender.name} (borrowing ${borrowing._id})${cashReceived ? ' · cash at desk' : ''}`,
+      || `Advance refund to ${lender.name} for ${fundingLabel}`
+        + ` (borrowing ${borrowing._id})`
+        + `${cashReceived ? ' · cash at desk' : ` · from savings ${formatMoney(deductedFromSavings, 2)} / advance ${formatMoney(deductedFromAdvance, 2)}`}`,
     recordedBy,
   });
 
-  // Cash-in: society bank ledger increases (allow without opening so settlement is not skipped)
+  // Cash-in: society bank ledger increases (skipped when cash already booked via loan_repayment).
   let bankLedger = null;
   if (!skipBankCredit) {
     try {
@@ -282,7 +362,7 @@ async function settleInternalBorrowing(borrowingId, {
         amount: payAmount,
         referenceType: 'InternalBorrowing',
         referenceId: borrowing._id,
-        note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
+        note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name} · ${fundingLabel}`,
         createdBy: recordedBy,
       });
     } catch (error) {
@@ -292,7 +372,7 @@ async function settleInternalBorrowing(borrowingId, {
         amount: payAmount,
         referenceType: 'InternalBorrowing',
         referenceId: borrowing._id,
-        note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name}`,
+        note: `Borrow repayment from ${borrower.name} → refund advance to ${lender.name} · ${fundingLabel}`,
         createdBy: recordedBy,
       });
       if (!bankLedger) {
@@ -301,7 +381,7 @@ async function settleInternalBorrowing(borrowingId, {
     }
   }
 
-  // Refund / restore original lender advance balance
+  // Instantly restore the original lender's advance balance.
   const lenderAdvanceBefore = money(lender.advanceBalance);
   lender.advanceBalance = money(Number(lender.advanceBalance || 0) + payAmount);
   await lender.save();
@@ -351,10 +431,24 @@ async function settleInternalBorrowing(borrowingId, {
     );
   }
 
+  try {
+    await notifyLenderAdvanceRefund({
+      lender,
+      borrower,
+      payAmount,
+      fundingLabel,
+      borrowingId: borrowing._id,
+      lenderAdvanceAfter: lender.advanceBalance,
+    });
+  } catch (error) {
+    console.warn('[advanceBorrowing] lender refund notification failed:', error.message);
+  }
+
   return {
     borrowing,
     deposit,
     bankLedger,
+    fundingLabel,
     lender: {
       id: lender._id,
       name: lender.name,
@@ -367,7 +461,11 @@ async function settleInternalBorrowing(borrowingId, {
       name: borrower.name,
       savings: borrower.savings,
       savingsBefore: borrowerSavingsBefore,
+      advanceBalance: borrower.advanceBalance,
+      advanceBalanceBefore: borrowerAdvanceBefore,
       deductedAmount: cashReceived ? 0 : payAmount,
+      deductedFromSavings,
+      deductedFromAdvance,
     },
     settledAmount: payAmount,
     outstandingAfter: Math.max(0, remaining),
@@ -501,6 +599,8 @@ module.exports = {
   money,
   contributionRemainingDue,
   contributionIsBorrowable,
+  resolveFundingContextLabel,
+  notifyLenderAdvanceRefund,
   saveAdvanceDeposit,
   listInternalBorrowings,
   createInternalBorrowing,

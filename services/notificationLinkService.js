@@ -24,6 +24,16 @@ function sectionForNotification({
   if (typ === 'loan' || model.includes('loanapplication')) return 'loans';
   if (typ === 'withdrawal' || model.includes('withdrawal')) return 'withdrawals';
   if (typ === 'refund' || model.includes('refund')) return 'refunds';
+  // Lender advance auto-refunds deep-link to the member advance / portfolio ledger.
+  if (model.includes('internalborrowing')) return 'portfolio';
+  if (
+    titleLower.includes('advance balance refunded')
+    || titleLower.includes('funded amount')
+    || titleLower.includes('successfully returned')
+    || titleLower.includes('added to your advance balance')
+  ) {
+    return 'portfolio';
+  }
   if (typ === 'deposit' || model.includes('deposit')) return 'deposits';
   if (typ === 'dividend' || model.includes('profit')) return 'profit';
   if (typ === 'kyc' || titleLower.includes('kyc')) return 'settings';
@@ -41,6 +51,7 @@ function sectionForNotification({
     return 'projects';
   }
   if (model.includes('monthlycontribution')) return 'deposits';
+  if (model.includes('societyfunding')) return 'funding';
   return stored || '';
 }
 
@@ -68,6 +79,8 @@ function resolveNotificationHref(sectionOrLink, role = '') {
       profit: 'portfolio',
       deposits: 'portfolio',
       dividend: 'portfolio',
+      advances: 'portfolio',
+      funding: 'portfolio',
       members: 'settings',
       settings: 'settings',
       approvals: 'investment-requests',

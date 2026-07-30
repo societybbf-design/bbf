@@ -174,6 +174,8 @@ function navigateMemberPage(page, { syncUrl = true } = {}) {
   }
   if (page === 'portfolio' || page === 'investments') {
     void loadSocietyInvestments();
+    void refreshPortfolioAdvanceSummary();
+    void loadMemberBorrowings();
   }
   if (page === 'withdrawals') {
     void loadWithdrawalRequests();
@@ -351,6 +353,7 @@ async function loadProfile() {
     memberJoined.textContent = joinedDate;
 
     renderMemberSelfProfile(user);
+    refreshPortfolioAdvanceSummary(user);
 
     // Load additional financial data
     await loadFinancialData(user._id);
@@ -933,15 +936,31 @@ async function refreshMemberApprovalsBadge() {
   await window.ApprovalsInbox.refreshBadge('.nav-item[data-page="investment-requests"]');
 }
 
+function refreshPortfolioAdvanceSummary(user = currentUser) {
+  const savingsEl = document.getElementById('portfolioSavingsBalance');
+  const advanceEl = document.getElementById('portfolioAdvanceBalance');
+  const profitEl = document.getElementById('portfolioProfitBalance');
+  if (!user) return;
+  if (savingsEl) savingsEl.textContent = formatMoney(Number(user.savings || 0), 2);
+  if (advanceEl) advanceEl.textContent = formatMoney(Number(user.advanceBalance || 0), 2);
+  if (profitEl) profitEl.textContent = formatMoney(Number(user.profit || 0), 2);
+}
+
 function renderMemberBorrowings(borrowings = []) {
-  const body = document.getElementById('memberBorrowingsBody');
-  if (!body) return;
+  const bodies = [
+    document.getElementById('memberBorrowingsBody'),
+    document.getElementById('portfolioBorrowingsBody'),
+  ].filter(Boolean);
+  if (!bodies.length) return;
   const memberId = String(currentUser?._id || currentUser?.id || '');
+  const emptyHtml = '<tr><td colspan="6">No internal borrows recorded.</td></tr>';
   if (!borrowings.length) {
-    body.innerHTML = '<tr><td colspan="6">No internal borrows recorded.</td></tr>';
+    bodies.forEach((body) => {
+      body.innerHTML = emptyHtml;
+    });
     return;
   }
-  body.innerHTML = borrowings.map((row) => {
+  const rowsHtml = borrowings.map((row) => {
     const isBorrower = String(row.borrower?._id || row.borrower) === memberId;
     const counterparty = isBorrower
       ? (row.lenderName || row.lender?.name || 'Lender')
@@ -959,18 +978,26 @@ function renderMemberBorrowings(borrowings = []) {
       </tr>
     `;
   }).join('');
+  bodies.forEach((body) => {
+    body.innerHTML = rowsHtml;
+  });
 }
 
 async function loadMemberBorrowings() {
-  const body = document.getElementById('memberBorrowingsBody');
-  if (!body) return;
+  const bodies = [
+    document.getElementById('memberBorrowingsBody'),
+    document.getElementById('portfolioBorrowingsBody'),
+  ].filter(Boolean);
+  if (!bodies.length) return;
   try {
     const response = await fetch('/api/member/borrowings');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to load borrowings.');
     renderMemberBorrowings(data.borrowings || []);
   } catch (error) {
-    body.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+    bodies.forEach((body) => {
+      body.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+    });
   }
 }
 
