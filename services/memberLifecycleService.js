@@ -34,14 +34,19 @@ async function getDeletedMemberCount() {
 }
 
 async function removeMember(memberId, { reason = '', deletedBy = 'Admin' } = {}) {
-  const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
+  const member = await User.findOne({
+    _id: memberId,
+    role: 'member',
+    status: { $nin: ['inactive', 'blocked'] },
+  });
   if (!member) {
-    const error = new Error('Member not found or already removed.');
+    const error = new Error('Member not found or already inactive.');
     error.status = 404;
     throw error;
   }
 
-  member.status = 'deleted';
+  member.status = 'inactive';
+  member.sessionVersion = Number(member.sessionVersion || 0) + 1;
   member.deletedAt = new Date();
   member.deletedReason = String(reason || '').trim();
   member.deletedBy = String(deletedBy || 'Admin').trim();
@@ -51,9 +56,13 @@ async function removeMember(memberId, { reason = '', deletedBy = 'Admin' } = {})
 }
 
 async function restoreMember(memberId) {
-  const member = await User.findOne({ _id: memberId, role: 'member', status: 'deleted' });
+  const member = await User.findOne({
+    _id: memberId,
+    role: 'member',
+    status: { $in: ['inactive', 'deleted'] },
+  });
   if (!member) {
-    const error = new Error('Deleted member not found.');
+    const error = new Error('Inactive member not found.');
     error.status = 404;
     throw error;
   }

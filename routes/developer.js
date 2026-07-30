@@ -11,15 +11,15 @@ const {
   verifyOtpAndResetPassword,
   sanitizeUserForDeveloper,
   createManagedUser,
-  softDeleteUser,
-  restoreSoftDeletedUser,
+  assignableRolesForActor,
   clientIp,
 } = require('../services/securityService');
 const {
-  ASSIGNABLE_ROLES,
   ROLE_LABELS,
   PERMISSIONS,
   DEFAULT_PERMISSIONS_BY_ROLE,
+  UM_EXCLUSIVE_PERMISSIONS,
+  isDeveloperRole,
 } = require('../services/rbac');
 const User = require('../models/User');
 const {
@@ -27,19 +27,34 @@ const {
   proxyApproveInvestment,
   proxyApproveExit,
 } = require('../services/memberApprovalProxyService');
+const {
+  umCreateRateLimit,
+  umMutateRateLimit,
+  otpVerifyRateLimit,
+} = require('../services/requestRateLimit');
 
 router.use(requireAuth, requireDeveloper);
 
 const proxyMemberApprovals = requirePermission('can_proxy_member_approvals');
 
 router.get('/meta', (req, res) => {
+  const roles = assignableRolesForActor(req.session.user);
+  const actorIsDeveloper = isDeveloperRole(req.session.user?.role);
+  const permissions = actorIsDeveloper
+    ? PERMISSIONS
+    : PERMISSIONS.filter((row) => !UM_EXCLUSIVE_PERMISSIONS.includes(row.key));
+
   return res.json({
-    roles: ASSIGNABLE_ROLES.map((role) => ({
+    roles: roles.map((role) => ({
       value: role,
       label: ROLE_LABELS[role],
-      defaultPermissions: DEFAULT_PERMISSIONS_BY_ROLE[role] || [],
+      defaultPermissions: (DEFAULT_PERMISSIONS_BY_ROLE[role] || []).filter((key) => (
+        actorIsDeveloper || !UM_EXCLUSIVE_PERMISSIONS.includes(key)
+      )),
     })),
-    permissions: PERMISSIONS,
+    permissions,
+    accountStatuses: ['active', 'inactive', 'blocked'],
+    softDeleteEnabled: false,
   });
 });
 
@@ -65,7 +80,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.post('/users', async (req, res) => {
+router.post('/users', umCreateRateLimit.middleware(), async (req, res) => {
   try {
     const result = await createManagedUser(req.body, req.session.user, clientIp(req));
     return res.status(201).json(result);
@@ -84,7 +99,7 @@ router.get('/users/:id', async (req, res) => {
   }
 });
 
-router.patch('/users/:id/email', async (req, res) => {
+router.patch('/users/:id/email', umMutateRateLimit.middleware(), async (req, res) => {
   try {
     const user = await developerUpdateEmail(
       req.params.id,
@@ -98,7 +113,7 @@ router.patch('/users/:id/email', async (req, res) => {
   }
 });
 
-router.patch('/users/:id/password', async (req, res) => {
+router.patch('/users/:id/password', umMutateRateLimit.middleware(), async (req, res) => {
   try {
     const user = await developerSetPassword(
       req.params.id,
@@ -112,7 +127,7 @@ router.patch('/users/:id/password', async (req, res) => {
   }
 });
 
-router.post('/users/:id/otp-reset', async (req, res) => {
+router.post('/users/:id/otp-reset', otpVerifyRateLimit.middleware(), async (req, res) => {
   try {
     const user = await verifyOtpAndResetPassword({
       userId: req.params.id,
@@ -127,7 +142,7 @@ router.post('/users/:id/otp-reset', async (req, res) => {
   }
 });
 
-router.patch('/users/:id/status', async (req, res) => {
+router.patch('/users/:id/status', umMutateRateLimit.middleware(), async (req, res) => {
   try {
     const user = await developerSetAccountStatus(
       req.params.id,
@@ -135,93 +150,50 @@ router.patch('/users/:id/status', async (req, res) => {
       req.session.user,
       clientIp(req)
     );
-    return res.json({ message: `Account marked as ${user.status}.`, user });
+    return res.json({
+      message: `Account marked as ${user.status}.${user.status !== 'active' ? ' Active sessions were revoked.' : ''}`,
+      user,
+    });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to update status.' });
   }
 });
 
-router.get('/users/:id/deletion-settlement', async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id).select('role name email status');
-    if (!user) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
-    if (user.role !== 'member') {
-      return res.json({
-        requiresSettlement: false,
-        settlementAmount: 0,
-        canDelete: user.status !== 'deleted',
-        blockers: user.status === 'deleted' ? ['Account is already soft-deleted.'] : [],
-        member: null,
-        nonMember: true,
-        message: 'Non-member staff accounts have no society balances to settle.',
-      });
-    }
-    const {
-      getMemberDeletionSettlementPreview,
-    } = require('../services/memberLifecycleService');
-    const preview = await getMemberDeletionSettlementPreview(req.params.id);
-    return res.json(preview);
-  } catch (error) {
-    return res.status(error.status || 500).json({
-      error: error.message || 'Unable to load deletion settlement preview.',
-      settlementPreview: error.settlementPreview || null,
-    });
-  }
+/** Soft-delete removed — keep stubs so old clients get a clear 410. */
+router.get('/users/:id/deletion-settlement', (_req, res) => {
+  return res.status(410).json({
+    error: 'Account deletion is disabled. Set the account to inactive or blocked instead.',
+    canDelete: false,
+    softDeleteEnabled: false,
+  });
 });
 
-router.post('/users/:id/soft-delete', requirePasswordConfirmation, async (req, res) => {
+router.post('/users/:id/soft-delete', requirePasswordConfirmation, (_req, res) => {
+  return res.status(410).json({
+    error: 'Account deletion is disabled. Set the account to inactive or blocked instead so financial history stays intact.',
+    softDeleteEnabled: false,
+  });
+});
+
+router.post('/users/:id/restore', umMutateRateLimit.middleware(), async (req, res) => {
   try {
-    const result = await softDeleteUser(
+    // Legacy restore path now activates the account (no soft-delete lifecycle).
+    const user = await developerSetAccountStatus(
       req.params.id,
-      {
-        reason: req.body?.reason || '',
-        deletedBy: req.session?.user?.name || req.session?.user?.email || '',
-        confirmSettlementAmount: req.body?.confirmSettlementAmount,
-        settleBalances: req.body?.settleBalances !== false,
-      },
+      'active',
       req.session.user,
       clientIp(req)
     );
-    const settlement = result.settlement;
-    let message = 'Account soft-deleted. Financial records were preserved and can be restored from User Management.';
-    if (settlement && Number(settlement.settlementAmount) > 0) {
-      message = `Member settled and soft-deleted. Payout ${Number(settlement.settlementAmount).toFixed(2)} `
-        + `(book debit ${Number(settlement.bookPayable || 0).toFixed(2)}`
-        + (Number(settlement.reserveShare) > 0
-          ? ` + reserve ${Number(settlement.reserveShare).toFixed(2)}`
-          : '')
-        + `). Central book balance now ${
-          settlement.bookBalanceAfter != null ? Number(settlement.bookBalanceAfter).toFixed(2) : '—'
-        }.`;
-    }
     return res.json({
-      message,
-      user: result.user || result,
-      settlement: settlement || null,
-    });
-  } catch (error) {
-    return res.status(error.status || 500).json({
-      error: error.message || 'Unable to soft-delete account.',
-      settlementPreview: error.settlementPreview || null,
-    });
-  }
-});
-
-router.post('/users/:id/restore', async (req, res) => {
-  try {
-    const user = await restoreSoftDeletedUser(req.params.id, req.session.user, clientIp(req));
-    return res.json({
-      message: 'Account restored to active with previous identity and linked financial history intact.',
+      message: 'Account set to active.',
       user,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Unable to restore account.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to activate account.' });
   }
 });
 
-router.post('/users/:id/unlock', async (req, res) => {
+router.post('/users/:id/unlock', umMutateRateLimit.middleware(), async (req, res) => {
   try {
     const user = await developerUnlockAccount(req.params.id, req.session.user, clientIp(req));
     return res.json({ message: 'Account lock cleared.', user });

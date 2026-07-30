@@ -5,6 +5,7 @@ const {
   getDefaultPermissions,
   sanitizePermissions,
   isFullAccessRole,
+  isDeveloperRole,
 } = require('./rbac');
 
 const DIRECTORY_ROLES = ['project_manager', 'cashier', 'employee', 'investor', 'member', 'ceo', 'admin'];
@@ -12,7 +13,7 @@ const DIRECTORY_ROLES = ['project_manager', 'cashier', 'employee', 'investor', '
 async function listStaffUsers() {
   const users = await User.find({
     role: { $in: DIRECTORY_ROLES },
-    status: { $ne: 'deleted' },
+    status: { $in: ['active', 'inactive', 'blocked', 'pending', 'submitted', 'approved'] },
   })
     .select('-password')
     .sort({ createdAt: -1 })
@@ -53,6 +54,16 @@ async function updateStaffUser(userId, { name, role, permissions, status, passwo
   if (name) user.name = String(name).trim();
 
   if (role) {
+    if (role === 'developer' || role === 'admin') {
+      const error = new Error('Cannot assign Platform Developer / User Management Admin from this panel.');
+      error.status = 403;
+      throw error;
+    }
+    if ((role === 'ceo') && !isDeveloperRole(actor?.role)) {
+      const error = new Error('Only User Management Admin can assign the CEO role.');
+      error.status = 403;
+      throw error;
+    }
     if (!ASSIGNABLE_ROLES.includes(role)) {
       const error = new Error('Invalid role.');
       error.status = 400;
@@ -67,11 +78,15 @@ async function updateStaffUser(userId, { name, role, permissions, status, passwo
     if (user.role === 'member') {
       user.permissions = [];
     } else {
-      user.permissions = sanitizePermissions(permissions);
+      const { sanitizeManagedPermissions } = require('./securityService');
+      user.permissions = sanitizeManagedPermissions(user.role, permissions, actor);
     }
   }
 
-  if (status && ['active', 'inactive'].includes(status) && !isFullAccessRole(user.role)) {
+  if (status && ['active', 'inactive', 'blocked'].includes(status) && !isFullAccessRole(user.role)) {
+    if (status !== 'active') {
+      user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+    }
     user.status = status;
   }
 
@@ -82,6 +97,7 @@ async function updateStaffUser(userId, { name, role, permissions, status, passwo
       throw error;
     }
     user.password = password;
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
   }
 
   await user.save();

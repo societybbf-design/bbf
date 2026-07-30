@@ -11,8 +11,9 @@ const {
   clientIp,
 } = require('../services/securityService');
 const { requireAuth } = require('../middleware/auth');
+const { loginRateLimit } = require('../services/requestRateLimit');
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimit.middleware(), async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -72,6 +73,7 @@ router.post('/login', async (req, res) => {
       name: payload.name,
       permissions: payload.permissions,
       preferredLanguage: payload.preferredLanguage || 'bn',
+      sessionVersion: Number(authenticatedUser.sessionVersion || 0),
     };
 
     // Rotate session ID on login to prevent session fixation.
@@ -122,6 +124,10 @@ router.post('/change-password', requireAuth, async (req, res) => {
       },
       { ip: clientIp(req) }
     );
+    // Keep this browser session valid after self-service password change.
+    if (result.sessionVersion != null && req.session?.user) {
+      req.session.user.sessionVersion = result.sessionVersion;
+    }
     return res.json(result);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to change password.' });

@@ -325,23 +325,41 @@ function buildApp(sessionStore) {
 
   app.use('/api/branding', brandingRoutes);
 
-  app.get('/api/session', (req, res) => {
+  app.get('/api/session', async (req, res) => {
     const sessionUser = req.session.user;
     if (!sessionUser) {
       return res.json({ user: null });
     }
 
-    return res.json({
-      user: {
-        id: sessionUser.id,
-        email: sessionUser.email,
-        role: sessionUser.role,
-        name: sessionUser.name,
-        permissions: sessionUser.permissions || [],
-        preferredLanguage: sessionUser.preferredLanguage || 'bn',
-        redirectTo: dashboardPathForRole(sessionUser.role),
-      },
-    });
+    try {
+      const { assertSessionStillValid } = require('./services/securityService');
+      const gate = await assertSessionStillValid(sessionUser);
+      if (!gate.ok) {
+        await new Promise((resolve) => {
+          req.session.destroy(() => resolve());
+        });
+        res.clearCookie('society.sid');
+        return res.json({ user: null, error: gate.error || null });
+      }
+      req.session.user.sessionVersion = Number(gate.user.sessionVersion || 0);
+      req.session.user.role = gate.user.role;
+      req.session.user.name = gate.user.name;
+      req.session.user.email = gate.user.email;
+
+      return res.json({
+        user: {
+          id: sessionUser.id,
+          email: gate.user.email,
+          role: gate.user.role,
+          name: gate.user.name,
+          permissions: sessionUser.permissions || [],
+          preferredLanguage: sessionUser.preferredLanguage || 'bn',
+          redirectTo: dashboardPathForRole(gate.user.role),
+        },
+      });
+    } catch (_) {
+      return res.json({ user: null });
+    }
   });
 
   app.use((req, res) => {

@@ -1,5 +1,10 @@
 'use strict';
 
+/**
+ * Member financial settlement helpers remain for exit/cashier payouts.
+ * User Management soft-delete was removed — accounts use inactive/blocked only.
+ */
+
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -31,22 +36,17 @@ test('settlement debits central book and records exit_settlement trail', () => {
   assert.match(lifecycleJs, /member\.advanceBalance = 0/);
 });
 
-test('soft-delete requires settlement confirmation for members with balances', () => {
-  assert.match(securityJs, /settleMemberBalancesForDeletion/);
-  assert.match(securityJs, /confirmSettlementAmount/);
-  assert.match(securityJs, /getMemberDeletionSettlementPreview/);
-  assert.match(routesJs, /deletion-settlement/);
-  assert.match(routesJs, /confirmSettlementAmount/);
-  assert.match(routesJs, /requirePasswordConfirmation/);
+test('user management no longer soft-deletes accounts', () => {
+  assert.match(securityJs, /Account deletion is disabled/);
+  assert.match(routesJs, /softDeleteEnabled:\s*false/);
+  assert.match(routesJs, /status\(410\)/);
+  assert.doesNotMatch(developerJs, /openDeletionSettlementModal/);
+  assert.doesNotMatch(umHtml, /devDeleteSettleModal/);
 });
 
-test('user management shows deletion settlement confirmation modal', () => {
-  assert.match(umHtml, /id="devDeleteSettleModal"/);
-  assert.match(umHtml, /id="devDeleteSettleConfirmAmount"/);
-  assert.match(developerJs, /openDeletionSettlementModal/);
-  assert.match(developerJs, /submitDeletionSettlement/);
-  assert.match(developerJs, /Central book debit/);
-  assert.match(developerJs, /Total payable to member/);
+test('removeMember now deactivates instead of soft-deleting', () => {
+  assert.match(lifecycleJs, /member\.status = 'inactive'/);
+  assert.match(lifecycleJs, /sessionVersion/);
 });
 
 test('user model allows user_management exit settlement source', () => {
