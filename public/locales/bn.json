@@ -829,6 +829,8 @@
     "loanSubmitted": "ঋণ আবেদন জমা হয়েছে। অ্যাডমিনকে জানানো হয়েছে।",
     "investmentValue": "বিনিয়োগ মূল্য",
     "totalWithdrawn": "মোট উত্তোলন",
+    "totalDepositAmount": "মোট জমার পরিমাণ",
+    "lifetimeDeposits": "জীবনকালীন জমা রেকর্ড",
     "mySavings": "আমার সঞ্চয়",
     "myProfit": "আমার লাভ",
     "notificationsClick": "আপডেট লোড করতে \"বিজ্ঞপ্তি দেখুন\" ক্লিক করুন।",

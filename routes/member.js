@@ -165,6 +165,8 @@ router.get('/financial', async (req, res) => {
     const totalMemberWithdrawals = withdrawalRequests
       .filter((request) => request.status === 'processed')
       .reduce((sum, request) => sum + Number(request.amount || 0), 0);
+    const totalDepositAmount = deposits
+      .reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
     const latestDistribution = await getLatestDistribution();
     const profitHistory = await getMemberProfitHistory(memberId);
     const latestShare = profitHistory[0];
@@ -184,6 +186,7 @@ router.get('/financial', async (req, res) => {
       totalMembers,
       totalInvestment: totalMemberInvestments,
       totalWithdrawn: totalMemberWithdrawals,
+      totalDepositAmount: Number(Number(totalDepositAmount || 0).toFixed(2)),
       totalSavings: Number(summary.totalSavings || 0),
       monthlyProfit,
       lastDistribution: latestShare?.createdAt || latestDistribution?.createdAt || null,
