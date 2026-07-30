@@ -777,20 +777,20 @@
               </div>
               <div class="form-group">
                 <label>Payment reference / txn ID
-                  <input type="text" name="paymentReference" placeholder="Optional bank or MFS reference" />
+                  <input type="text" name="paymentReference" id="cashierDepositPaymentReference" maxlength="120" placeholder="Required for bank / MFS" />
                 </label>
               </div>
             </div>
             <div id="cashierDepositSplitPreview" class="smart-alloc-card u-mb-1" hidden>
               <div class="smart-alloc-card-head">
                 <div>
-                  <p class="smart-alloc-eyebrow">Before you record</p>
+                  <p class="smart-alloc-eyebrow">Confirm before you record</p>
                   <h3 class="smart-alloc-title">Smart payment &amp; allocation</h3>
                 </div>
                 <span class="smart-alloc-total-chip" id="cashierDepositSplitTotal">—</span>
               </div>
               <p class="smart-alloc-rules" id="cashierDepositHint">
-                Clears project/emergency internal dues → monthly target; leftover goes to Advance Balance. Formal loans are not deducted here.
+                Clears project/emergency internal dues → monthly target; leftover goes to Advance Balance. Formal loans are not deducted here. Review this summary, then confirm on submit.
               </p>
               <div class="smart-alloc-meta" id="cashierDepositSplitMeta">
                 <div class="smart-alloc-meta-item">
@@ -808,7 +808,7 @@
               </p>
               <p class="smart-alloc-fallback" id="cashierDepositSplitPreviewText" hidden></p>
             </div>
-            <button type="submit" class="primary-btn">Record smart payment</button>
+            <button type="submit" class="primary-btn" id="cashierDepositSubmitBtn">Record smart payment</button>
             <p id="cashierDepositMessage" class="message"></p>
             <p id="cashierDepositReceipt" class="u-mt-1"></p>
           </form>

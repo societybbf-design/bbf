@@ -5653,26 +5653,99 @@ function bindModuleForms() {
 
   document.getElementById('cashierDepositForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const form = event.target;
     const msg = document.getElementById('cashierDepositMessage');
     const receipt = document.getElementById('cashierDepositReceipt');
-    const formData = new FormData(event.target);
-    const memberId = formData.get('memberId');
+    const submitBtn = document.getElementById('cashierDepositSubmitBtn')
+      || form.querySelector('[type="submit"]');
+    const formData = new FormData(form);
+    const memberId = String(formData.get('memberId') || '').trim();
+    const amount = Number(formData.get('amount') || 0);
+    const paymentMethod = formData.get('paymentMethod') || 'cash';
+    const paymentReference = String(formData.get('paymentReference') || '').trim();
+    const memberName = document.getElementById('cashierDepositMember')
+      ?.selectedOptions?.[0]?.textContent?.trim() || 'member';
+
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+
+    if (!memberId || !(amount > 0)) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = 'Select a member and enter a valid deposit amount.';
+      }
+      return;
+    }
+    if ((paymentMethod === 'bank' || paymentMethod === 'mfs') && !paymentReference) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = 'Payment reference / txn ID is required for bank and MFS deposits.';
+      }
+      return;
+    }
+
+    const previewText = document.getElementById('cashierDepositSplitPreviewText')?.textContent?.trim();
+    const totalChip = document.getElementById('cashierDepositSplitTotal')?.textContent?.trim() || money(amount);
+    const rowLabels = Array.from(document.querySelectorAll('#cashierDepositSplitRows .smart-alloc-row'))
+      .map((row) => {
+        const label = row.querySelector('strong')?.textContent?.trim();
+        const rowAmount = row.querySelector('.smart-alloc-row-amount')?.textContent?.trim();
+        if (!label) return '';
+        return rowAmount ? `${label}: ${rowAmount}` : label;
+      })
+      .filter(Boolean)
+      .slice(0, 8);
+    const allocationSummary = rowLabels.length
+      ? rowLabels.join('\n• ')
+      : (previewText || 'Smart allocation will be applied on the server.');
+    const confirmed = window.confirm(
+      `Confirm deposit for ${memberName}?\n\n`
+      + `Amount: ${totalChip}\n`
+      + `Channel: ${paymentMethod}${paymentReference ? ` · Ref ${paymentReference}` : ''}\n\n`
+      + `Allocation preview:\n• ${allocationSummary}\n\n`
+      + 'This posts to the society bank ledger. Continue?'
+    );
+    if (!confirmed) return;
+
+    const defaultLabel = submitBtn?.dataset?.defaultLabel
+      || submitBtn?.textContent
+      || 'Record smart payment';
+    if (submitBtn) {
+      submitBtn.dataset.defaultLabel = defaultLabel;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Recording…';
+    }
+
+    // Stable per-attempt key: retries of the same click reuse it until success/reset.
+    if (!form.dataset.idempotencyKey) {
+      form.dataset.idempotencyKey = (window.crypto?.randomUUID?.()
+        || `dep-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    }
+
     try {
       const response = await fetch('/api/admin/deposits', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': form.dataset.idempotencyKey,
+        },
         body: JSON.stringify({
           memberId,
-          amount: formData.get('amount'),
-          paymentMethod: formData.get('paymentMethod') || 'cash',
-          paymentReference: formData.get('paymentReference') || '',
+          amount,
+          paymentMethod,
+          paymentReference,
+          clientRequestId: form.dataset.idempotencyKey,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.'));
       if (msg) {
         msg.classList.add('success');
-        msg.textContent = data.message || 'Smart payment recorded.';
+        msg.textContent = data.idempotentReplay
+          ? `${data.message || 'Smart payment recorded.'} (replayed safe retry)`
+          : (data.message || 'Smart payment recorded.');
       }
       if (receipt) {
         const links = [];
@@ -5690,7 +5763,8 @@ function bindModuleForms() {
         }
         receipt.innerHTML = links.join(' · ');
       }
-      event.target.reset();
+      delete form.dataset.idempotencyKey;
+      form.reset();
       updateDepositSplitPreview();
       await syncAfterCashIn({
         memberId,
@@ -5699,7 +5773,13 @@ function bindModuleForms() {
     } catch (error) {
       if (msg) {
         msg.classList.remove('success');
+        msg.classList.add('error');
         msg.textContent = error.message;
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitBtn.dataset.defaultLabel || defaultLabel;
       }
     }
   });
