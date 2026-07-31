@@ -5960,9 +5960,23 @@ function bindModuleForms() {
           clientRequestId: form.dataset.idempotencyKey,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.'));
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_parseError) {
+        data = {};
+      }
+      if (!response.ok) {
+        let errMsg = data.error || t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
+        if (data.code === 'RECEIPT_DUPLICATE' || /E11000|duplicate key|receiptNumber/i.test(errMsg)) {
+          errMsg = 'Receipt number conflict while recording. Please try again — a new receipt will be assigned.';
+          // Allow a clean retry with a fresh idempotency key.
+          delete form.dataset.idempotencyKey;
+        }
+        throw new Error(errMsg);
+      }
       if (msg) {
+        msg.classList.remove('error');
         msg.classList.add('success');
         msg.textContent = data.idempotentReplay
           ? `${data.message || 'Smart payment recorded.'} (replayed safe retry)`
@@ -5986,6 +6000,7 @@ function bindModuleForms() {
       }
       delete form.dataset.idempotencyKey;
       form.reset();
+      renderDepositArrearsBanner(null);
       updateDepositSplitPreview();
       await syncAfterCashIn({
         memberId,
@@ -5995,8 +6010,9 @@ function bindModuleForms() {
       if (msg) {
         msg.classList.remove('success');
         msg.classList.add('error');
-        msg.textContent = error.message;
+        msg.textContent = error.message || t('adminUi.unableRecordDeposit', 'Unable to record deposit.');
       }
+      // Keep member/amount selection so the cashier can retry without re-entering the form.
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

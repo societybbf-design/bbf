@@ -21,8 +21,31 @@ const {
 } = require('../services/depositIdempotencyService');
 const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 const { clientIp } = require('../services/securityService');
+const { isReceiptDuplicateError, isDuplicateKeyError } = require('../services/receiptService');
 
 router.use(requireAuth);
+
+function depositWriteErrorPayload(error, fallback = 'Unable to record deposit.') {
+  if (isReceiptDuplicateError(error)) {
+    return {
+      status: 409,
+      error: 'Receipt number conflict while recording the deposit. Please try again — a new receipt will be assigned.',
+      code: 'RECEIPT_DUPLICATE',
+    };
+  }
+  if (isDuplicateKeyError(error)) {
+    return {
+      status: 409,
+      error: 'A conflicting deposit record was detected. Please try again.',
+      code: 'DUPLICATE_KEY',
+    };
+  }
+  return {
+    status: error.status || 500,
+    error: error.message || fallback,
+    partialDeposit: error.partialDeposit || undefined,
+  };
+}
 
 function requireCashierRole(req, res, next) {
   if (req.session?.user?.role === 'cashier') {
@@ -156,10 +179,8 @@ router.post('/smart-payment', recordDeposits, requireCashierRole, requirePasswor
     }
     return res.status(201).json(outcome.body);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      error: error.message || 'Unable to record smart payment.',
-      partialDeposit: error.partialDeposit || undefined,
-    });
+    const payload = depositWriteErrorPayload(error, 'Unable to record smart payment.');
+    return res.status(payload.status).json(payload);
   }
 });
 
@@ -280,10 +301,8 @@ router.post('/', recordDeposits, requireCashierRole, requirePasswordConfirmation
     }
     return res.status(201).json(outcome.body);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      error: error.message || 'Unable to record deposit.',
-      partialDeposit: error.partialDeposit || undefined,
-    });
+    const payload = depositWriteErrorPayload(error, 'Unable to record deposit.');
+    return res.status(payload.status).json(payload);
   }
 });
 

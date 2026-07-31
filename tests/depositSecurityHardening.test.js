@@ -93,9 +93,13 @@ test('smart payment and saveDeposit no longer soft-skip ledger credits', () => {
   assert.match(memberService, /Do not resubmit; reconcile the ledger/);
 });
 
-test('receipt numbers use an atomic counter', () => {
+test('receipt numbers use an atomic counter seeded from existing max', () => {
   assert.match(receiptJs, /models\/Counter/);
   assert.match(receiptJs, /\$inc:\s*\{\s*seq:\s*1\s*\}/);
+  assert.match(receiptJs, /getLatestReceiptSequence/);
+  assert.match(receiptJs, /seq:\s*\{\s*\$lt:\s*floor\s*\}/);
+  assert.match(receiptJs, /createDepositWithReceipt/);
+  assert.match(receiptJs, /isReceiptDuplicateError/);
 });
 
 test('cashier deposit UI has confirm, submit lock, and idempotency key', () => {

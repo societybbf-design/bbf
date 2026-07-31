@@ -39,12 +39,14 @@ test('applySmartMemberPayment wraps legs and ledger in withMongoTransaction', ()
 
 test('saveDeposit / monthly due / receipts accept session', () => {
   assert.match(memberJs, /options\.session/);
-  assert.match(memberJs, /createWithSession\(Deposit/);
+  assert.match(memberJs, /createDepositWithReceipt\(Deposit/);
   assert.match(memberJs, /sessionOpt\(session,\s*\{\s*new:\s*true\s*\}\)/);
-  assert.match(memberJs, /generateReceiptNumber\('DEP',\s*\{\s*session\s*\}\)/);
   assert.match(monthlyJs, /async function applyDepositToMonthlyDue\([\s\S]*session = null/);
   assert.match(monthlyJs, /getOrCreateMemberDue\([\s\S]*\{\s*session\s*\}/);
-  assert.match(receiptJs, /generateReceiptNumber\(prefix = 'DEP', \{ session = null \} = \{\}\)/);
+  assert.match(receiptJs, /async function generateReceiptNumber\(prefix = 'DEP'/);
+  assert.match(receiptJs, /async function createDepositWithReceipt/);
+  assert.match(receiptJs, /\$inc:\s*\{\s*seq:\s*1\s*\}/);
+  assert.match(receiptJs, /seq:\s*\{\s*\$lt:\s*floor\s*\}/);
 });
 
 test('settle / repay / advance deposit pass session into writes', () => {
