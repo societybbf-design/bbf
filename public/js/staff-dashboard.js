@@ -2868,13 +2868,19 @@ async function loadDepositsModule(options = {}) {
           const payload = await res.json();
           if (!res.ok) throw new Error(payload.error || 'Unable to save target.');
           if (tmsg) {
+            tmsg.classList.remove('error');
             tmsg.classList.add('success');
-            tmsg.textContent = payload.message || 'Target saved.';
+            const sync = payload.duesSync;
+            tmsg.textContent = payload.message
+              || (sync
+                ? `Target saved and synced to ${sync.synced} active member(s).`
+                : 'Target saved.');
           }
           await loadDepositsModule();
         } catch (error) {
           if (tmsg) {
             tmsg.classList.remove('success');
+            tmsg.classList.add('error');
             tmsg.textContent = error.message;
           }
         }

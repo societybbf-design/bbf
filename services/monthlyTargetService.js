@@ -448,28 +448,48 @@ async function getMemberArrearsSummary(memberId, {
   const previousUnpaidTotal = money(
     previousMonths.reduce((sum, row) => sum + Number(row.unpaidAmount || 0), 0)
   );
+  // Cash the member should hand to the cashier: prior unpaid + current remaining.
   const totalDue = money(previousUnpaidTotal + currentUnpaid);
   const previousMonthsCount = previousMonths.length;
   const monthlyRate = currentTarget.amount != null
     ? money(currentTarget.amount)
     : (previousMonths[0] ? money(previousMonths[0].expectedAmount) : 0);
 
+  const currentDueRow = await bindSession(
+    MonthlyContributionDue.findOne({
+      member: member._id,
+      yearMonth: currentYearMonth,
+    }).select('paidAmount unpaidAmount expectedAmount status'),
+    session
+  ).lean();
+  const currentMonthPaid = currentDueRow
+    ? money(currentDueRow.paidAmount)
+    : (currentMonth ? money(currentMonth.paidAmount) : 0);
+  const currentMonthRequired = monthlyRate;
+  // Explicit product formula for display: previous unpaid + current fixed target
+  // (when current still has a balance). After full current payment, only arrears remain.
+  const totalDueWithFullCurrentTarget = money(
+    previousUnpaidTotal + (currentUnpaid > 0 ? currentMonthRequired : 0)
+  );
+
+  const { formatMoney } = require('./moneyFormat');
   const previousLabels = previousMonths.map((row) => row.monthLabel || row.yearMonth);
   let cashierMessage = '';
   let memberMessage = '';
   if (previousMonthsCount > 0) {
     cashierMessage = `This member has unpaid dues for ${previousMonthsCount} previous month(s)`
       + `${previousLabels.length ? ` (${previousLabels.join(', ')})` : ''}. `
-      + `Total required deposit including current month: ${require('./moneyFormat').formatMoney(totalDue, 2)}.`;
-    memberMessage = `You have pending deposits for the past ${previousMonthsCount} month(s)`
+      + `Total required deposit including current month: ${formatMoney(totalDue, 2)}.`;
+    memberMessage = `You missed ${previousMonthsCount} previous month(s)`
       + `${previousLabels.length ? ` (${previousLabels.join(', ')})` : ''}. `
-      + `Total due: ${require('./moneyFormat').formatMoney(totalDue, 2)}. `
+      + `Current month required: ${formatMoney(currentMonthRequired, 2)}. `
+      + `Total due: ${formatMoney(totalDue, 2)}. `
       + 'Please coordinate with the cashier to clear the oldest months first.';
   } else if (currentUnpaid > 0) {
     cashierMessage = `Current month (${currentTarget.monthLabel || currentYearMonth}) remaining due: `
-      + `${require('./moneyFormat').formatMoney(currentUnpaid, 2)}.`;
+      + `${formatMoney(currentUnpaid, 2)}.`;
     memberMessage = `${currentTarget.monthLabel || currentYearMonth} deposit still due: `
-      + `${require('./moneyFormat').formatMoney(currentUnpaid, 2)}.`;
+      + `${formatMoney(currentUnpaid, 2)}.`;
   }
 
   return {
@@ -479,6 +499,8 @@ async function getMemberArrearsSummary(memberId, {
     currentYearMonth,
     currentMonthLabel: currentTarget.monthLabel || currentYearMonth,
     monthlyRate,
+    currentMonthRequired,
+    currentMonthPaid,
     previousMonthsCount,
     previousUnpaidCount: previousMonthsCount,
     previousMonths,
@@ -486,10 +508,31 @@ async function getMemberArrearsSummary(memberId, {
     currentMonthUnpaid: currentUnpaid,
     currentMonth,
     totalDue,
+    totalDueWithFullCurrentTarget,
     unpaidMonths,
     hasArrears: previousMonthsCount > 0,
+    hasBalanceDue: totalDue > 0,
     cashierMessage,
     memberMessage,
+    memberDashboard: {
+      monthLabel: currentTarget.monthLabel || currentYearMonth,
+      yearMonth: currentYearMonth,
+      currentMonthRequired,
+      currentMonthPaid,
+      currentMonthUnpaid: currentUnpaid,
+      previousMonthsCount,
+      previousUnpaidTotal,
+      previousMonthLabels: previousLabels,
+      totalDue,
+      status: totalDue <= 0
+        ? 'paid'
+        : (previousMonthsCount > 0 ? 'arrears' : (currentUnpaid > 0 ? 'current_due' : 'paid')),
+      tip: previousMonthsCount > 0
+        ? 'Hand this total to the cashier. Oldest unpaid months are cleared first.'
+        : (currentUnpaid > 0
+          ? 'Pay the cashier this month’s remaining fixed deposit (deadline 15th; auto-deduct from Advance if funded).'
+          : 'Your monthly fixed deposit is up to date.'),
+    },
   };
 }
 

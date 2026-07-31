@@ -360,6 +360,7 @@ async function loadProfile() {
 
     // Load additional financial data
     await loadFinancialData(user._id);
+    startMemberDuesLiveSync();
     void loadLoanEligibility();
   } catch (error) {
     console.error('Failed to load profile:', error);
@@ -562,6 +563,119 @@ function formatProfitAmount(amount) {
   return `${formatMoney(value, 2)}`;
 }
 
+function renderMemberDuesDashboard(data = {}) {
+  if (!duesAlert) return;
+
+  const arrears = data.arrears || data.duesAlert?.arrears || null;
+  const dash = data.duesDashboard || arrears?.memberDashboard || null;
+  const cms = data.currentMonthStatus || null;
+
+  const monthLabel = dash?.monthLabel
+    || arrears?.currentMonthLabel
+    || cms?.monthLabel
+    || cms?.yearMonth
+    || 'This month';
+  const required = Number(
+    dash?.currentMonthRequired
+    ?? arrears?.currentMonthRequired
+    ?? arrears?.monthlyRate
+    ?? cms?.targetAmount
+    ?? 0
+  );
+  const paid = Number(
+    dash?.currentMonthPaid
+    ?? arrears?.currentMonthPaid
+    ?? cms?.paidAmount
+    ?? 0
+  );
+  const currentUnpaid = Number(
+    dash?.currentMonthUnpaid
+    ?? arrears?.currentMonthUnpaid
+    ?? cms?.unpaidAmount
+    ?? 0
+  );
+  const previousCount = Number(
+    dash?.previousMonthsCount
+    ?? arrears?.previousMonthsCount
+    ?? 0
+  );
+  const previousTotal = Number(
+    dash?.previousUnpaidTotal
+    ?? arrears?.previousUnpaidTotal
+    ?? 0
+  );
+  const totalDue = Number(
+    dash?.totalDue
+    ?? arrears?.totalDue
+    ?? (previousTotal + currentUnpaid)
+  );
+  const previousLabels = Array.isArray(dash?.previousMonthLabels)
+    ? dash.previousMonthLabels
+    : (Array.isArray(arrears?.previousMonths)
+      ? arrears.previousMonths.map((row) => row.monthLabel || row.yearMonth)
+      : []);
+  const tip = dash?.tip
+    || (previousCount > 0
+      ? 'Hand this total to the cashier. Oldest unpaid months are cleared first.'
+      : (totalDue > 0
+        ? 'Pay the cashier this month’s remaining fixed deposit.'
+        : 'Your monthly fixed deposit is up to date.'));
+
+  const hasTarget = required > 0 || cms?.targetAmount != null || arrears?.monthlyRate != null;
+  if (!hasTarget && !(totalDue > 0)) {
+    duesAlert.innerHTML = '<div class="status-pass">No monthly fixed deposit target is set for this month yet.</div>';
+    return;
+  }
+
+  const statusClass = totalDue <= 0
+    ? 'status-pass'
+    : (previousCount > 0 || data.duesAlert?.isOverdue ? 'status-fail' : 'status-warn');
+  const statusText = totalDue <= 0
+    ? `${escapeHtml(monthLabel)} fixed deposit is paid in full.`
+    : (previousCount > 0
+      ? `You missed ${previousCount} previous month(s)${previousLabels.length ? ` (${previousLabels.map(escapeHtml).join(', ')})` : ''}.`
+      : `${escapeHtml(monthLabel)} deposit still due.`);
+
+  duesAlert.innerHTML = `
+    <div class="member-dues-status ${statusClass}">${statusText}</div>
+    <div class="member-dues-grid">
+      <div class="member-dues-metric">
+        <p class="small-label">Current month required</p>
+        <strong>${required > 0 ? formatMoney(required, 2) : '—'}</strong>
+        <span>${escapeHtml(monthLabel)}${paid > 0 ? ` · paid ${formatMoney(paid, 2)}` : ''}</span>
+      </div>
+      <div class="member-dues-metric">
+        <p class="small-label">Missed previous months</p>
+        <strong>${previousCount}</strong>
+        <span>${previousCount > 0 ? `Unpaid ${formatMoney(previousTotal, 2)}` : 'None'}</span>
+      </div>
+      <div class="member-dues-metric member-dues-metric-total">
+        <p class="small-label">Total due amount</p>
+        <strong>${formatMoney(totalDue, 2)}</strong>
+        <span>Prior unpaid + current remaining</span>
+      </div>
+    </div>
+    <p class="member-dues-tip">${escapeHtml(tip)}</p>
+  `;
+}
+
+let memberDuesPollTimer = null;
+
+function startMemberDuesLiveSync() {
+  if (memberDuesPollTimer) return;
+  memberDuesPollTimer = window.setInterval(() => {
+    if (document.hidden) return;
+    if (typeof loadFinancialData === 'function') {
+      void loadFinancialData(currentUser?._id || currentUser?.id);
+    }
+  }, 45000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && typeof loadFinancialData === 'function') {
+      void loadFinancialData(currentUser?._id || currentUser?.id);
+    }
+  });
+}
+
 async function loadFinancialData(userId) {
   try {
     const response = await fetch('/api/member/financial');
@@ -632,22 +746,7 @@ async function loadFinancialData(userId) {
         renderMemberReport(activeMemberReportType);
       }
 
-      if (duesAlert) {
-        const arrears = data.arrears || data.duesAlert?.arrears;
-        if (arrears?.hasArrears && Number(arrears.totalDue || 0) > 0) {
-          duesAlert.innerHTML = `<div class="status-fail">${escapeHtml(arrears.memberMessage || data.duesAlert?.message || '')}</div>`;
-        } else if (data.duesAlert?.isOverdue) {
-          duesAlert.innerHTML = `<div class="status-fail">${escapeHtml(data.duesAlert.message)}</div>`;
-        } else if (data.currentMonthStatus?.targetAmount != null) {
-          const cms = data.currentMonthStatus;
-          const unpaid = Number(cms.unpaidAmount || 0);
-          duesAlert.innerHTML = unpaid > 0
-            ? `<div class="status-warn">${escapeHtml(cms.monthLabel || cms.yearMonth)} target: ${formatMoney(Number(cms.targetAmount), 2)} · paid ${formatMoney(Number(cms.paidAmount || 0), 2)} · due ${formatMoney(unpaid, 2)} (deadline 15th; auto-deduct from Advance if funded)</div>`
-            : `<div class="status-pass">${escapeHtml(cms.monthLabel || cms.yearMonth)} target ${formatMoney(Number(cms.targetAmount), 2)} — paid in full.</div>`;
-        } else {
-          duesAlert.innerHTML = '<div class="status-pass">Your dues are up to date.</div>';
-        }
-      }
+      renderMemberDuesDashboard(data);
 
       if (noticeBoard) {
         noticeBoard.innerHTML = (data.notices || []).map((notice) => `
