@@ -41,9 +41,10 @@ test('getMemberArrearsSummary computes previous + current and message copy', () 
   assert.match(monthlyTargetJs, /listYearMonthsInclusive\(startYearMonth, currentYearMonth\)/);
   assert.match(monthlyTargetJs, /This member has unpaid dues for \$\{previousMonthsCount\} previous month\(s\)/);
   assert.match(monthlyTargetJs, /Total required deposit including current month/);
-  assert.match(monthlyTargetJs, /You have pending deposits for the past \$\{previousMonthsCount\} month\(s\)/);
+  assert.match(monthlyTargetJs, /You missed \$\{previousMonthsCount\} previous month\(s\)/);
   assert.match(monthlyTargetJs, /Total due:/);
   assert.match(monthlyTargetJs, /previousUnpaidCount: previousMonthsCount/);
+  assert.match(monthlyTargetJs, /memberDashboard:/);
   assert.match(
     monthlyTargetJs,
     /const currentUnpaid = currentMonth \? money\(currentMonth\.unpaidAmount\) : 0/
@@ -129,9 +130,12 @@ test('cashier deposit UI shows arrears banner and defaults amount to totalDue', 
   assert.match(staffJs, /arrears\?\.totalDue/);
 });
 
-test('member dashboard shows pending months banner from arrears', () => {
+test('member dashboard shows structured dues breakdown from arrears', () => {
   assert.match(memberHtml, /id="duesAlert"/);
-  assert.match(memberJs, /arrears\?\.hasArrears/);
-  assert.match(memberJs, /arrears\.memberMessage/);
-  assert.match(memberJs, /escapeHtml\(arrears\.memberMessage/);
+  assert.match(memberHtml, /member-dues-dashboard/);
+  assert.match(memberJs, /function renderMemberDuesDashboard/);
+  assert.match(memberJs, /Current month required/);
+  assert.match(memberJs, /Missed previous months/);
+  assert.match(memberJs, /Total due amount/);
+  assert.match(memberJs, /startMemberDuesLiveSync/);
 });

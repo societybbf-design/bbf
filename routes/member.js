@@ -176,6 +176,7 @@ router.get('/financial', async (req, res) => {
     const profileSnapshot = await getMemberProfileData(memberId).catch(() => null);
     const currentMonthStatus = profileSnapshot?.currentMonthStatus || null;
     const arrears = duesAlert?.arrears || null;
+    const duesDashboard = arrears?.memberDashboard || null;
     const { getMemberReserveShare } = require('../services/emergencyReserveService');
     const { listInternalBorrowings } = require('../services/advanceBorrowingService');
     const [reserveShare, openBorrowings] = await Promise.all([
@@ -208,6 +209,7 @@ router.get('/financial', async (req, res) => {
       duesAlert,
       currentMonthStatus,
       arrears,
+      duesDashboard,
       notices,
       member: publicMemberProfile(member),
     });

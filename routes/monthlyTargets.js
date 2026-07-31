@@ -80,7 +80,8 @@ router.put('/year/:year/bulk', writeTargets, requirePasswordConfirmation, async 
     });
     return res.json({
       ...result,
-      message: `Saved ${result.count} month target(s) for ${result.year}.`,
+      message: `Saved ${result.count} month target(s) for ${result.year}. `
+        + 'Each saved month’s fixed amount was propagated to all active member dues.',
     });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to save year plan.' });
@@ -122,9 +123,15 @@ router.put('/:yearMonth', writeTargets, requirePasswordConfirmation, async (req,
       setBy: req.session?.user?.name || 'Admin',
       syncDues: req.body?.syncDues !== false,
     });
+    const sync = result.duesSync;
+    const syncNote = sync?.skipped
+      ? ` Dues sync skipped: ${sync.reason || 'no target'}.`
+      : (sync
+        ? ` Propagated to ${sync.synced} active member(s) (${sync.created} new due row(s), ${sync.updated} updated).`
+        : '');
     return res.json({
       ...result,
-      message: `Fixed target for ${result.target.monthLabel} set to ${formatMoney(Number(result.target.amount), 2)}. Member dues synced.`,
+      message: `Fixed target for ${result.target.monthLabel} set to ${formatMoney(Number(result.target.amount), 2)}.${syncNote}`,
     });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to save month target.' });
