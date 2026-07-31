@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260731duesdash1" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260731depmonth1" />
   <link rel="stylesheet" href="/static/css/branding.css" />
   <link rel="stylesheet" href="/static/css/mobile-responsive.css" />
   <link rel="stylesheet" href="/static/css/mobile-app-menu.css" />
@@ -338,11 +338,62 @@
         </div>
       </section>
 
-      <section class="panel-card">
-        <h2>Deposit Trend</h2>
-        <p class="table-subtitle">Your monthly deposit activity over the last 12 months.</p>
-        <div class="dashboard-chart-wrap">
-          <canvas id="memberDepositTrendChart" height="220"></canvas>
+      <section class="panel-card" id="memberDepositTrendSection">
+        <div class="member-profile-section-header member-deposit-trend-head">
+          <div>
+            <h2>Deposit Trend</h2>
+            <p class="table-subtitle">Your monthly deposit activity over the last 12 months. Select a month for exact amounts and due status.</p>
+          </div>
+          <label class="member-deposit-month-filter">
+            <span class="small-label">View month</span>
+            <select id="memberDepositMonthSelect" aria-label="Filter deposit history by month">
+              <option value="">12-month overview</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="memberDepositTrendOverview">
+          <div class="dashboard-chart-wrap">
+            <canvas id="memberDepositTrendChart" height="220"></canvas>
+          </div>
+          <div id="memberDepositMonthChips" class="member-deposit-month-chips" aria-label="Jump to month"></div>
+        </div>
+
+        <div id="memberDepositMonthDetail" class="member-deposit-month-detail" hidden>
+          <div class="member-dues-grid">
+            <div class="member-dues-metric">
+              <p class="small-label">Month status</p>
+              <strong id="memberDepositMonthStatus">—</strong>
+              <span id="memberDepositMonthLabel">—</span>
+            </div>
+            <div class="member-dues-metric">
+              <p class="small-label">Required / paid</p>
+              <strong id="memberDepositMonthPaid">—</strong>
+              <span id="memberDepositMonthExpected">—</span>
+            </div>
+            <div class="member-dues-metric member-dues-metric-total">
+              <p class="small-label">Still unpaid</p>
+              <strong id="memberDepositMonthUnpaid">—</strong>
+              <span id="memberDepositMonthTotal">—</span>
+            </div>
+          </div>
+          <div class="table-wrapper u-mt-1">
+            <table class="data-table table-cards">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Receipt</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="memberDepositMonthTxBody">
+                <tr><td colspan="5">Select a month to view transactions.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <button type="button" class="secondary-btn u-mt-1" id="memberDepositBackOverviewBtn">Back to 12-month overview</button>
         </div>
       </section>
 

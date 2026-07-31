@@ -10,7 +10,7 @@ const {
   rejectExitByDepartingMember,
   approveExitByMember,
 } = require('../services/memberExitService');
-const { getDuesAlert, getNotices } = require('../services/memberService');
+const { getDuesAlert, getNotices, getMemberDepositHistory } = require('../services/memberService');
 const { getLatestDistribution, getMemberProfitHistory } = require('../services/profitService');
 const { getRefundsByMember, createMemberRefundRequest } = require('../services/refundService');
 const { generateInvestmentReceiptPdf } = require('../services/notificationService');
@@ -175,6 +175,8 @@ router.get('/financial', async (req, res) => {
     const { getMemberProfileData } = require('../services/memberService');
     const profileSnapshot = await getMemberProfileData(memberId).catch(() => null);
     const currentMonthStatus = profileSnapshot?.currentMonthStatus || null;
+    const { publicMonthlyHistory } = require('../services/memberService');
+    const monthlyHistory = publicMonthlyHistory(profileSnapshot?.monthlyHistory || []);
     const arrears = duesAlert?.arrears || null;
     const duesDashboard = arrears?.memberDashboard || null;
     const { getMemberReserveShare } = require('../services/emergencyReserveService');
@@ -208,6 +210,7 @@ router.get('/financial', async (req, res) => {
       refunds,
       duesAlert,
       currentMonthStatus,
+      monthlyHistory,
       arrears,
       duesDashboard,
       notices,
@@ -215,6 +218,19 @@ router.get('/financial', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Unable to fetch financial data.' });
+  }
+});
+
+router.get('/deposit-history', async (req, res) => {
+  try {
+    const payload = await getMemberDepositHistory(req.session.user.id, {
+      yearMonth: req.query.yearMonth || '',
+    });
+    return res.json(payload);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load deposit history.',
+    });
   }
 });
 

@@ -428,6 +428,7 @@ function buildMonthlyDepositHistory(deposits = [], now = new Date(), duesByMonth
     const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
     const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
     const yearMonth = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = monthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     const monthDeposits = deposits.filter((deposit) => {
       if (deposit.yearMonth && deposit.yearMonth === yearMonth) return true;
       const createdAt = deposit.createdAt ? new Date(deposit.createdAt) : null;
@@ -452,6 +453,7 @@ function buildMonthlyDepositHistory(deposits = [], now = new Date(), duesByMonth
 
     history.push({
       label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric' }),
+      monthLabel,
       yearMonth,
       status,
       amount: money(totalAmount),
@@ -464,6 +466,58 @@ function buildMonthlyDepositHistory(deposits = [], now = new Date(), duesByMonth
   }
 
   return history;
+}
+
+/** Public-safe monthly history rows for member dashboard / API. */
+function publicMonthlyHistory(history = []) {
+  return (Array.isArray(history) ? history : []).map((row) => ({
+    label: row.label,
+    monthLabel: row.monthLabel || row.label,
+    yearMonth: row.yearMonth,
+    status: row.status,
+    amount: money(row.amount),
+    regularAmount: money(row.regularAmount),
+    advanceAmount: money(row.advanceAmount),
+    expectedAmount: row.expectedAmount == null ? null : money(row.expectedAmount),
+    unpaidAmount: row.unpaidAmount == null ? null : money(row.unpaidAmount),
+    depositCount: Array.isArray(row.deposits) ? row.deposits.length : Number(row.depositCount || 0),
+    deposits: (row.deposits || []).map((deposit) => ({
+      id: deposit._id || deposit.id,
+      amount: money(deposit.amount),
+      type: deposit.type || 'regular',
+      yearMonth: deposit.yearMonth || row.yearMonth || '',
+      receiptNumber: deposit.receiptNumber || '',
+      paymentMethod: deposit.paymentMethod || '',
+      notes: deposit.notes || '',
+      towardTarget: deposit.towardTarget == null ? null : money(deposit.towardTarget),
+      surplusToAdvance: deposit.surplusToAdvance == null ? null : money(deposit.surplusToAdvance),
+      createdAt: deposit.createdAt || null,
+    })),
+  }));
+}
+
+async function getMemberDepositHistory(memberId, { yearMonth = '', now = new Date() } = {}) {
+  const profile = await getMemberProfileData(memberId, now);
+  const history = publicMonthlyHistory(profile.monthlyHistory);
+  const overview = {
+    labels: history.map((row) => row.label),
+    deposits: history.map((row) => Number(row.amount || 0)),
+    expected: history.map((row) => Number(row.expectedAmount || 0)),
+    statuses: history.map((row) => row.status),
+  };
+
+  const key = String(yearMonth || '').trim();
+  if (key) {
+    const month = history.find((row) => row.yearMonth === key);
+    if (!month) {
+      const error = new Error('No deposit history found for that month.');
+      error.status = 404;
+      throw error;
+    }
+    return { history, overview, month, yearMonth: key };
+  }
+
+  return { history, overview, month: null, yearMonth: '' };
 }
 
 async function getMemberProfileData(memberId, now = new Date()) {
@@ -579,5 +633,8 @@ module.exports = {
   buildMemberAvatar,
   getMemberAvatar,
   getMemberProfileData,
+  getMemberDepositHistory,
+  buildMonthlyDepositHistory,
+  publicMonthlyHistory,
   setMemberStatus,
 };
