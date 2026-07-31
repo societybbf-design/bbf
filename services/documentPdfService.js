@@ -3,13 +3,14 @@ const PDFDocument = require('pdfkit');
 const {
   drawPdfOrganizationHeader,
   getOrganizationSettings,
-  registerPdfBengaliFont,
-  usePdfBodyFont,
   usePdfLatinFont,
-  writePdfMoney,
-  writePdfLabeledMoney,
   preparePdfDocument,
+  writePdfMixedText,
 } = require('./organizationBranding');
+const {
+  drawMixedTextInBox,
+  heightOfMixedString,
+} = require('./pdfTextEngine');
 const { pdfText } = require('./i18nService');
 
 const BRAND = {
@@ -19,7 +20,11 @@ const BRAND = {
   text: '#1f2937',
   border: '#e2e8f0',
   accent: '#ecfdf5',
+  rowAlt: '#f8fafc',
+  white: '#ffffff',
 };
+
+const PAGE_MARGIN = 42;
 
 function money(value) {
   return `${formatMoney(Number(value || 0), 2)}`;
@@ -45,143 +50,284 @@ function formatShortDate(value) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function contentWidth(doc) {
+  return doc.page.width - doc.page.margins.left - doc.page.margins.right;
+}
+
 function createPdfBuffer(buildFn) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: PAGE_MARGIN,
+      bufferPages: true,
+      autoFirstPage: true,
+    });
     preparePdfDocument(doc);
     const buffers = [];
     doc.on('data', (chunk) => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
-    buildFn(doc);
-    doc.end();
+    Promise.resolve(buildFn(doc))
+      .then(() => doc.end())
+      .catch(reject);
   });
 }
 
 function drawBrandHeader(doc, { title, subtitle, generatedBy, lang = 'bn' }) {
-  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const pageWidth = contentWidth(doc);
   doc.save();
-  doc.rect(doc.page.margins.left, doc.page.margins.top - 8, pageWidth, 4).fill(BRAND.primary);
+  doc.rect(doc.page.margins.left, doc.page.margins.top - 10, pageWidth, 3).fill(BRAND.primary);
   doc.restore();
+  doc.y = doc.page.margins.top + 2;
 
-  drawPdfOrganizationHeader(doc, { title, subtitle, align: 'left', titleSize: 16, issuerSize: 18, lang });
-  usePdfLatinFont(doc).fontSize(10).fillColor(BRAND.muted);
-  doc.text(`${pdfText(lang, 'generatedBy')}: ${generatedBy || 'Cashier'}`);
-  doc.text(`${pdfText(lang, 'generatedAt')}: ${formatDate(new Date())}`);
-  doc.moveDown(0.8);
-}
-
-function drawPdfValue(doc, value, x, y, options = {}) {
-  const text = value == null ? '—' : String(value);
-  if (text.includes('৳') || /[\u0980-\u09FF]/.test(text)) {
-    usePdfBodyFont(doc);
-  } else {
-    usePdfLatinFont(doc);
-  }
-  if (options.size) doc.fontSize(options.size);
-  if (options.color) doc.fillColor(options.color);
-  if (x != null && y != null) doc.text(text, x, y, options);
-  else doc.text(text, options);
-  usePdfLatinFont(doc);
-  return doc;
-}
-
-function drawSummaryCards(doc, cards = []) {
-  const startX = doc.page.margins.left;
-  const cardWidth = (doc.page.width - doc.page.margins.left - doc.page.margins.right - 16) / Math.min(cards.length, 4);
-  const y = doc.y;
-
-  cards.forEach((card, index) => {
-    const x = startX + index * (cardWidth + 8);
-    doc.save();
-    doc.roundedRect(x, y, cardWidth, 52, 6).fillAndStroke(BRAND.accent, BRAND.border);
-    usePdfLatinFont(doc).fillColor(BRAND.muted).fontSize(9).text(card.label, x + 10, y + 10, { width: cardWidth - 20 });
-    drawPdfValue(doc, card.value, x + 10, y + 26, { size: 13, color: BRAND.dark, width: cardWidth - 20 });
-    doc.restore();
+  drawPdfOrganizationHeader(doc, {
+    title,
+    subtitle,
+    align: 'left',
+    titleSize: 15,
+    issuerSize: 16,
+    lang,
   });
-
-  doc.y = y + 64;
+  writePdfMixedText(doc, `${pdfText(lang, 'generatedBy')}: ${generatedBy || 'Cashier'}`, {
+    size: 9,
+    color: BRAND.muted,
+  });
+  writePdfMixedText(doc, `${pdfText(lang, 'generatedAt')}: ${formatDate(new Date())}`, {
+    size: 9,
+    color: BRAND.muted,
+  });
+  doc.moveDown(0.7);
 }
 
 function ensureSpace(doc, height = 80) {
-  const bottom = doc.page.height - doc.page.margins.bottom;
+  const bottom = doc.page.height - doc.page.margins.bottom - 18;
   if (doc.y + height > bottom) {
     doc.addPage();
+    preparePdfDocument(doc);
+    return true;
   }
+  return false;
 }
 
 function drawSectionTitle(doc, title) {
-  ensureSpace(doc, 40);
-  doc.fontSize(13).fillColor(BRAND.dark).text(title, { underline: true });
-  doc.moveDown(0.5);
+  ensureSpace(doc, 36);
+  writePdfMixedText(doc, title, {
+    size: 12,
+    bold: true,
+    color: BRAND.dark,
+  });
+  doc.moveDown(0.35);
+}
+
+function drawSummaryCards(doc, cards = []) {
+  if (!cards.length) return;
+  const startX = doc.page.margins.left;
+  const gap = 8;
+  const count = Math.min(cards.length, 4);
+  const cardWidth = (contentWidth(doc) - gap * (count - 1)) / count;
+  const cardHeight = 54;
+  ensureSpace(doc, cardHeight + 12);
+  const y = doc.y;
+
+  cards.slice(0, count).forEach((card, index) => {
+    const x = startX + index * (cardWidth + gap);
+    doc.save();
+    doc.roundedRect(x, y, cardWidth, cardHeight, 6).fillAndStroke(BRAND.accent, BRAND.border);
+    doc.restore();
+    drawMixedTextInBox(doc, String(card.label || ''), x + 10, y + 10, cardWidth - 20, {
+      size: 8.5,
+      color: BRAND.muted,
+    });
+    drawMixedTextInBox(doc, String(card.value ?? '—'), x + 10, y + 26, cardWidth - 20, {
+      size: 12,
+      bold: true,
+      color: BRAND.dark,
+    });
+  });
+
+  doc.y = y + cardHeight + 14;
 }
 
 function drawKeyValueTable(doc, rows = []) {
+  const labelWidth = 150;
+  const valueWidth = contentWidth(doc) - labelWidth - 8;
   rows.forEach(([label, value]) => {
-    ensureSpace(doc, 18);
-    usePdfLatinFont(doc).fontSize(10).fillColor(BRAND.muted).text(`${label}:`, { continued: true });
     const text = value == null ? '—' : String(value);
-    if (text.includes('৳') || /[\u0980-\u09FF]/.test(text)) {
-      usePdfBodyFont(doc).fillColor(BRAND.text).text(` ${text}`);
-      usePdfLatinFont(doc);
-    } else {
-      doc.fillColor(BRAND.text).text(` ${text}`);
-    }
+    const height = Math.max(
+      16,
+      heightOfMixedString(doc, String(label), labelWidth, { size: 9.5 }),
+      heightOfMixedString(doc, text, valueWidth, { size: 9.5 })
+    );
+    ensureSpace(doc, height + 4);
+    const y = doc.y;
+    drawMixedTextInBox(doc, `${label}:`, doc.page.margins.left, y, labelWidth, {
+      size: 9.5,
+      color: BRAND.muted,
+    });
+    drawMixedTextInBox(doc, text, doc.page.margins.left + labelWidth + 8, y, valueWidth, {
+      size: 9.5,
+      color: BRAND.text,
+    });
+    doc.y = y + height + 3;
   });
-  doc.moveDown(0.6);
+  doc.moveDown(0.4);
 }
 
-function drawDataTable(doc, { columns, rows, emptyText = 'No records.' }) {
+function resolveColumnWidths(columns, tableWidth) {
+  const weights = columns.map((column) => {
+    if (column.width != null) return Number(column.width) || 0;
+    return 1;
+  });
+  const explicitTotal = columns.reduce((sum, column) => (
+    column.width != null ? sum + Number(column.width) : sum
+  ), 0);
+
+  if (explicitTotal > 0.99 && explicitTotal <= 1.01) {
+    return columns.map((column) => tableWidth * Number(column.width));
+  }
+
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0) || columns.length;
+  return weights.map((weight) => (tableWidth * weight) / weightSum);
+}
+
+function cellAlign(column) {
+  if (column.align) return column.align;
+  if (column.type === 'money' || column.type === 'number') return 'right';
+  if (column.type === 'center') return 'center';
+  return 'left';
+}
+
+function cellValue(column, row, rowIndex = 0) {
+  if (typeof column.format === 'function') {
+    const formatted = column.format(row, rowIndex);
+    return formatted == null ? '—' : String(formatted);
+  }
+  const raw = row?.[column.key];
+  return raw == null || raw === '' ? '—' : String(raw);
+}
+
+/**
+ * Strict column table with measured row heights, cell padding, borders,
+ * and repeating headers on page breaks. Never lets PDFKit free-flow cells.
+ */
+function drawDataTable(doc, {
+  columns,
+  rows,
+  emptyText = 'No records.',
+  rowFontSize = 8.5,
+  headerFontSize = 8,
+  cellPaddingX = 5,
+  cellPaddingY = 4,
+  minRowHeight = 18,
+  maxCellLines = 6,
+} = {}) {
+  if (!columns?.length) return;
+
   const tableLeft = doc.page.margins.left;
-  const tableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const colWidth = tableWidth / columns.length;
+  const tableWidth = contentWidth(doc);
+  const widths = resolveColumnWidths(columns, tableWidth);
+  const lineGap = 1.3;
+
+  const measureRowHeight = (row, rowIndex) => {
+    let max = minRowHeight;
+    columns.forEach((column, index) => {
+      const value = cellValue(column, row, rowIndex);
+      const textWidth = Math.max(12, widths[index] - cellPaddingX * 2);
+      const height = heightOfMixedString(doc, value, textWidth, {
+        size: rowFontSize,
+        lineGap,
+      });
+      const capped = Math.min(height, rowFontSize * lineGap * maxCellLines);
+      max = Math.max(max, capped + cellPaddingY * 2);
+    });
+    return max;
+  };
 
   const drawHeader = () => {
-    ensureSpace(doc, 28);
+    ensureSpace(doc, 26);
     const headerY = doc.y;
+    const headerHeight = 22;
     doc.save();
-    doc.rect(tableLeft, headerY, tableWidth, 20).fill(BRAND.primary);
+    doc.rect(tableLeft, headerY, tableWidth, headerHeight).fill(BRAND.primary);
+    let x = tableLeft;
     columns.forEach((column, index) => {
-      doc.fillColor('#ffffff').fontSize(9).text(
-        column.label,
-        tableLeft + index * colWidth + 6,
+      drawMixedTextInBox(
+        doc,
+        String(column.label || ''),
+        x + cellPaddingX,
         headerY + 6,
-        { width: colWidth - 10 }
+        widths[index] - cellPaddingX * 2,
+        {
+          size: headerFontSize,
+          bold: true,
+          color: BRAND.white,
+          align: cellAlign(column),
+          maxLines: 1,
+        }
       );
+      x += widths[index];
     });
     doc.restore();
-    doc.y = headerY + 24;
+    doc.y = headerY + headerHeight;
   };
 
   drawHeader();
 
   if (!rows.length) {
-    doc.fontSize(10).fillColor(BRAND.muted).text(emptyText);
-    doc.moveDown(0.6);
+    ensureSpace(doc, 24);
+    drawMixedTextInBox(
+      doc,
+      emptyText,
+      tableLeft + 4,
+      doc.y + 4,
+      tableWidth - 8,
+      { size: 9.5, color: BRAND.muted }
+    );
+    doc.y += 22;
     return;
   }
 
   rows.forEach((row, rowIndex) => {
-    ensureSpace(doc, 22);
-    const rowY = doc.y;
-    if (rowIndex % 2 === 0) {
-      doc.save();
-      doc.rect(tableLeft, rowY - 2, tableWidth, 18).fill('#f8fafc');
-      doc.restore();
+    const rowHeight = measureRowHeight(row, rowIndex);
+    const addedPage = ensureSpace(doc, rowHeight + 2);
+    if (addedPage) {
+      drawHeader();
     }
+
+    const rowY = doc.y;
+    doc.save();
+    if (rowIndex % 2 === 0) {
+      doc.rect(tableLeft, rowY, tableWidth, rowHeight).fill(BRAND.rowAlt);
+    }
+    doc.rect(tableLeft, rowY, tableWidth, rowHeight).stroke(BRAND.border);
+    let x = tableLeft;
     columns.forEach((column, index) => {
-      const value = typeof column.format === 'function'
-        ? column.format(row)
-        : String(row[column.key] ?? '—');
-      drawPdfValue(doc, value, tableLeft + index * colWidth + 6, rowY, {
-        size: 8.5,
-        color: BRAND.text,
-        width: colWidth - 10,
-      });
+      const width = widths[index];
+      doc.moveTo(x, rowY).lineTo(x, rowY + rowHeight).stroke(BRAND.border);
+      drawMixedTextInBox(
+        doc,
+        cellValue(column, row, rowIndex),
+        x + cellPaddingX,
+        rowY + cellPaddingY,
+        width - cellPaddingX * 2,
+        {
+          size: rowFontSize,
+          color: BRAND.text,
+          align: cellAlign(column),
+          lineGap,
+          maxLines: maxCellLines,
+        }
+      );
+      x += width;
     });
-    doc.y = rowY + 18;
+    doc.moveTo(tableLeft + tableWidth, rowY)
+      .lineTo(tableLeft + tableWidth, rowY + rowHeight)
+      .stroke(BRAND.border);
+    doc.restore();
+    doc.y = rowY + rowHeight;
   });
-  doc.moveDown(0.8);
+
+  doc.moveDown(0.7);
 }
 
 function addPageNumbers(doc) {
@@ -190,11 +336,29 @@ function addPageNumbers(doc) {
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
     preparePdfDocument(doc);
-    usePdfBodyFont(doc).fontSize(8).fillColor(BRAND.muted).text(
-      `Page ${i - range.start + 1} of ${range.count} · Official ${settings.nameBn} document`,
-      doc.page.margins.left,
-      doc.page.height - doc.page.margins.bottom + 12,
-      { align: 'center', width: doc.page.width - doc.page.margins.left - doc.page.margins.right }
+    const pageWidth = contentWidth(doc);
+    const footerY = doc.page.height - doc.page.margins.bottom + 12;
+    const pageLabel = `Page ${i - range.start + 1} of ${range.count}`;
+    const orgLabel = `Official ${settings.nameBn} document`;
+
+    drawMixedTextInBox(doc, pageLabel, doc.page.margins.left, footerY, pageWidth * 0.35, {
+      size: 8,
+      color: BRAND.muted,
+      align: 'left',
+      maxLines: 1,
+    });
+    drawMixedTextInBox(
+      doc,
+      orgLabel,
+      doc.page.margins.left + pageWidth * 0.35,
+      footerY,
+      pageWidth * 0.65,
+      {
+        size: 8,
+        color: BRAND.muted,
+        align: 'right',
+        maxLines: 1,
+      }
     );
   }
 }
@@ -238,36 +402,37 @@ async function generateMemberLedgerPdf(data, generatedBy = 'Cashier', lang = 'bn
     ]);
 
     drawSectionTitle(doc, 'Contribution history');
-    const dues = data.contributionDues || [];
     drawDataTable(doc, {
       columns: [
-        { label: 'Month', key: 'yearMonth' },
-        { label: 'Expected', format: (row) => (row.expectedAmount != null ? money(row.expectedAmount) : '—') },
-        { label: 'Paid', format: (row) => money(row.paidAmount) },
-        { label: 'Unpaid', format: (row) => money(row.unpaidAmount) },
-        { label: 'Status', key: 'status' },
+        { label: 'Month', width: 0.16, format: (row) => row.yearMonth || '—' },
+        { label: 'Expected', width: 0.2, type: 'money', format: (row) => (row.expectedAmount != null ? money(row.expectedAmount) : '—') },
+        { label: 'Paid', width: 0.2, type: 'money', format: (row) => money(row.paidAmount) },
+        { label: 'Unpaid', width: 0.2, type: 'money', format: (row) => money(row.unpaidAmount) },
+        { label: 'Status', key: 'status', width: 0.24 },
       ],
-      rows: dues,
+      rows: data.contributionDues || [],
       emptyText: 'No contribution records.',
     });
 
     drawSectionTitle(doc, 'Complete transaction ledger');
     drawDataTable(doc, {
       columns: [
-        { label: 'Date', format: (row) => formatShortDate(row.date) },
-        { label: 'Type', key: 'type' },
-        { label: 'Direction', key: 'direction' },
-        { label: 'Amount', format: (row) => money(row.amount) },
-        { label: 'Month', key: 'month' },
-        { label: 'Notes', key: 'notes' },
+        { label: 'Date', width: 0.14, format: (row) => formatShortDate(row.date) },
+        { label: 'Type', key: 'type', width: 0.16 },
+        { label: 'Direction', key: 'direction', width: 0.1, type: 'center' },
+        { label: 'Amount', width: 0.16, type: 'money', format: (row) => money(row.amount) },
+        { label: 'Month', key: 'month', width: 0.12 },
+        { label: 'Notes', key: 'notes', width: 0.32 },
       ],
       rows: data.transactions || [],
       emptyText: 'No transactions recorded.',
     });
 
-    usePdfLatinFont(doc).fontSize(9).fillColor(BRAND.muted).text(
-      `This is an official financial statement of ${settings.nameBn} (${settings.nameEn}) generated for auditing and record-keeping. Deposit receipts are available individually via the cashier portal.`,
-      { align: 'center' }
+    ensureSpace(doc, 30);
+    writePdfMixedText(
+      doc,
+      `This is an official financial statement of ${settings.nameBn} (${settings.nameEn}) generated for auditing and record-keeping.`,
+      { size: 8.5, color: BRAND.muted, align: 'center', width: contentWidth(doc) }
     );
 
     addPageNumbers(doc);
@@ -305,11 +470,11 @@ async function generateInvestorPortfolioPdf(data, generatedBy = 'Cashier', lang 
     drawSectionTitle(doc, 'Investments by type');
     drawDataTable(doc, {
       columns: [
-        { label: 'Type', key: 'investmentType' },
-        { label: 'Count', key: 'count' },
-        { label: 'Total', format: (row) => money(row.totalAmount) },
-        { label: 'Active', format: (row) => money(row.activeAmount) },
-        { label: 'Sold', format: (row) => money(row.soldAmount) },
+        { label: 'Type', key: 'investmentType', width: 0.28 },
+        { label: 'Count', key: 'count', width: 0.12, type: 'number' },
+        { label: 'Total', width: 0.2, type: 'money', format: (row) => money(row.totalAmount) },
+        { label: 'Active', width: 0.2, type: 'money', format: (row) => money(row.activeAmount) },
+        { label: 'Sold', width: 0.2, type: 'money', format: (row) => money(row.soldAmount) },
       ],
       rows: data.byType || [],
       emptyText: 'No investments by type.',
@@ -318,21 +483,23 @@ async function generateInvestorPortfolioPdf(data, generatedBy = 'Cashier', lang 
     drawSectionTitle(doc, 'Investment transaction history');
     drawDataTable(doc, {
       columns: [
-        { label: 'Date', format: (row) => formatShortDate(row.date) },
-        { label: 'Code', key: 'code' },
-        { label: 'Type', key: 'type' },
-        { label: 'Status', key: 'status' },
-        { label: 'Amount', format: (row) => money(row.amount) },
-        { label: 'Profit', format: (row) => money(row.profit) },
-        { label: 'Net', format: (row) => money(row.netBalance) },
+        { label: 'Date', width: 0.12, format: (row) => formatShortDate(row.date) },
+        { label: 'Code', key: 'code', width: 0.16 },
+        { label: 'Type', key: 'type', width: 0.14 },
+        { label: 'Status', key: 'status', width: 0.12 },
+        { label: 'Amount', width: 0.15, type: 'money', format: (row) => money(row.amount) },
+        { label: 'Profit', width: 0.15, type: 'money', format: (row) => money(row.profit) },
+        { label: 'Net', width: 0.16, type: 'money', format: (row) => money(row.netBalance) },
       ],
       rows: data.transactions || [],
       emptyText: 'No investments recorded.',
     });
 
-    doc.fontSize(9).fillColor(BRAND.muted).text(
+    ensureSpace(doc, 28);
+    writePdfMixedText(
+      doc,
       'This portfolio statement reflects all society investments linked to the investor at the time of generation.',
-      { align: 'center' }
+      { size: 8.5, color: BRAND.muted, align: 'center', width: contentWidth(doc) }
     );
 
     addPageNumbers(doc);
@@ -374,10 +541,10 @@ async function generateAuditTrailPdf(auditData, generatedBy = 'Cashier', lang = 
       drawSectionTitle(doc, 'Breakdown by category');
       drawDataTable(doc, {
         columns: [
-          { label: 'Category', key: 'label' },
-          { label: 'Count', key: 'count' },
-          { label: 'In', format: (row) => money(row.totalIn) },
-          { label: 'Out', format: (row) => money(row.totalOut) },
+          { label: 'Category', key: 'label', width: 0.4 },
+          { label: 'Count', key: 'count', width: 0.12, type: 'number' },
+          { label: 'In', width: 0.24, type: 'money', format: (row) => money(row.totalIn) },
+          { label: 'Out', width: 0.24, type: 'money', format: (row) => money(row.totalOut) },
         ],
         rows: summary.byCategory,
       });
@@ -386,20 +553,32 @@ async function generateAuditTrailPdf(auditData, generatedBy = 'Cashier', lang = 
     drawSectionTitle(doc, 'Transaction audit trail');
     drawDataTable(doc, {
       columns: [
-        { label: 'Date', format: (row) => formatDate(row.occurredAt) },
-        { label: 'Category', key: 'categoryLabel' },
-        { label: 'Direction', key: 'direction' },
-        { label: 'Amount', format: (row) => money(row.amount) },
-        { label: 'Description', key: 'description' },
-        { label: 'Actor', key: 'actor' },
+        {
+          label: 'Date',
+          width: 0.15,
+          format: (row) => formatDate(row.occurredAt),
+        },
+        { label: 'Category', key: 'categoryLabel', width: 0.15 },
+        { label: 'Dir', key: 'direction', width: 0.07, type: 'center' },
+        {
+          label: 'Amount',
+          width: 0.14,
+          type: 'money',
+          format: (row) => money(row.amount),
+        },
+        { label: 'Description', key: 'description', width: 0.34 },
+        { label: 'Actor', key: 'actor', width: 0.15 },
       ],
       rows: transactions,
       emptyText: 'No transactions matched the selected filters.',
+      maxCellLines: 5,
     });
 
-    doc.fontSize(9).fillColor(BRAND.muted).text(
+    ensureSpace(doc, 28);
+    writePdfMixedText(
+      doc,
       'This audit report consolidates bank ledger movements, processed withdrawals, and completed refunds for official record-keeping.',
-      { align: 'center' }
+      { size: 8.5, color: BRAND.muted, align: 'center', width: contentWidth(doc) }
     );
 
     addPageNumbers(doc);
@@ -435,10 +614,10 @@ async function generateAdvancesBorrowingsPdf(data, generatedBy = 'Cashier', lang
     drawSectionTitle(doc, 'Member advance balances');
     drawDataTable(doc, {
       columns: [
-        { label: 'Member', key: 'name' },
-        { label: 'Savings', format: (row) => money(row.savings) },
-        { label: 'Advance', format: (row) => money(row.advanceBalance) },
-        { label: 'Profit', format: (row) => money(row.profit) },
+        { label: 'Member', key: 'name', width: 0.34 },
+        { label: 'Savings', width: 0.22, type: 'money', format: (row) => money(row.savings) },
+        { label: 'Advance', width: 0.22, type: 'money', format: (row) => money(row.advanceBalance) },
+        { label: 'Profit', width: 0.22, type: 'money', format: (row) => money(row.profit) },
       ],
       rows: members,
       emptyText: 'No members.',
@@ -449,29 +628,34 @@ async function generateAdvancesBorrowingsPdf(data, generatedBy = 'Cashier', lang
       columns: [
         {
           label: 'Context',
+          width: 0.2,
           format: (row) => (
             row.loan
               ? `Loan · ${row.loan?.loanType || 'member loan'}`
               : (row.investment?.investmentCode || row.note || '—')
           ),
         },
-        { label: 'Borrower', format: (row) => row.borrowerName || row.borrower?.name || '—' },
-        { label: 'Lender', format: (row) => row.lenderName || row.lender?.name || '—' },
-        { label: 'Amount', format: (row) => money(row.amount) },
+        { label: 'Borrower', width: 0.15, format: (row) => row.borrowerName || row.borrower?.name || '—' },
+        { label: 'Lender', width: 0.15, format: (row) => row.lenderName || row.lender?.name || '—' },
+        { label: 'Amount', width: 0.13, type: 'money', format: (row) => money(row.amount) },
         {
           label: 'Outstanding',
+          width: 0.13,
+          type: 'money',
           format: (row) => money(Math.max(0, Number(row.amount || 0) - Number(row.amountSettled || 0))),
         },
-        { label: 'Status', key: 'status' },
-        { label: 'When', format: (row) => formatShortDate(row.createdAt) },
+        { label: 'Status', key: 'status', width: 0.1 },
+        { label: 'When', width: 0.14, format: (row) => formatShortDate(row.createdAt) },
       ],
       rows: borrowings,
       emptyText: 'No borrowings recorded.',
     });
 
-    usePdfLatinFont(doc).fontSize(9).fillColor(BRAND.muted).text(
+    ensureSpace(doc, 28);
+    writePdfMixedText(
+      doc,
       `This is an official advances & borrowings report of ${settings.nameBn} (${settings.nameEn}) for auditing and record-keeping.`,
-      { align: 'center' }
+      { size: 8.5, color: BRAND.muted, align: 'center', width: contentWidth(doc) }
     );
 
     addPageNumbers(doc);
@@ -479,6 +663,17 @@ async function generateAdvancesBorrowingsPdf(data, generatedBy = 'Cashier', lang
 }
 
 module.exports = {
+  money,
+  formatDate,
+  formatShortDate,
+  createPdfBuffer,
+  drawBrandHeader,
+  drawSummaryCards,
+  drawSectionTitle,
+  drawKeyValueTable,
+  drawDataTable,
+  addPageNumbers,
+  ensureSpace,
   generateMemberLedgerPdf,
   generateInvestorPortfolioPdf,
   generateAuditTrailPdf,
