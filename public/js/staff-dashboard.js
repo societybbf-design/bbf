@@ -2957,14 +2957,53 @@ let depositMonthTargetCache = null;
 let depositUnpaidDuesCache = [];
 let depositSplitPreviewBound = false;
 let smartPreviewTimer = null;
+let depositArrearsCache = null;
 
 function getMemberRemainingMonthlyDue(memberId) {
+  if (depositArrearsCache
+    && String(depositArrearsCache.memberId) === String(memberId)
+    && Number(depositArrearsCache.totalDue || 0) >= 0) {
+    return Number(depositArrearsCache.totalDue || 0);
+  }
   if (!depositMonthTargetCache) return null;
   if (!memberId) return Number(depositMonthTargetCache.amount || 0);
   const due = depositUnpaidDuesCache.find((row) => String(row.memberId || row.member?._id || row.member) === String(memberId));
   if (due) return Math.max(0, Number(due.unpaidAmount || 0));
   // No due row yet for this member — treat remaining as the full month target.
   return Number(depositMonthTargetCache.amount || 0);
+}
+
+function renderDepositArrearsBanner(arrears) {
+  const banner = document.getElementById('cashierDepositArrearsBanner');
+  if (!banner) return;
+  if (!arrears || !(Number(arrears.totalDue || 0) > 0)) {
+    banner.hidden = true;
+    banner.textContent = '';
+    return;
+  }
+  banner.hidden = false;
+  banner.textContent = arrears.cashierMessage
+    || (arrears.previousMonthsCount > 0
+      ? `This member has unpaid dues for ${arrears.previousMonthsCount} previous month(s). Total required deposit including current month: ${money(arrears.totalDue)}.`
+      : `Current month remaining due: ${money(arrears.currentMonthUnpaid || arrears.totalDue)}.`);
+}
+
+async function loadMemberDepositArrears(memberId) {
+  depositArrearsCache = null;
+  renderDepositArrearsBanner(null);
+  if (!memberId) return null;
+  try {
+    const res = await fetch(`/api/admin/deposits/member-arrears/${encodeURIComponent(memberId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unable to load arrears.');
+    depositArrearsCache = data.arrears || null;
+    renderDepositArrearsBanner(depositArrearsCache);
+    return depositArrearsCache;
+  } catch (_error) {
+    depositArrearsCache = null;
+    renderDepositArrearsBanner(null);
+    return null;
+  }
 }
 
 function computeClientDepositSplit(totalAmount, remainingDue, targetAmount) {
@@ -3114,10 +3153,30 @@ function updateDepositSplitPreview() {
       }
 
       if (monthly > 0) {
-        structured.push({
-          kind: 'monthly_deposit',
-          label: `Monthly deposit${data.liabilities?.yearMonth ? ` (${data.liabilities.yearMonth})` : ''}`,
-          amount: monthly,
+        const monthlyLegs = allocations.filter((a) => a.kind === 'monthly_deposit');
+        if (monthlyLegs.length) {
+          monthlyLegs.forEach((leg) => structured.push(leg));
+        } else {
+          structured.push({
+            kind: 'monthly_deposit',
+            label: `Monthly deposit${data.liabilities?.yearMonth ? ` (${data.liabilities.yearMonth})` : ''}`,
+            amount: monthly,
+          });
+        }
+      }
+
+      const arrears = data.liabilities?.arrears;
+      if (arrears) {
+        depositArrearsCache = arrears;
+        renderDepositArrearsBanner(arrears);
+        const arrearsDue = Number(arrears.totalDue || 0);
+        const prior = Number(arrears.previousMonthsCount || arrears.previousUnpaidCount || 0);
+        setSmartAllocMeta({
+          targetLabel: prior > 0
+            ? `${prior} prior month${prior === 1 ? '' : 's'} + current`
+            : targetLabel,
+          remainingDue: money(Math.max(0, arrearsDue)),
+          total: money(amount),
         });
       }
       if (advance > 0 || !structured.length) {
@@ -3179,8 +3238,11 @@ function bindDepositSplitPreview() {
   const memberSelect = document.getElementById('cashierDepositMember');
   const amountInput = document.getElementById('cashierDepositAmount');
 
-  memberSelect?.addEventListener('change', () => {
-    const remaining = getMemberRemainingMonthlyDue(memberSelect.value);
+  memberSelect?.addEventListener('change', async () => {
+    const arrears = await loadMemberDepositArrears(memberSelect.value);
+    const remaining = arrears?.totalDue != null
+      ? Number(arrears.totalDue || 0)
+      : getMemberRemainingMonthlyDue(memberSelect.value);
     if (amountInput && remaining != null && remaining > 0) {
       amountInput.value = Number(remaining).toFixed(2);
     }

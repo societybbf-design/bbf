@@ -7,7 +7,6 @@ const {
   yearMonthFromDate,
   applyDepositToMonthlyDue,
   getTargetForMonth,
-  listUnpaidMonthlyDues,
 } = require('./monthlyTargetService');
 
 function money(value) {
@@ -23,17 +22,37 @@ async function getDuesAlert(memberData = {}, now = new Date()) {
 
   if (memberId) {
     try {
-      const unpaid = await listUnpaidMonthlyDues({ yearMonth });
-      const mine = unpaid.find((row) => String(row.memberId) === String(memberId));
-      const isOverdue = now.getDate() > dueDay && mine && money(mine.unpaidAmount) > 0;
+      const { getMemberArrearsSummary } = require('./monthlyTargetService');
+      const arrears = await getMemberArrearsSummary(memberId, { asOfDate: now });
+      const isOverdue = now.getDate() > dueDay && money(arrears.currentMonthUnpaid) > 0;
+      if (arrears.hasArrears || money(arrears.totalDue) > 0) {
+        return {
+          isOverdue: isOverdue || arrears.hasArrears,
+          message: arrears.memberMessage
+            || (isOverdue
+              ? `Your dues are overdue. Remaining for ${yearMonth}: ${formatMoney(money(arrears.currentMonthUnpaid), 2)}.`
+              : ''),
+          dueDay,
+          yearMonth,
+          unpaidAmount: money(arrears.totalDue),
+          previousMonthsCount: arrears.previousMonthsCount,
+          currentMonthUnpaid: money(arrears.currentMonthUnpaid),
+          totalDue: money(arrears.totalDue),
+          hasArrears: arrears.hasArrears,
+          arrears,
+        };
+      }
       return {
-        isOverdue,
-        message: isOverdue
-          ? `Your dues are overdue. Remaining for ${yearMonth}: ${formatMoney(money(mine.unpaidAmount), 2)}.`
-          : '',
+        isOverdue: false,
+        message: '',
         dueDay,
         yearMonth,
-        unpaidAmount: mine ? money(mine.unpaidAmount) : 0,
+        unpaidAmount: 0,
+        previousMonthsCount: 0,
+        currentMonthUnpaid: 0,
+        totalDue: 0,
+        hasArrears: false,
+        arrears,
       };
     } catch (error) {
       // fall through to deposit presence check
@@ -57,6 +76,8 @@ async function getDuesAlert(memberData = {}, now = new Date()) {
     dueDay,
     yearMonth,
     unpaidAmount: null,
+    previousMonthsCount: 0,
+    hasArrears: false,
   };
 }
 
