@@ -10,6 +10,7 @@ const adminHtml = fs.readFileSync(path.join(root, 'views/admin.html'), 'utf8');
 const adminCss = fs.readFileSync(path.join(root, 'public/css/admin-dashboard.css'), 'utf8');
 const adminJs = fs.readFileSync(path.join(root, 'public/js/admin.js'), 'utf8');
 const staffHtml = fs.readFileSync(path.join(root, 'views/staff.html'), 'utf8');
+const cashierCss = fs.readFileSync(path.join(root, 'public/css/cashier-home.css'), 'utf8');
 
 test('CEO Reports page uses contained reports-page layout', () => {
   assert.match(adminHtml, /data-page-section="reports"/);
@@ -40,4 +41,6 @@ test('Activity log renders wrapped details instead of raw code dump', () => {
 test('Staff reports panel uses compact report classes', () => {
   assert.match(staffHtml, /staff-reports-panel/);
   assert.match(staffHtml, /staff-reports-stats/);
+  assert.match(cashierCss, /\.cashier-shell \.staff-reports-panel/);
+  assert.match(cashierCss, /backdrop-filter:\s*none/);
 });
