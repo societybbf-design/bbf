@@ -49,7 +49,7 @@ test('member dashboard renders required / missed / total due metrics', () => {
   assert.match(stylesCss, /\.member-dues-metric-total/);
 });
 
-test('Payment Reminder is the first block in the member dashboard section', () => {
+test('Payment Reminder sits between metric cards and loan payment status', () => {
   const dashboardMatch = memberHtml.match(
     /data-page-section="dashboard">([\s\S]*?)<section class="page-section" data-page-section="investment-requests"/
   );
@@ -60,7 +60,7 @@ test('Payment Reminder is the first block in the member dashboard section', () =
   const loanIdx = dashboardBody.indexOf('id="loanRepaymentDashboardPanel"');
   const trendIdx = dashboardBody.indexOf('Deposit Trend');
   assert.ok(duesIdx >= 0, 'Payment Reminder present');
-  assert.ok(duesIdx < metricsIdx, 'Payment Reminder above metric cards');
+  assert.ok(metricsIdx >= 0 && metricsIdx < duesIdx, 'Metric cards above Payment Reminder');
   assert.ok(duesIdx < loanIdx, 'Payment Reminder above loan status');
   assert.ok(duesIdx < trendIdx, 'Payment Reminder above deposit trend');
 });
