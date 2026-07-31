@@ -1495,77 +1495,97 @@
       </section>
       </section>
 
-      <section class="page-section" data-page-section="reports">
-      <section class="panel-card">
-        <h2 data-i18n="admin.sections.financialReports">Financial Reports</h2>
-        <p class="table-subtitle">Members, Deposits, বা Investments-এ ক্লিক করলে নিচে সম্পূর্ণ তালিকা দেখাবে।</p>
-        <div class="metrics-grid report-metrics-grid">
-          <button type="button" class="metric-card metric-card-1 report-metric-card" data-report-type="members" aria-pressed="false">
-            <div class="metric-icon">💼</div>
-            <div class="metric-content">
-              <span class="metric-label">Members</span>
-              <strong class="metric-value" id="reportMembers">0</strong>
+      <section class="page-section reports-page" data-page-section="reports">
+        <div class="reports-page-inner">
+          <section class="panel-card reports-summary-card">
+            <header class="reports-section-header">
+              <div>
+                <h2 data-i18n="admin.sections.financialReports">Financial Reports</h2>
+                <p class="table-subtitle">Click Members, Deposits, or Investments to load the full list below.</p>
+              </div>
+            </header>
+            <div class="metrics-grid report-metrics-grid" role="group" aria-label="Report categories">
+              <button type="button" class="metric-card metric-card-1 report-metric-card" data-report-type="members" aria-pressed="false">
+                <div class="metric-icon" aria-hidden="true">💼</div>
+                <div class="metric-content">
+                  <span class="metric-label">Members</span>
+                  <strong class="metric-value" id="reportMembers">0</strong>
+                </div>
+              </button>
+              <button type="button" class="metric-card metric-card-2 report-metric-card" data-report-type="deposits" aria-pressed="false">
+                <div class="metric-icon" aria-hidden="true">💳</div>
+                <div class="metric-content">
+                  <span class="metric-label">Deposits</span>
+                  <strong class="metric-value" id="reportDeposits">0</strong>
+                </div>
+              </button>
+              <button type="button" class="metric-card metric-card-3 report-metric-card" data-report-type="investments" aria-pressed="false">
+                <div class="metric-icon" aria-hidden="true">📈</div>
+                <div class="metric-content">
+                  <span class="metric-label">Investments</span>
+                  <strong class="metric-value" id="reportInvestments">0</strong>
+                </div>
+              </button>
             </div>
-          </button>
-          <button type="button" class="metric-card metric-card-2 report-metric-card" data-report-type="deposits" aria-pressed="false">
-            <div class="metric-icon">💳</div>
-            <div class="metric-content">
-              <span class="metric-label">Deposits</span>
-              <strong class="metric-value" id="reportDeposits">0</strong>
+          </section>
+
+          <section class="panel-card reports-detail-card" id="reportDetailPanel">
+            <header class="reports-section-header">
+              <div>
+                <h2 id="reportDetailTitle" data-i18n="admin.sections.selectReport">Select a report</h2>
+                <p class="table-subtitle" id="reportDetailSubtitle">Click Members, Deposits, or Investments above to view the full list.</p>
+              </div>
+            </header>
+            <div class="table-wrapper reports-table-wrap">
+              <table class="data-table reports-data-table">
+                <thead id="reportDetailHead">
+                  <tr><th>Report data will appear here</th></tr>
+                </thead>
+                <tbody id="reportDetailBody">
+                  <tr><td>Choose Members, Deposits, or Investments to load the report list.</td></tr>
+                </tbody>
+              </table>
             </div>
-          </button>
-          <button type="button" class="metric-card metric-card-3 report-metric-card" data-report-type="investments" aria-pressed="false">
-            <div class="metric-icon">📈</div>
-            <div class="metric-content">
-              <span class="metric-label">Investments</span>
-              <strong class="metric-value" id="reportInvestments">0</strong>
+          </section>
+
+          <section class="panel-card reports-trends-card">
+            <header class="reports-section-header">
+              <div>
+                <h2 data-i18n="admin.sections.financialTrends">Financial Trends</h2>
+                <p class="table-subtitle">Monthly revenue inflow, payouts, and profit distributions.</p>
+              </div>
+            </header>
+            <div class="dashboard-chart-wrap reports-chart-wrap">
+              <canvas id="financialTrendChart" height="220"></canvas>
             </div>
-          </button>
-        </div>
-      </section>
+          </section>
 
-      <section class="panel-card table-card-wide" id="reportDetailPanel">
-        <h2 id="reportDetailTitle" data-i18n="admin.sections.selectReport">Select a report</h2>
-        <p class="table-subtitle" id="reportDetailSubtitle">Click Members, Deposits, or Investments above to view the full list.</p>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead id="reportDetailHead">
-              <tr><th>Report data will appear here</th></tr>
-            </thead>
-            <tbody id="reportDetailBody">
-              <tr><td>Choose Members, Deposits, or Investments to load the report list.</td></tr>
-            </tbody>
-          </table>
+          <section class="panel-card reports-activity-card">
+            <header class="reports-section-header member-profile-section-header">
+              <div>
+                <h2 data-i18n="admin.sections.administratorActivityLog">Administrator Activity Log</h2>
+                <p class="table-subtitle">Secure audit trail of cashier and CEO administrative actions.</p>
+              </div>
+              <button type="button" class="secondary-btn" id="refreshActivityLogBtn" data-i18n="admin.buttons.refresh">Refresh</button>
+            </header>
+            <div class="table-wrapper reports-table-wrap activity-log-table-wrap">
+              <table class="data-table reports-data-table activity-log-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="table.when">When</th>
+                    <th data-i18n="table.action">Action</th>
+                    <th data-i18n="table.actor">Actor</th>
+                    <th data-i18n="table.target">Target</th>
+                    <th data-i18n="table.details">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="activityLogBody">
+                  <tr><td colspan="5">Loading activity log…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
-      </section>
-
-      <section class="panel-card">
-        <h2 data-i18n="admin.sections.financialTrends">Financial Trends</h2>
-        <p class="table-subtitle">Monthly revenue inflow, payouts, and profit distributions.</p>
-        <div class="dashboard-chart-wrap">
-          <canvas id="financialTrendChart" height="240"></canvas>
-        </div>
-      </section>
-
-      <section class="panel-card table-card-wide">
-        <div class="member-profile-section-header">
-          <div>
-            <h2 data-i18n="admin.sections.administratorActivityLog">Administrator Activity Log</h2>
-            <p class="table-subtitle">Secure audit trail of cashier and CEO administrative actions.</p>
-          </div>
-          <button type="button" class="secondary-btn" id="refreshActivityLogBtn" data-i18n="admin.buttons.refresh">Refresh</button>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr><th data-i18n="table.when">When</th><th data-i18n="table.action">Action</th><th data-i18n="table.actor">Actor</th><th data-i18n="table.target">Target</th><th data-i18n="table.details">Details</th></tr>
-            </thead>
-            <tbody id="activityLogBody">
-              <tr><td colspan="5">Loading activity log…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
       </section>
 
       <section class="page-section" data-page-section="messages">
