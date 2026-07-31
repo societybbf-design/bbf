@@ -8,7 +8,7 @@ const {
   money,
   yearMonthFromDate,
   getTargetForMonth,
-  getOrCreateMemberDue,
+  getMemberArrearsSummary,
 } = require('./monthlyTargetService');
 const { contributionRemainingDue } = require('./advanceBorrowingService');
 
@@ -21,7 +21,8 @@ function httpError(message, status = 400) {
 /**
  * Collect open deposit-screen liabilities for smart payment allocation.
  * Formal member loans are excluded — those are handled only in the Loans module.
- * Priority: project/emergency internal dues → monthly target → advance surplus.
+ * Priority: project/emergency internal dues → unpaid monthly months (oldest first)
+ * → current month → advance surplus.
  */
 async function getMemberPaymentLiabilities(memberId, {
   yearMonth = yearMonthFromDate(),
@@ -29,7 +30,12 @@ async function getMemberPaymentLiabilities(memberId, {
   const member = await User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } });
   if (!member) throw httpError('Member not found.', 404);
 
-  const [projectBorrowings, contributions, target] = await Promise.all([
+  const [y, m] = String(yearMonth).split('-').map(Number);
+  const asOfDate = Number.isFinite(y) && Number.isFinite(m)
+    ? new Date(y, m - 1, 15)
+    : new Date();
+
+  const [projectBorrowings, contributions, arrears] = await Promise.all([
     // Project / emergency internal borrows only (exclude formal-loan funding borrows).
     InternalBorrowing.find({
       borrower: memberId,
@@ -43,7 +49,7 @@ async function getMemberPaymentLiabilities(memberId, {
         { status: 'unpaid' },
       ],
     }).populate('investment', 'investmentCode').sort({ createdAt: 1 }).lean(),
-    getTargetForMonth(yearMonth),
+    getMemberArrearsSummary(memberId, { asOfDate }),
   ]);
 
   const borrowingRows = projectBorrowings.map((row) => ({
@@ -72,11 +78,21 @@ async function getMemberPaymentLiabilities(memberId, {
     })
     .filter(Boolean);
 
-  let monthlyDue = 0;
-  if (target.amount != null) {
-    const due = await getOrCreateMemberDue(member, yearMonth, target.amount);
-    monthlyDue = money(Math.max(0, money(due.expectedAmount) - money(due.paidAmount)));
-  }
+  // Oldest unpaid month first, including current month when still due.
+  const monthlyDepositMonths = (arrears.unpaidMonths || []).map((row) => ({
+    yearMonth: row.yearMonth,
+    monthLabel: row.monthLabel,
+    outstanding: money(row.unpaidAmount),
+    expectedAmount: money(row.expectedAmount),
+    isCurrent: Boolean(row.isCurrent),
+    label: row.isCurrent
+      ? `Monthly deposit ${row.yearMonth} (current)`
+      : `Monthly arrears ${row.yearMonth}`,
+  }));
+
+  const monthlyDue = money(
+    monthlyDepositMonths.reduce((sum, row) => sum + Number(row.outstanding || 0), 0)
+  );
 
   return {
     member: {
@@ -86,13 +102,23 @@ async function getMemberPaymentLiabilities(memberId, {
       advanceBalance: money(member.advanceBalance),
     },
     yearMonth,
-    target,
+    target: arrears.monthlyRate != null
+      ? {
+        yearMonth: arrears.currentYearMonth,
+        monthLabel: arrears.currentMonthLabel,
+        amount: arrears.monthlyRate,
+      }
+      : await getTargetForMonth(yearMonth),
+    arrears,
     legs: {
       internalBorrowings: borrowingRows,
       unpaidContributions: contributionRows,
+      monthlyDepositMonths,
       monthlyDeposit: monthlyDue > 0 ? {
         outstanding: monthlyDue,
-        targetAmount: money(target.amount),
+        targetAmount: money(arrears.monthlyRate),
+        previousMonthsCount: arrears.previousMonthsCount,
+        currentMonthUnpaid: arrears.currentMonthUnpaid,
       } : null,
     },
     totalOutstanding: money(
@@ -106,6 +132,7 @@ async function getMemberPaymentLiabilities(memberId, {
 /**
  * Pure allocation plan for a cashier deposit payment.
  * Formal loan repayments are never included.
+ * Monthly dues clear oldest unpaid month first, then current, then surplus → advance.
  */
 function buildSmartPaymentPlan(liabilities, totalAmount) {
   let remaining = money(totalAmount);
@@ -140,17 +167,30 @@ function buildSmartPaymentPlan(liabilities, totalAmount) {
     });
   }
 
-  if (liabilities.legs.monthlyDeposit && remaining > 0) {
-    const monthlyMax = money(liabilities.legs.monthlyDeposit.outstanding);
-    if (monthlyMax > 0) {
-      push({
-        kind: 'monthly_deposit',
+  const monthlyMonths = Array.isArray(liabilities.legs.monthlyDepositMonths)
+    && liabilities.legs.monthlyDepositMonths.length
+    ? liabilities.legs.monthlyDepositMonths
+    : (liabilities.legs.monthlyDeposit
+      ? [{
         yearMonth: liabilities.yearMonth,
+        outstanding: liabilities.legs.monthlyDeposit.outstanding,
         label: `Monthly deposit ${liabilities.yearMonth}`,
-        amount: Math.min(remaining, monthlyMax),
-        max: monthlyMax,
-      });
-    }
+        isCurrent: true,
+      }]
+      : []);
+
+  for (const row of monthlyMonths) {
+    if (remaining <= 0) break;
+    const monthlyMax = money(row.outstanding);
+    if (!(monthlyMax > 0)) continue;
+    push({
+      kind: 'monthly_deposit',
+      yearMonth: row.yearMonth,
+      label: row.label || `Monthly deposit ${row.yearMonth}`,
+      amount: Math.min(remaining, monthlyMax),
+      max: monthlyMax,
+      isCurrent: Boolean(row.isCurrent),
+    });
   }
 
   if (remaining > 0) {
@@ -172,6 +212,9 @@ function buildSmartPaymentPlan(liabilities, totalAmount) {
       toProjectDues: money(allocations.filter((a) => a.kind === 'unpaid_contribution').reduce((s, a) => s + a.amount, 0)),
       toMonthly: money(allocations.filter((a) => a.kind === 'monthly_deposit').reduce((s, a) => s + a.amount, 0)),
       toAdvance: money(allocations.filter((a) => a.kind === 'advance_surplus').reduce((s, a) => s + a.amount, 0)),
+      monthlyMonthsCleared: allocations
+        .filter((a) => a.kind === 'monthly_deposit')
+        .map((a) => a.yearMonth),
     },
   };
 }

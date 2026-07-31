@@ -3,7 +3,7 @@ const router = require('express').Router();
 const Deposit = require('../models/Deposit');
 const { getAllDeposits } = require('../services/depositService');
 const { saveDeposit } = require('../services/memberService');
-const { getActiveMonthTarget, yearMonthFromDate } = require('../services/monthlyTargetService');
+const { getActiveMonthTarget, yearMonthFromDate, getMemberArrearsSummary } = require('../services/monthlyTargetService');
 const {
   previewSmartMemberPayment,
   applySmartMemberPayment,
@@ -83,6 +83,19 @@ router.get('/smart-payment/preview', recordDeposits, requireCashierRole, async (
     return res.json(preview);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to preview smart payment.' });
+  }
+});
+
+router.get('/member-arrears/:memberId', recordDeposits, requireCashierRole, async (req, res) => {
+  try {
+    const arrears = await getMemberArrearsSummary(req.params.memberId, {
+      asOfDate: new Date(),
+    });
+    return res.json({ arrears });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load member deposit arrears.',
+    });
   }
 });
 

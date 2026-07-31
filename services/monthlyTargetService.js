@@ -356,6 +356,144 @@ async function getActiveMonthTarget() {
 }
 
 /**
+ * Inclusive list of YYYY-MM keys from start through end (chronological).
+ */
+function listYearMonthsInclusive(fromYearMonth, toYearMonth) {
+  const from = parseYearMonth(fromYearMonth);
+  const to = parseYearMonth(toYearMonth);
+  if (
+    from.year > to.year
+    || (from.year === to.year && from.month > to.month)
+  ) {
+    return [];
+  }
+
+  const months = [];
+  let y = from.year;
+  let m = from.month;
+  while (y < to.year || (y === to.year && m <= to.month)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return months;
+}
+
+/**
+ * Ensure the member has due rows for every targeted month from membership
+ * start through the as-of month, then return arrears + current-month totals.
+ */
+async function getMemberArrearsSummary(memberId, {
+  asOfDate = new Date(),
+  session = null,
+  ensureMissingMonths = true,
+} = {}) {
+  const { bindSession } = require('./mongoTransaction');
+  const member = await bindSession(
+    User.findOne({ _id: memberId, role: 'member', status: { $ne: 'deleted' } }),
+    session
+  );
+  if (!member) {
+    const error = new Error('Member not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  const currentYearMonth = yearMonthFromDate(asOfDate);
+  const startYearMonth = yearMonthFromDate(member.createdAt || asOfDate);
+  const monthKeys = listYearMonthsInclusive(startYearMonth, currentYearMonth);
+
+  if (ensureMissingMonths) {
+    for (const key of monthKeys) {
+      const target = await getTargetForMonth(key);
+      if (target.amount == null) continue;
+      await getOrCreateMemberDue(member, key, target.amount, { session });
+    }
+  }
+
+  const dues = await bindSession(
+    MonthlyContributionDue.find({
+      member: member._id,
+      yearMonth: { $gte: startYearMonth, $lte: currentYearMonth },
+      status: { $in: ['unpaid', 'partial'] },
+      unpaidAmount: { $gt: 0 },
+    }).sort({ yearMonth: 1 }),
+    session
+  );
+
+  const unpaidMonths = dues.map((row) => {
+    const parsed = parseYearMonth(row.yearMonth);
+    return {
+      id: row._id,
+      yearMonth: row.yearMonth,
+      monthLabel: parsed.monthLabel,
+      expectedAmount: money(row.expectedAmount),
+      paidAmount: money(row.paidAmount),
+      unpaidAmount: money(row.unpaidAmount),
+      status: row.status,
+      isCurrent: row.yearMonth === currentYearMonth,
+    };
+  });
+
+  const previousMonths = unpaidMonths.filter((row) => !row.isCurrent);
+  const currentMonth = unpaidMonths.find((row) => row.isCurrent) || null;
+  const currentTarget = await getTargetForMonth(currentYearMonth);
+  // After ensureMissingMonths, unpaid/partial rows are authoritative. Do not
+  // invent a full current-month charge when the month is already paid (absent
+  // from unpaidMonths) — that would inflate totalDue.
+  const currentUnpaid = currentMonth ? money(currentMonth.unpaidAmount) : 0;
+  const previousUnpaidTotal = money(
+    previousMonths.reduce((sum, row) => sum + Number(row.unpaidAmount || 0), 0)
+  );
+  const totalDue = money(previousUnpaidTotal + currentUnpaid);
+  const previousMonthsCount = previousMonths.length;
+  const monthlyRate = currentTarget.amount != null
+    ? money(currentTarget.amount)
+    : (previousMonths[0] ? money(previousMonths[0].expectedAmount) : 0);
+
+  const previousLabels = previousMonths.map((row) => row.monthLabel || row.yearMonth);
+  let cashierMessage = '';
+  let memberMessage = '';
+  if (previousMonthsCount > 0) {
+    cashierMessage = `This member has unpaid dues for ${previousMonthsCount} previous month(s)`
+      + `${previousLabels.length ? ` (${previousLabels.join(', ')})` : ''}. `
+      + `Total required deposit including current month: ${require('./moneyFormat').formatMoney(totalDue, 2)}.`;
+    memberMessage = `You have pending deposits for the past ${previousMonthsCount} month(s)`
+      + `${previousLabels.length ? ` (${previousLabels.join(', ')})` : ''}. `
+      + `Total due: ${require('./moneyFormat').formatMoney(totalDue, 2)}. `
+      + 'Please coordinate with the cashier to clear the oldest months first.';
+  } else if (currentUnpaid > 0) {
+    cashierMessage = `Current month (${currentTarget.monthLabel || currentYearMonth}) remaining due: `
+      + `${require('./moneyFormat').formatMoney(currentUnpaid, 2)}.`;
+    memberMessage = `${currentTarget.monthLabel || currentYearMonth} deposit still due: `
+      + `${require('./moneyFormat').formatMoney(currentUnpaid, 2)}.`;
+  }
+
+  return {
+    memberId: member._id,
+    memberName: member.name || '',
+    startYearMonth,
+    currentYearMonth,
+    currentMonthLabel: currentTarget.monthLabel || currentYearMonth,
+    monthlyRate,
+    previousMonthsCount,
+    previousUnpaidCount: previousMonthsCount,
+    previousMonths,
+    previousUnpaidTotal,
+    currentMonthUnpaid: currentUnpaid,
+    currentMonth,
+    totalDue,
+    unpaidMonths,
+    hasArrears: previousMonthsCount > 0,
+    cashierMessage,
+    memberMessage,
+  };
+}
+
+/**
  * Build a 12-month plan for a calendar year (configured + env fallback hints).
  */
 async function listTargetsForYear(year) {
@@ -467,5 +605,7 @@ module.exports = {
   computeMonthlyDepositSplit,
   applyDepositToMonthlyDue,
   listUnpaidMonthlyDues,
+  listYearMonthsInclusive,
+  getMemberArrearsSummary,
   dueStatus,
 };
