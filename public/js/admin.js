@@ -2905,6 +2905,16 @@ async function loadFinancialTrendCharts() {
   }
 }
 
+function formatActivityLogDetails(details) {
+  if (details == null || details === '') return '—';
+  if (typeof details === 'string') return details;
+  try {
+    return JSON.stringify(details, null, 2);
+  } catch (_) {
+    return String(details);
+  }
+}
+
 async function loadActivityLog() {
   const tbody = document.getElementById('activityLogBody');
   if (!tbody) return;
@@ -2915,15 +2925,21 @@ async function loadActivityLog() {
     if (!response.ok) throw new Error(data.error || 'Unable to load activity log.');
     const items = data.items || [];
     tbody.innerHTML = items.length
-      ? items.map((item) => `
+      ? items.map((item) => {
+        const when = item.createdAt ? new Date(item.createdAt).toLocaleString() : '—';
+        const action = String(item.action || '—').replace(/_/g, ' ');
+        const actor = item.actorEmail || item.actorRole || '—';
+        const target = item.targetEmail || item.targetId || '—';
+        const details = formatActivityLogDetails(item.details);
+        return `
         <tr>
-          <td>${escapeHtml(new Date(item.createdAt).toLocaleString())}</td>
-          <td>${escapeHtml(item.action || '—')}</td>
-          <td>${escapeHtml(item.actorEmail || item.actorRole || '—')}</td>
-          <td>${escapeHtml(item.targetEmail || '—')}</td>
-          <td><code>${escapeHtml(JSON.stringify(item.details || {}))}</code></td>
-        </tr>
-      `).join('')
+          <td>${escapeHtml(when)}</td>
+          <td><span class="activity-log-action">${escapeHtml(action)}</span></td>
+          <td>${escapeHtml(actor)}</td>
+          <td>${escapeHtml(target)}</td>
+          <td><pre class="activity-log-details">${escapeHtml(details)}</pre></td>
+        </tr>`;
+      }).join('')
       : '<tr><td colspan="5">No administrative activity recorded yet.</td></tr>';
   } catch (error) {
     tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
@@ -3215,11 +3231,11 @@ function renderMembersReport() {
 
   reportDetailBody.innerHTML = adminMembers.map((member) => `
     <tr>
-      <td>${member.name}</td>
-      <td>${member.email}</td>
+      <td>${escapeHtml(member.name || '—')}</td>
+      <td>${escapeHtml(member.email || '—')}</td>
       <td>${formatMoney(Number(member.savings || 0), 2)}</td>
       <td>${formatMoney(Number(member.profit || 0), 2)}</td>
-      <td>${member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '-'}</td>
+      <td>${member.createdAt ? escapeHtml(new Date(member.createdAt).toLocaleDateString()) : '—'}</td>
     </tr>
   `).join('');
 }
@@ -3253,11 +3269,11 @@ function renderDepositsReport() {
 
   reportDetailBody.innerHTML = adminDeposits.map((deposit) => `
     <tr>
-      <td>${deposit.member?.name || 'Unknown'}</td>
-      <td>${deposit.member?.email || 'Unknown'}</td>
+      <td>${escapeHtml(deposit.member?.name || 'Unknown')}</td>
+      <td>${escapeHtml(deposit.member?.email || 'Unknown')}</td>
       <td>${formatMoney(Number(deposit.amount || 0), 2)}</td>
-      <td>${new Date(deposit.createdAt).toLocaleString()}</td>
-      <td><a href="/api/admin/deposits/${deposit._id}/receipt" class="receipt-button" target="_blank" rel="noopener">${t('memberUi.downloadContract', 'Download')}</a></td>
+      <td>${escapeHtml(new Date(deposit.createdAt).toLocaleString())}</td>
+      <td><a href="/api/admin/deposits/${escapeHtml(deposit._id)}/receipt" class="receipt-button" target="_blank" rel="noopener">${t('memberUi.downloadContract', 'Download')}</a></td>
     </tr>
   `).join('');
 }
@@ -3299,28 +3315,28 @@ function renderInvestmentsReport() {
   const activeRows = societyActiveInvestments.map((investment) => `
     <tr>
       <td>${formatRunningStatusBadge()}</td>
-      <td><strong>${investment.investmentCode || '-'}</strong></td>
-      <td>${investment.investorName || investment.partner || '-'}</td>
-      <td>${formatInvestmentDate(investment.dateOfBirth)}</td>
-      <td>${investment.location || investment.sector || '-'}</td>
+      <td><strong>${escapeHtml(investment.investmentCode || '—')}</strong></td>
+      <td>${escapeHtml(investment.investorName || investment.partner || '—')}</td>
+      <td>${escapeHtml(formatInvestmentDate(investment.dateOfBirth))}</td>
+      <td>${escapeHtml(investment.location || investment.sector || '—')}</td>
       <td>${formatMoney(Number(investment.amount || 0), 2)}</td>
-      <td>${new Date(investment.createdAt).toLocaleString()}</td>
+      <td>${escapeHtml(new Date(investment.createdAt).toLocaleString())}</td>
       <td>${formatProfitDueWindow(investment.createdAt)}</td>
-      <td><button type="button" class="receipt-button" data-pdf-preview="/api/admin/investments/${investment._id}/receipt">View Receipt</button></td>
+      <td><button type="button" class="receipt-button" data-pdf-preview="/api/admin/investments/${escapeHtml(investment._id)}/receipt">View Receipt</button></td>
     </tr>
   `).join('');
 
   const soldRows = societySoldInvestments.map((investment) => `
     <tr>
       <td>${formatOutcomeStatusBadge(investment.outcomeType)}</td>
-      <td><strong>${investment.investmentCode || '-'}</strong></td>
-      <td>${investment.investorName || investment.partner || '-'}</td>
-      <td>${formatInvestmentDate(investment.dateOfBirth)}</td>
-      <td>${investment.location || investment.sector || '-'}</td>
+      <td><strong>${escapeHtml(investment.investmentCode || '—')}</strong></td>
+      <td>${escapeHtml(investment.investorName || investment.partner || '—')}</td>
+      <td>${escapeHtml(formatInvestmentDate(investment.dateOfBirth))}</td>
+      <td>${escapeHtml(investment.location || investment.sector || '—')}</td>
       <td>${formatMoney(Number(investment.amount || 0), 2)}</td>
-      <td>${investment.soldAt ? new Date(investment.soldAt).toLocaleString() : new Date(investment.createdAt).toLocaleString()}</td>
+      <td>${escapeHtml(investment.soldAt ? new Date(investment.soldAt).toLocaleString() : new Date(investment.createdAt).toLocaleString())}</td>
       <td>${formatNetProfitLoss(investment.netProfitLoss)}</td>
-      <td><button type="button" class="receipt-button" data-pdf-preview="/api/admin/investments/${investment._id}/receipt">View Receipt</button></td>
+      <td><button type="button" class="receipt-button" data-pdf-preview="/api/admin/investments/${escapeHtml(investment._id)}/receipt">View Receipt</button></td>
     </tr>
   `).join('');
 

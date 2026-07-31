@@ -885,13 +885,15 @@
         </div>
 
         <!-- REPORTS -->
-        <div class="panel-card hidden" data-staff-view="reports" id="moduleReports">
-          <div class="panel-card-header">
-            <h2>Reports</h2>
-            <p class="text-secondary">Society summary for cashiers. Download the daily Z-report from Bank Ledger for cash closing.</p>
+        <div class="panel-card staff-reports-panel hidden" data-staff-view="reports" id="moduleReports">
+          <div class="panel-card-header reports-section-header">
+            <div>
+              <h2>Reports</h2>
+              <p class="text-secondary">Society summary for cashiers. Download the daily Z-report from Bank Ledger for cash closing.</p>
+            </div>
           </div>
-          <div class="stats-grid" id="cashierReportStats"></div>
-          <div class="form-row-2 u-mt-1">
+          <div class="stats-grid staff-reports-stats" id="cashierReportStats"></div>
+          <div class="form-row-2 u-mt-1 staff-reports-actions">
             <button type="button" class="secondary-btn" id="cashierZReportBtn" data-i18n="pdf.downloadTodayZReport">Download today's Z-report PDF</button>
             <button type="button" class="ghost-btn" data-staff-nav="audit">Open Transaction Audit</button>
             <button type="button" class="ghost-btn" data-staff-nav="ledger">Open Bank Ledger</button>

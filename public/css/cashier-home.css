@@ -1500,3 +1500,59 @@ html[data-theme="light"] .smart-alloc-row {
     flex-direction: column;
   }
 }
+
+/* Staff Reports / Audit containment & typography */
+.cashier-shell .staff-reports-panel,
+.cashier-shell [data-staff-view="audit"] {
+  max-width: 1100px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.cashier-shell .staff-reports-panel .panel-card-header h2,
+.cashier-shell [data-staff-view="audit"] .panel-card-header h2 {
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cashier-shell .staff-reports-panel .text-secondary,
+.cashier-shell [data-staff-view="audit"] .text-secondary {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  max-width: 62ch;
+}
+
+.cashier-shell .staff-reports-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.cashier-shell .staff-reports-actions {
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.cashier-shell [data-staff-view="audit"] .table-wrapper {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border-radius: 12px;
+}
+
+.cashier-shell [data-staff-view="audit"] .data-table th,
+.cashier-shell [data-staff-view="audit"] .data-table td {
+  vertical-align: top;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
