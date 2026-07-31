@@ -205,13 +205,6 @@
       </section>
 
       <section class="page-section active" data-page-section="dashboard">
-      <!-- Payment Reminder first — immediate visual priority under Welcome/Header -->
-      <section class="panel-card member-dues-section" id="memberDuesSection">
-        <h2>Payment Reminder</h2>
-        <p class="table-subtitle">Live monthly fixed deposit requirement from the cashier — updates when a payment is recorded.</p>
-        <div id="duesAlert" class="member-dues-dashboard" aria-live="polite"></div>
-      </section>
-
       <section class="panel-card member-self-profile-card" id="memberSelfProfileCard">
         <p class="table-subtitle" data-i18n="memberUi.loadingProfile">Loading your profile...</p>
       </section>
@@ -276,6 +269,13 @@
           </div>
         </button>
       </div>
+
+      <!-- Payment Reminder — after metric cards, above Loan Payment Status -->
+      <section class="panel-card member-dues-section" id="memberDuesSection">
+        <h2>Payment Reminder</h2>
+        <p class="table-subtitle">Live monthly fixed deposit requirement from the cashier — updates when a payment is recorded.</p>
+        <div id="duesAlert" class="member-dues-dashboard" aria-live="polite"></div>
+      </section>
 
       <section class="panel-card table-card-wide" id="loanRepaymentDashboardPanel">
         <div class="member-profile-section-header">
