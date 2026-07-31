@@ -6,13 +6,23 @@ const {
   brandingEmailFromFallback,
   drawPdfOrganizationHeader,
   getOrganizationSettings,
-  registerPdfBengaliFont,
-  usePdfBodyFont,
   usePdfLatinFont,
   writePdfMoney,
   writePdfLabeledMoney,
   preparePdfDocument,
+  writePdfMixedText,
 } = require('./organizationBranding');
+const {
+  createPdfBuffer,
+  drawBrandHeader,
+  drawSummaryCards,
+  drawSectionTitle,
+  drawDataTable,
+  drawKeyValueTable,
+  addPageNumbers,
+  money: pdfMoney,
+  formatDate: pdfFormatDate,
+} = require('./documentPdfService');
 
 let cachedTransporter = null;
 let emailUnavailable = false;
@@ -435,87 +445,63 @@ function createLoanRepaymentReceiptPdf({ repayment, loan, member, adminName = 'A
 }
 
 function createSaleReportPdf(sale, adminName = 'Admin') {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 48 });
-    preparePdfDocument(doc);
-    const buffers = [];
-    const saleAmount = Number(sale.saleAmount || 0);
-    const totalInvestment = Number(sale.totalInvestment || 0);
-    const additionalCosts = Number(sale.additionalCosts || 0);
-    const tax = Number(sale.tax || 0);
-    const net = Number(sale.netProfitLoss || 0);
-    const outcome = sale.outcomeType || (net > 0 ? 'profit' : net < 0 ? 'loss' : 'break_even');
-    const saleDate = new Date(sale.createdAt || Date.now()).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+  const saleAmount = Number(sale.saleAmount || 0);
+  const totalInvestment = Number(sale.totalInvestment || 0);
+  const additionalCosts = Number(sale.additionalCosts || 0);
+  const tax = Number(sale.tax || 0);
+  const net = Number(sale.netProfitLoss || 0);
+  const outcome = sale.outcomeType || (net > 0 ? 'profit' : net < 0 ? 'loss' : 'break_even');
+  const netLabel = outcome === 'loss' ? 'Net Loss' : outcome === 'profit' ? 'Net Profit' : 'Break Even';
+  const lines = Array.isArray(sale.investmentLines) ? sale.investmentLines : [];
+
+  return createPdfBuffer((doc) => {
+    drawBrandHeader(doc, {
+      title: 'Sale Report',
+      subtitle: sale.saleCode || 'SALE',
+      generatedBy: sale.recordedBy || adminName,
     });
 
-    doc.on('data', (chunk) => buffers.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(buffers)));
-    doc.on('error', reject);
+    drawSummaryCards(doc, [
+      { label: 'Sale amount', value: pdfMoney(saleAmount) },
+      { label: 'Total investment', value: pdfMoney(totalInvestment) },
+      { label: 'Costs + tax', value: pdfMoney(additionalCosts + tax) },
+      { label: netLabel, value: pdfMoney(Math.abs(net)) },
+    ]);
 
-    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Sale Report`, { align: 'center' });
-    doc.moveDown(0.3);
-    doc.fontSize(11).fillColor('#64748b').text(sale.saleCode || 'SALE', { align: 'center' });
-    doc.moveDown(1.2);
+    drawSectionTitle(doc, 'Sale details');
+    drawKeyValueTable(doc, [
+      ['Product / Project', sale.productName || sale.projectLabel || '—'],
+      ['Investment ID', sale.investmentCode || '—'],
+      ['Investor', sale.investorName || '—'],
+      ['Location', sale.location || '—'],
+      ['Sector', sale.sector || '—'],
+      ['Sale date', pdfFormatDate(sale.createdAt)],
+      ['Notes', sale.notes || '—'],
+    ]);
 
-    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
-    doc.text(`Product / Project: ${sale.productName || sale.projectLabel || 'N/A'}`);
-    doc.text(`Project Label: ${sale.projectLabel || 'N/A'}`);
-    doc.text(`Investment ID: ${sale.investmentCode || 'N/A'}`);
-    doc.text(`Investor: ${sale.investorName || 'N/A'}`);
-    doc.text(`Location: ${sale.location || 'N/A'}`);
-    doc.text(`Sector: ${sale.sector || 'N/A'}`);
-    doc.text(`Sale Date: ${saleDate}`);
-    doc.text(`Recorded By: ${sale.recordedBy || adminName}`);
-    doc.moveDown(1);
-
-    doc.fontSize(14).fillColor('#0f766e').text('Financial Breakdown', { underline: true });
-    doc.moveDown(0.5);
-    doc.fontSize(12).fillColor('#111827');
-    writePdfLabeledMoney(doc, 'Sale Amount (manual): ', saleAmount, { digits: 2 });
-    writePdfLabeledMoney(doc, 'Total Historical Investments (auto-fetched): ', totalInvestment, { digits: 2 });
-    writePdfLabeledMoney(doc, 'Additional Costs (manual): ', additionalCosts, { digits: 2 });
-    writePdfLabeledMoney(doc, 'Tax (manual): ', tax, { digits: 2 });
-    doc.moveDown(0.6);
-
-    const netLabel = outcome === 'loss' ? 'Net Loss' : outcome === 'profit' ? 'Net Profit' : 'Break Even';
-    const netColor = outcome === 'loss' ? '#b91c1c' : outcome === 'profit' ? '#047857' : '#334155';
-    usePdfLatinFont(doc).fontSize(14).fillColor(netColor);
-    doc.text(`${netLabel}: `, { continued: true });
-    writePdfMoney(doc, Math.abs(net), { digits: 2, continued: true });
-    usePdfLatinFont(doc).fontSize(14).fillColor(netColor);
-    doc.text(`  (${net >= 0 ? '+' : '-'}`, { continued: true });
-    writePdfMoney(doc, Math.abs(net), { digits: 2, continued: true });
-    usePdfLatinFont(doc).fontSize(14).fillColor(netColor);
-    doc.text(')');
-    doc.moveDown(0.4);
-    doc.fontSize(10).fillColor('#64748b').text(
-      'Formula: Sale Amount − Total Investments − Additional Costs − Tax'
-    );
-    doc.moveDown(1);
-
-    const lines = Array.isArray(sale.investmentLines) ? sale.investmentLines : [];
     if (lines.length) {
-      doc.fontSize(13).fillColor('#0f172a').text('Investments Included', { underline: true });
-      doc.moveDown(0.4);
-      doc.fontSize(11).fillColor('#374151');
-      lines.forEach((line, index) => {
-        usePdfLatinFont(doc).fontSize(11).fillColor('#374151');
-        doc.text(`${index + 1}. ${line.investmentCode || 'INV'} — `, { continued: true });
-        writePdfMoney(doc, Number(line.amount || 0), { digits: 2 });
+      drawSectionTitle(doc, 'Investments included');
+      drawDataTable(doc, {
+        columns: [
+          { label: '#', width: 0.1, type: 'number', format: (_row, index) => String(index + 1) },
+          { label: 'Investment ID', width: 0.45, format: (row) => row.investmentCode || '—' },
+          { label: 'Amount', width: 0.45, type: 'money', format: (row) => pdfMoney(row.amount) },
+        ],
+        rows: lines,
       });
-      doc.moveDown(1);
     }
 
-    doc.fontSize(12).fillColor('#1f2937').text(`Notes: ${sale.notes || 'N/A'}`);
-    doc.moveDown(1.5);
-    doc.fontSize(10).fillColor('#94a3b8').text(
-      'This report is generated from the Sales ledger. Historical investment totals were fetched automatically from the database at the time of sale.',
-      { align: 'center' }
+    writePdfMixedText(
+      doc,
+      'Formula: Sale Amount − Total Investments − Additional Costs − Tax. This report is generated from the Sales ledger.',
+      {
+        size: 8.5,
+        color: '#64748b',
+        align: 'center',
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+      }
     );
-    doc.end();
+    addPageNumbers(doc);
   });
 }
 
@@ -577,107 +563,103 @@ function createPayoutVoucherPdf(investment, ledgerEntry = null, cashierName = 'C
 }
 
 function createZReportPdf(summary, generatedBy = 'Cashier') {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 48 });
-    preparePdfDocument(doc);
-    const buffers = [];
-    doc.on('data', (chunk) => buffers.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(buffers)));
-    doc.on('error', reject);
+  const totals = summary.totals || {};
+  const entries = summary.entries || [];
 
-    const totals = summary.totals || {};
-    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Daily Cash Closing (Z-Report)`, { align: 'center' });
-    doc.moveDown(0.4);
-    doc.fontSize(11).fillColor('#64748b').text(`Business day: ${summary.date}`, { align: 'center' });
-    doc.moveDown(1);
+  return createPdfBuffer((doc) => {
+    drawBrandHeader(doc, {
+      title: 'Daily Cash Closing (Z-Report)',
+      subtitle: `Business day: ${summary.date || '—'}`,
+      generatedBy,
+    });
 
-    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
-    doc.text(`Generated by: ${generatedBy}`);
-    doc.text(`Generated at: ${new Date().toLocaleString()}`);
-    writePdfLabeledMoney(doc, 'Book bank balance: ', Number(summary.bookBalance || 0), { digits: 2 });
-    if (summary.actualBalance !== null && summary.actualBalance !== undefined) {
-      writePdfLabeledMoney(doc, 'Last reconciled actual: ', Number(summary.actualBalance), { digits: 2 });
-      usePdfLatinFont(doc);
-      writePdfLabeledMoney(doc, 'Difference: ', Number(summary.difference || 0), { digits: 2 });
-      if (summary.mismatched) {
-        usePdfLatinFont(doc);
-        doc.text(' ⚠ MISMATCH');
-      }
-    }
-    doc.moveDown(1);
+    drawSummaryCards(doc, [
+      { label: 'Total in', value: pdfMoney(totals.totalIn) },
+      { label: 'Total out', value: pdfMoney(totals.totalOut) },
+      { label: 'Net for day', value: pdfMoney(totals.net) },
+      { label: 'Book balance', value: pdfMoney(summary.bookBalance) },
+    ]);
 
-    doc.fontSize(13).fillColor('#0f172a').text('Daily totals', { underline: true });
-    doc.moveDown(0.4);
-    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
-    writePdfLabeledMoney(doc, 'Deposits (cash-in): ', Number(totals.deposits || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Project sales / returns: ', Number(totals.sales || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Monthly profits logged: ', Number(totals.monthlyProfits || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Project payouts (cash-out): ', Number(totals.payouts || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Profit distributions: ', Number(totals.distributions || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Total in: ', Number(totals.totalIn || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Total out: ', Number(totals.totalOut || 0), { digits: 2 });
-    writePdfLabeledMoney(doc, 'Net for day: ', Number(totals.net || 0), { digits: 2 });
-    doc.moveDown(1);
+    drawSectionTitle(doc, 'Ledger position');
+    drawKeyValueTable(doc, [
+      ['Book bank balance', pdfMoney(summary.bookBalance)],
+      ['Last reconciled actual', summary.actualBalance != null ? pdfMoney(summary.actualBalance) : '—'],
+      ['Difference', summary.difference != null ? pdfMoney(summary.difference) : '—'],
+      ['Mismatch', summary.mismatched ? 'YES' : 'No'],
+    ]);
 
-    const entries = summary.entries || [];
-    if (entries.length) {
-      doc.fontSize(13).fillColor('#0f172a').text('Ledger movements', { underline: true });
-      doc.moveDown(0.4);
-      doc.fontSize(10).fillColor('#374151');
-      entries.forEach((entry, index) => {
-        const when = new Date(entry.createdAt).toLocaleTimeString();
-        usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
-        doc.text(`${index + 1}. ${when} · ${entry.type} · ${entry.direction} `, { continued: true });
-        writePdfMoney(doc, Number(entry.amount), { digits: 2, continued: true });
-        usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
-        doc.text(' · bal ', { continued: true });
-        writePdfMoney(doc, Number(entry.balanceAfter), { digits: 2 });
-      });
-    } else {
-      doc.fontSize(11).fillColor('#64748b').text('No ledger movements on this day.');
-    }
+    drawSectionTitle(doc, 'Daily totals');
+    drawDataTable(doc, {
+      columns: [
+        { label: 'Category', width: 0.55, format: (row) => row.label },
+        { label: 'Amount', width: 0.45, type: 'money', format: (row) => pdfMoney(row.amount) },
+      ],
+      rows: [
+        { label: 'Deposits (cash-in)', amount: totals.deposits },
+        { label: 'Project sales / returns', amount: totals.sales },
+        { label: 'Monthly profits logged', amount: totals.monthlyProfits },
+        { label: 'Project payouts (cash-out)', amount: totals.payouts },
+        { label: 'Profit distributions', amount: totals.distributions },
+        { label: 'Total in', amount: totals.totalIn },
+        { label: 'Total out', amount: totals.totalOut },
+        { label: 'Net for day', amount: totals.net },
+      ],
+    });
 
-    doc.end();
+    drawSectionTitle(doc, 'Ledger movements');
+    drawDataTable(doc, {
+      columns: [
+        { label: 'Time', width: 0.14, format: (row) => new Date(row.createdAt).toLocaleTimeString() },
+        { label: 'Type', key: 'type', width: 0.2 },
+        { label: 'Dir', key: 'direction', width: 0.1, type: 'center' },
+        { label: 'Amount', width: 0.18, type: 'money', format: (row) => pdfMoney(row.amount) },
+        { label: 'Balance after', width: 0.18, type: 'money', format: (row) => pdfMoney(row.balanceAfter) },
+        { label: 'Note', width: 0.2, format: (row) => row.note || row.description || '—' },
+      ],
+      rows: entries,
+      emptyText: 'No ledger movements on this day.',
+    });
+
+    addPageNumbers(doc);
   });
 }
 
 function createProfitDistributionPdf(distribution) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 48 });
-    preparePdfDocument(doc);
-    const buffers = [];
-    doc.on('data', (chunk) => buffers.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(buffers)));
-    doc.on('error', reject);
-
-    doc.fontSize(20).fillColor('#0f172a').text(`${getOrganizationSettings().nameEn} Profit Distribution Report`, { align: 'center' });
-    doc.moveDown(0.4);
-    doc.fontSize(11).fillColor('#64748b').text('Equal split among active members', { align: 'center' });
-    doc.moveDown(1);
-
-    usePdfLatinFont(doc).fontSize(12).fillColor('#1f2937');
-    doc.text(`Distributed by: ${distribution.distributedBy || '—'}`);
-    doc.text(`Date: ${new Date(distribution.createdAt || Date.now()).toLocaleString()}`);
-    writePdfLabeledMoney(doc, 'Total amount: ', Number(distribution.totalAmount || 0), { digits: 2 });
-    doc.text(`Members: ${distribution.memberCount || 0}`);
-    doc.text(`Type: ${distribution.distributionType || 'equal'}`);
-    if (distribution.notes) doc.text(`Notes: ${distribution.notes}`);
-    doc.moveDown(1);
-
-    doc.fontSize(13).fillColor('#0f172a').text('Member breakdown', { underline: true });
-    doc.moveDown(0.4);
-    doc.fontSize(10).fillColor('#374151');
-    (distribution.shares || []).forEach((share, index) => {
-      usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
-      doc.text(`${index + 1}. ${share.memberName || 'Member'} — `, { continued: true });
-      writePdfMoney(doc, Number(share.amount || 0), { digits: 2, continued: true });
-      usePdfLatinFont(doc).fontSize(10).fillColor('#374151');
-      doc.text(
-        ` (profit ${Number(share.previousProfit || 0).toFixed(2)} → ${Number(share.newProfit || 0).toFixed(2)})`
-      );
+  return createPdfBuffer((doc) => {
+    drawBrandHeader(doc, {
+      title: 'Profit Distribution Report',
+      subtitle: 'Equal split among active members',
+      generatedBy: distribution.distributedBy || 'Admin',
     });
 
-    doc.end();
+    drawSummaryCards(doc, [
+      { label: 'Total amount', value: pdfMoney(distribution.totalAmount) },
+      { label: 'Members', value: String(distribution.memberCount || 0) },
+      { label: 'Type', value: String(distribution.distributionType || 'equal') },
+      { label: 'Shares', value: String((distribution.shares || []).length) },
+    ]);
+
+    drawSectionTitle(doc, 'Distribution details');
+    drawKeyValueTable(doc, [
+      ['Distributed by', distribution.distributedBy || '—'],
+      ['Date', pdfFormatDate(distribution.createdAt)],
+      ['Notes', distribution.notes || '—'],
+    ]);
+
+    drawSectionTitle(doc, 'Member breakdown');
+    drawDataTable(doc, {
+      columns: [
+        { label: '#', width: 0.08, type: 'number', format: (_row, index) => String(index + 1) },
+        { label: 'Member', width: 0.32, format: (row) => row.memberName || 'Member' },
+        { label: 'Share', width: 0.2, type: 'money', format: (row) => pdfMoney(row.amount) },
+        { label: 'Previous', width: 0.2, type: 'money', format: (row) => pdfMoney(row.previousProfit) },
+        { label: 'New profit', width: 0.2, type: 'money', format: (row) => pdfMoney(row.newProfit) },
+      ],
+      rows: distribution.shares || [],
+      emptyText: 'No member shares recorded.',
+    });
+
+    addPageNumbers(doc);
   });
 }
 
