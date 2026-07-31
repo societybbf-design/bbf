@@ -174,6 +174,7 @@ function navigateMemberPage(page, { syncUrl = true } = {}) {
   }
   if (page === 'dashboard') {
     void loadMemberCashierTrackingTeaser();
+    void loadMemberDepositTrend();
   }
   if (page === 'portfolio' || page === 'investments') {
     void loadSocietyInvestments();
@@ -2398,37 +2399,228 @@ function bindMemberChatUi() {
 
 // Initialize on page load
 let memberDepositTrendChart = null;
+let memberDepositHistoryCache = [];
+let memberDepositTrendBound = false;
 
-async function loadMemberDepositTrend() {
+function depositMonthStatusLabel(status = '') {
+  const key = String(status || '').toLowerCase();
+  if (key === 'paid' || key === 'completed') return 'Paid in full';
+  if (key === 'partial') return 'Partially paid';
+  if (key === 'unpaid') return 'Unpaid';
+  if (key === 'missed') return 'Missed / unpaid';
+  if (key === 'settled') return 'Settled';
+  return key ? translateStatus(key) : 'No record';
+}
+
+function depositMonthStatusClass(status = '') {
+  const key = String(status || '').toLowerCase();
+  if (key === 'paid' || key === 'completed' || key === 'settled') return 'status-pass';
+  if (key === 'partial') return 'status-warn';
+  if (key === 'unpaid' || key === 'missed') return 'status-fail';
+  return 'status-warn';
+}
+
+function populateDepositMonthSelect(history = []) {
+  const select = document.getElementById('memberDepositMonthSelect');
+  if (!select) return;
+  const current = select.value || '';
+  select.innerHTML = '<option value="">12-month overview</option>';
+  history.forEach((row) => {
+    const opt = document.createElement('option');
+    opt.value = row.yearMonth;
+    opt.textContent = `${row.monthLabel || row.label} · ${depositMonthStatusLabel(row.status)}`;
+    select.appendChild(opt);
+  });
+  if (current && history.some((row) => row.yearMonth === current)) {
+    select.value = current;
+  }
+}
+
+function renderDepositMonthChips(history = [], activeYearMonth = '') {
+  const chips = document.getElementById('memberDepositMonthChips');
+  if (!chips) return;
+  chips.innerHTML = history.map((row) => {
+    const active = row.yearMonth === activeYearMonth ? ' is-active' : '';
+    const tone = depositMonthStatusClass(row.status);
+    return `
+      <button type="button"
+        class="member-deposit-month-chip ${tone}${active}"
+        data-deposit-month="${escapeHtml(row.yearMonth)}"
+        aria-pressed="${row.yearMonth === activeYearMonth ? 'true' : 'false'}">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span>${escapeHtml(depositMonthStatusLabel(row.status))}</span>
+      </button>
+    `;
+  }).join('');
+}
+
+function renderDepositMonthDetail(month) {
+  const detail = document.getElementById('memberDepositMonthDetail');
+  const overview = document.getElementById('memberDepositTrendOverview');
+  if (!detail || !month) return;
+
+  const statusEl = document.getElementById('memberDepositMonthStatus');
+  const labelEl = document.getElementById('memberDepositMonthLabel');
+  const paidEl = document.getElementById('memberDepositMonthPaid');
+  const expectedEl = document.getElementById('memberDepositMonthExpected');
+  const unpaidEl = document.getElementById('memberDepositMonthUnpaid');
+  const totalEl = document.getElementById('memberDepositMonthTotal');
+  const txBody = document.getElementById('memberDepositMonthTxBody');
+
+  if (statusEl) {
+    statusEl.textContent = depositMonthStatusLabel(month.status);
+    statusEl.className = depositMonthStatusClass(month.status);
+  }
+  if (labelEl) labelEl.textContent = month.monthLabel || month.label || month.yearMonth;
+  if (paidEl) paidEl.textContent = formatMoney(Number(month.regularAmount || 0), 2);
+  if (expectedEl) {
+    expectedEl.textContent = month.expectedAmount != null
+      ? `Required ${formatMoney(Number(month.expectedAmount), 2)}`
+      : 'No fixed target for this month';
+  }
+  if (unpaidEl) {
+    unpaidEl.textContent = month.unpaidAmount != null
+      ? formatMoney(Number(month.unpaidAmount), 2)
+      : (['paid', 'completed'].includes(String(month.status)) ? formatMoney(0, 2) : '—');
+  }
+  if (totalEl) {
+    totalEl.textContent = `Recorded deposits ${formatMoney(Number(month.amount || 0), 2)}`
+      + (Number(month.advanceAmount || 0) > 0
+        ? ` · advance ${formatMoney(Number(month.advanceAmount), 2)}`
+        : '');
+  }
+
+  const deposits = Array.isArray(month.deposits) ? month.deposits : [];
+  if (txBody) {
+    txBody.innerHTML = deposits.length
+      ? deposits.map((row) => `
+        <tr>
+          <td>${row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}</td>
+          <td>${escapeHtml(row.type || 'regular')}</td>
+          <td>${formatMoney(Number(row.amount || 0), 2)}</td>
+          <td><code>${escapeHtml(row.receiptNumber || '—')}</code></td>
+          <td>${escapeHtml(row.notes || '—')}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="5">No deposit transactions recorded for this month.</td></tr>';
+  }
+
+  if (overview) overview.hidden = true;
+  detail.hidden = false;
+}
+
+function showDepositTrendOverview() {
+  const detail = document.getElementById('memberDepositMonthDetail');
+  const overview = document.getElementById('memberDepositTrendOverview');
+  const select = document.getElementById('memberDepositMonthSelect');
+  if (detail) detail.hidden = true;
+  if (overview) overview.hidden = false;
+  if (select) select.value = '';
+  renderDepositMonthChips(memberDepositHistoryCache, '');
+}
+
+function renderMemberDepositTrendChart(overview = {}) {
   const ctx = document.getElementById('memberDepositTrendChart');
   if (!ctx || typeof Chart === 'undefined') return;
-  try {
-    const response = await fetch('/api/admin/analytics/member-trends');
-    const trends = await response.json();
-    if (!response.ok) throw new Error(trends.error);
-    if (memberDepositTrendChart) memberDepositTrendChart.destroy();
-    memberDepositTrendChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: trends.labels || [],
-        datasets: [{
+  if (memberDepositTrendChart) memberDepositTrendChart.destroy();
+  memberDepositTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: overview.labels || [],
+      datasets: [
+        {
           label: 'Deposits',
-          data: trends.series?.deposits || [],
+          data: overview.deposits || [],
           borderColor: '#0f766e',
-          backgroundColor: 'rgba(15, 118, 110, 0.1)',
+          backgroundColor: 'rgba(15, 118, 110, 0.12)',
           tension: 0.35,
           fill: true,
-        }],
+        },
+        {
+          label: 'Monthly target',
+          data: overview.expected || [],
+          borderColor: '#94a3b8',
+          borderDash: [6, 4],
+          pointRadius: 0,
+          tension: 0.2,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true } },
+      onClick: (_event, elements) => {
+        if (!elements?.length) return;
+        const idx = elements[0].index;
+        const row = memberDepositHistoryCache[idx];
+        if (row?.yearMonth) {
+          void selectMemberDepositMonth(row.yearMonth);
+        }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom' } },
-        scales: { y: { beginAtZero: true } },
-      },
-    });
+    },
+  });
+}
+
+async function selectMemberDepositMonth(yearMonth = '') {
+  const select = document.getElementById('memberDepositMonthSelect');
+  if (!yearMonth) {
+    showDepositTrendOverview();
+    return;
+  }
+  try {
+    const response = await fetch(`/api/member/deposit-history?yearMonth=${encodeURIComponent(yearMonth)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load month details.');
+    if (select) select.value = yearMonth;
+    renderDepositMonthChips(memberDepositHistoryCache, yearMonth);
+    renderDepositMonthDetail(data.month);
+  } catch (error) {
+    console.warn('Unable to load deposit month detail:', error.message);
+  }
+}
+
+function bindMemberDepositTrendControls() {
+  if (memberDepositTrendBound) return;
+  memberDepositTrendBound = true;
+  document.getElementById('memberDepositMonthSelect')?.addEventListener('change', (event) => {
+    void selectMemberDepositMonth(event.target.value || '');
+  });
+  document.getElementById('memberDepositBackOverviewBtn')?.addEventListener('click', () => {
+    showDepositTrendOverview();
+  });
+  document.getElementById('memberDepositMonthChips')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-deposit-month]');
+    if (!btn) return;
+    void selectMemberDepositMonth(btn.getAttribute('data-deposit-month') || '');
+  });
+}
+
+async function loadMemberDepositTrend() {
+  const section = document.getElementById('memberDepositTrendSection');
+  if (!section) return;
+  bindMemberDepositTrendControls();
+  try {
+    const response = await fetch('/api/member/deposit-history');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load deposit history.');
+    memberDepositHistoryCache = Array.isArray(data.history) ? data.history : [];
+    populateDepositMonthSelect(memberDepositHistoryCache);
+    renderMemberDepositTrendChart(data.overview || {});
+    const selected = document.getElementById('memberDepositMonthSelect')?.value || '';
+    if (selected) {
+      await selectMemberDepositMonth(selected);
+    } else {
+      showDepositTrendOverview();
+    }
   } catch (error) {
     console.warn('Unable to load member deposit trend:', error.message);
+    const chips = document.getElementById('memberDepositMonthChips');
+    if (chips) {
+      chips.innerHTML = `<p class="table-subtitle">${escapeHtml(error.message || 'Unable to load deposit history.')}</p>`;
+    }
   }
 }
 
@@ -2487,10 +2679,6 @@ document.addEventListener('DOMContentLoaded', () => {
   void loadProfile().then(() => {
     navigateMemberPage(initialPage, { syncUrl: true });
   });
-
-  if (initialPage === 'dashboard') {
-    void loadMemberDepositTrend();
-  }
 
   document.getElementById('openCashierTrackingBtn')?.addEventListener('click', () => {
     navigateMemberPage('cashier-tracking');
