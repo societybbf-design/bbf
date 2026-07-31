@@ -89,8 +89,8 @@ async function getDuesAlert(memberData = {}, now = new Date()) {
  */
 async function saveDeposit(memberId, amount, options = {}) {
   const { normalizePaymentChannel } = require('./paymentChannelService');
-  const { generateReceiptNumber } = require('./receiptService');
-  const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
+  const { createDepositWithReceipt } = require('./receiptService');
+  const { bindSession, sessionOpt } = require('./mongoTransaction');
   const session = options.session || null;
 
   const member = await bindSession(
@@ -120,11 +120,9 @@ async function saveDeposit(memberId, amount, options = {}) {
   const recordedBy = options.recordedBy || '';
   const paymentMethod = normalizePaymentChannel(options.paymentMethod);
   const paymentReference = options.paymentReference?.trim() || '';
-  const receiptNumber = await generateReceiptNumber('DEP', { session });
   const depositExtras = {
     paymentMethod,
     paymentReference,
-    receiptNumber,
   };
 
   let towardTarget = total;
@@ -166,7 +164,7 @@ async function saveDeposit(memberId, amount, options = {}) {
 
   if (depositType === 'regular') {
     if (towardTarget > 0) {
-      deposit = await createWithSession(Deposit, {
+      deposit = await createDepositWithReceipt(Deposit, {
         member: member._id,
         amount: towardTarget,
         type: 'regular',
@@ -181,10 +179,7 @@ async function saveDeposit(memberId, amount, options = {}) {
     }
 
     if (surplus > 0) {
-      const advanceReceiptNumber = towardTarget > 0
-        ? await generateReceiptNumber('DEP', { session })
-        : receiptNumber;
-      advanceDeposit = await createWithSession(Deposit, {
+      advanceDeposit = await createDepositWithReceipt(Deposit, {
         member: member._id,
         amount: surplus,
         type: 'advance',
@@ -194,16 +189,14 @@ async function saveDeposit(memberId, amount, options = {}) {
         notes: notesBase
           || `Surplus above ${monthlySplit?.yearMonth || yearMonth} fixed target of ${formatMoney(money(monthlySplit?.targetAmount), 2)} → advance balance`,
         recordedBy,
-        paymentMethod,
-        paymentReference,
-        receiptNumber: advanceReceiptNumber,
+        ...depositExtras,
       }, session);
       advanceInc = money(advanceInc + surplus);
     }
 
     // No target configured: entire amount to savings as a single regular deposit
     if (!monthlySplit?.splitApplied && !deposit) {
-      deposit = await createWithSession(Deposit, {
+      deposit = await createDepositWithReceipt(Deposit, {
         member: member._id,
         amount: total,
         type: 'regular',
@@ -215,7 +208,7 @@ async function saveDeposit(memberId, amount, options = {}) {
       savingsInc = money(total);
     }
   } else if (depositType === 'advance') {
-    deposit = await createWithSession(Deposit, {
+    deposit = await createDepositWithReceipt(Deposit, {
       member: member._id,
       amount: total,
       type: 'advance',
@@ -226,7 +219,7 @@ async function saveDeposit(memberId, amount, options = {}) {
     }, session);
     advanceInc = money(total);
   } else {
-    deposit = await createWithSession(Deposit, {
+    deposit = await createDepositWithReceipt(Deposit, {
       member: member._id,
       amount: total,
       type: depositType,
@@ -307,7 +300,7 @@ async function saveDeposit(memberId, amount, options = {}) {
         member: updatedMember,
         deposit: primaryDeposit,
         recordedBy,
-        receiptNumber: primaryDeposit?.receiptNumber || receiptNumber,
+        receiptNumber: primaryDeposit?.receiptNumber || '',
         paymentMethod,
       });
       await recordAdminActivity({
@@ -321,7 +314,7 @@ async function saveDeposit(memberId, amount, options = {}) {
           surplus,
           paymentMethod,
           paymentReference,
-          receiptNumber: primaryDeposit?.receiptNumber || receiptNumber,
+          receiptNumber: primaryDeposit?.receiptNumber || '',
           yearMonth,
         },
         ip: options.ip || '',
