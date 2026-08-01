@@ -720,6 +720,7 @@ async function loadFinancialData(userId) {
       if (selfAdvance) {
         selfAdvance.textContent = formatMoney(Number(data.memberAdvanceBalance || 0), 2);
       }
+      refreshWithdrawalAdvanceHint();
       renderMemberBorrowings(data.openBorrowings || []);
 
       if (distributionRate) {
@@ -1343,6 +1344,25 @@ function renderSoldInvestmentRows(investments = [], receiptBase = '/api/member/i
   `).join('');
 }
 
+function refreshWithdrawalAdvanceHint() {
+  const el = document.getElementById('withdrawalAdvanceAvailable');
+  if (!el) return;
+  const advance = Number(
+    memberFinancialData.memberAdvanceBalance
+    ?? currentUser?.advanceBalance
+    ?? 0
+  );
+  const reserved = (memberFinancialData.withdrawalRequests || [])
+    .filter((row) => ['pending', 'approved'].includes(row.status))
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const available = Math.max(Number((advance - reserved).toFixed(2)), 0);
+  el.textContent = formatMoney(available, 2);
+  const amountInput = document.getElementById('withdrawalAmountInput');
+  if (amountInput) {
+    amountInput.max = String(available > 0 ? available : 0);
+  }
+}
+
 async function loadWithdrawalRequests() {
   try {
     const response = await fetch('/api/withdrawals/member');
@@ -1361,6 +1381,7 @@ async function loadWithdrawalRequests() {
         </tr>
       `).join('');
     }
+    refreshWithdrawalAdvanceHint();
     if (activeMemberReportType === 'withdrawals') {
       renderWithdrawalsReport();
     }
@@ -1393,8 +1414,10 @@ if (withdrawalForm) {
       withdrawalForm.reset();
       await loadWithdrawalRequests();
       await loadFinancialData();
+      refreshWithdrawalAdvanceHint();
       withdrawalMessage.classList.add('success');
-      withdrawalMessage.textContent = t('memberUi.withdrawalSubmitted', 'Withdrawal request submitted.');
+      withdrawalMessage.textContent = data.message
+        || t('memberUi.withdrawalSubmitted', 'Withdrawal request submitted for CEO approval.');
     } catch (error) {
       withdrawalMessage.classList.add('error');
       withdrawalMessage.textContent = 'Unable to submit request.';

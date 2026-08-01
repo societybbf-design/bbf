@@ -59,7 +59,7 @@ const FEATURE_CATALOG = [
   { key: 'can_manage_members', title: 'Members', detail: 'View society members.', icon: '👥', panel: 'members' },
   { key: 'can_manage_deposits', title: 'Deposits', detail: 'Record member deposits and receipts.', icon: '💵', panel: 'deposits' },
   { key: 'can_manage_deposits', title: 'Advances & Borrowing', detail: 'Advance balances and unpaid project shares overview.', icon: '🔄', panel: 'funding', catalogKey: 'funding' },
-  { key: 'can_manage_withdrawals', title: 'Withdrawals', detail: 'Review withdrawal requests.', icon: '🏦', panel: 'withdrawals' },
+  { key: 'can_disburse_withdrawals', title: 'Withdrawals', detail: 'Pay CEO-approved withdrawals from Advance Balance.', icon: '🏦', panel: 'withdrawals' },
   { key: 'can_disburse_loans', title: 'Loans', detail: 'Disburse approved loans and record repayments.', icon: '📄', panel: 'loans' },
   { key: 'can_manage_loans', title: 'Loan Review', detail: 'View pending loan applications (CEO approves).', icon: '📄', panel: 'loans', catalogKey: 'loan_review' },
   { key: 'can_manage_investments', title: 'Investments', detail: 'Investment summary and payment queue.', icon: '📈', panel: 'investments' },
@@ -3585,27 +3585,32 @@ function bindEmergencyReserveForms() {
 async function loadWithdrawalsModule() {
   const tbody = document.getElementById('cashierWithdrawalsBody');
   const msg = document.getElementById('cashierWithdrawalsMessage');
+  if (msg) {
+    msg.textContent = '';
+    msg.classList.remove('success', 'error');
+  }
   try {
-    const response = await fetch('/api/withdrawals/admin');
+    const response = await fetch('/api/withdrawals/cashier-queue');
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load withdrawals.');
+    if (!response.ok) throw new Error(data.error || 'Unable to load withdrawal payout queue.');
     const requests = data.requests || [];
     if (!tbody) return;
     if (!requests.length) {
-      tbody.innerHTML = '<tr><td colspan="5">No withdrawal requests.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6">No CEO-approved withdrawals awaiting payout.</td></tr>';
       return;
     }
-    tbody.innerHTML = requests.map((request) => `
+    tbody.innerHTML = requests.map((request) => {
+      const advance = Number(request.advanceBalance ?? request.member?.advanceBalance ?? 0);
+      const enough = request.hasSufficientAdvance !== false && advance + 0.001 >= Number(request.amount || 0);
+      return `
       <tr>
         <td>${escapeHtml(request.member?.name || 'Unknown')}</td>
         <td>${money(request.amount)}</td>
-        <td>${escapeHtml(request.status)}</td>
+        <td>${money(advance)}${enough ? '' : ' <span class="kpi-footnote">(insufficient)</span>'}</td>
+        <td>${statusPill(request.status)}</td>
         <td>${escapeHtml(request.reason || '—')}</td>
         <td>
-          ${request.status === 'pending' ? `
-            <button type="button" class="secondary-btn" data-withdrawal-status="approved" data-id="${request._id}">Approve</button>
-            <button type="button" class="ghost-btn" data-withdrawal-status="rejected" data-id="${request._id}">Reject</button>
-          ` : request.status === 'approved' ? `
+          ${enough ? `
             <div class="withdrawal-process-row">
               <select class="withdrawal-payment-method" data-id="${request._id}">
                 <option value="cash">Cash</option>
@@ -3613,48 +3618,50 @@ async function loadWithdrawalsModule() {
                 <option value="mfs">MFS</option>
               </select>
               <input type="text" class="withdrawal-payment-ref" data-id="${request._id}" placeholder="Txn ref" />
-              <button type="button" class="primary-btn" data-withdrawal-status="processed" data-id="${request._id}">Process</button>
+              <button type="button" class="primary-btn" data-withdrawal-pay="${request._id}">Pay from Advance</button>
             </div>
-          ` : request.paymentMethod ? `${escapeHtml(paymentChannelLabel(request.paymentMethod))}${request.disbursementReference ? ` · ${escapeHtml(request.disbursementReference)}` : ''}` : '—'}
+          ` : `<span class="kpi-footnote">Blocked — Advance Balance too low. Cannot pay from savings.</span>`}
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
-    tbody.querySelectorAll('[data-withdrawal-status]').forEach((btn) => {
+    tbody.querySelectorAll('[data-withdrawal-pay]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (msg) msg.textContent = '';
-        const requestId = btn.dataset.id;
-        const status = btn.dataset.withdrawalStatus;
+        if (msg) {
+          msg.textContent = '';
+          msg.classList.remove('success', 'error');
+        }
+        const requestId = btn.dataset.withdrawalPay;
         const paymentMethod = tbody.querySelector(`.withdrawal-payment-method[data-id="${requestId}"]`)?.value || 'cash';
         const disbursementReference = tbody.querySelector(`.withdrawal-payment-ref[data-id="${requestId}"]`)?.value || '';
         try {
-          const res = await fetch(`/api/withdrawals/admin/${requestId}`, {
-            method: 'PATCH',
+          const res = await fetch(`/api/withdrawals/admin/${requestId}/cashier-complete`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              status,
-              paymentMethod: status === 'processed' ? paymentMethod : undefined,
-              disbursementReference: status === 'processed' ? disbursementReference : undefined,
-            }),
+            body: JSON.stringify({ paymentMethod, disbursementReference }),
           });
           const payload = await res.json();
-          if (!res.ok) throw new Error(payload.error || 'Unable to update withdrawal.');
+          if (!res.ok) throw new Error(payload.error || 'Unable to process withdrawal.');
           if (msg) {
             msg.classList.add('success');
-            msg.textContent = `Withdrawal marked ${btn.dataset.withdrawalStatus}.`;
+            msg.textContent = payload.message || 'Withdrawal paid from Advance Balance.';
           }
           await loadWithdrawalsModule();
         } catch (error) {
           if (msg) {
-            msg.classList.remove('success');
+            msg.classList.add('error');
             msg.textContent = error.message;
           }
         }
       });
     });
   } catch (error) {
-    if (msg) msg.textContent = error.message;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+    if (msg) {
+      msg.classList.add('error');
+      msg.textContent = error.message;
+    }
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 

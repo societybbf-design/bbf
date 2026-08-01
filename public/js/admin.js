@@ -7083,6 +7083,7 @@ noticeForm.addEventListener('submit', async (event) => {
 });
 
 async function loadWithdrawalRequests() {
+  const messageEl = document.getElementById('withdrawalAdminMessage');
   try {
     const response = await fetch('/api/withdrawals/admin');
     if (!response.ok) {
@@ -7091,44 +7092,90 @@ async function loadWithdrawalRequests() {
     const data = await response.json();
     withdrawalRequests = data.requests || [];
     if (withdrawalRequestsList) {
-      withdrawalRequestsList.innerHTML = withdrawalRequests.map((request) => `
-        <tr>
-          <td>${request.member?.name || 'Unknown'}</td>
-          <td>${formatMoney(Number(request.amount || 0), 2)}</td>
-          <td>${request.status}</td>
-          <td>${request.reason || '-'}</td>
-          <td>
-            <div class="action-group">
-              <button class="secondary-btn" data-action="approve" data-id="${request._id}">Approve</button>
-              <button class="secondary-btn" data-action="process" data-id="${request._id}">Process</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
+      withdrawalRequestsList.innerHTML = withdrawalRequests.length
+        ? withdrawalRequests.map((request) => {
+          const advance = Number(request.member?.advanceBalance || 0);
+          const amount = Number(request.amount || 0);
+          const enough = advance + 0.001 >= amount;
+          let actions = '<span class="kpi-footnote">—</span>';
+          if (request.status === 'pending') {
+            actions = `
+              <div class="action-group">
+                <button class="secondary-btn" data-action="approve" data-id="${request._id}">Approve → Cashier</button>
+                <button class="ghost-btn" data-action="reject" data-id="${request._id}">Reject</button>
+              </div>
+              ${enough ? '' : '<p class="kpi-footnote">Warning: Advance Balance is currently below this amount.</p>'}
+            `;
+          } else if (request.status === 'approved') {
+            actions = '<span class="kpi-footnote">Sent to Cashier payment queue</span>';
+          } else if (request.status === 'processed') {
+            actions = '<span class="kpi-footnote">Paid from Advance Balance</span>';
+          } else if (request.status === 'rejected') {
+            actions = '<span class="kpi-footnote">Rejected</span>';
+          }
+          return `
+            <tr>
+              <td>${escapeHtml(request.member?.name || 'Unknown')}</td>
+              <td>${formatMoney(amount, 2)}</td>
+              <td>${formatMoney(advance, 2)}</td>
+              <td>${escapeHtml(request.status)}</td>
+              <td>${escapeHtml(request.reason || '-')}</td>
+              <td>${actions}</td>
+            </tr>
+          `;
+        }).join('')
+        : '<tr><td colspan="6">No withdrawal requests yet.</td></tr>';
     }
   } catch (error) {
     if (withdrawalRequestsList) {
-      withdrawalRequestsList.innerHTML = '<tr><td colspan="5">Unable to load withdrawal requests.</td></tr>';
+      withdrawalRequestsList.innerHTML = '<tr><td colspan="6">Unable to load withdrawal requests.</td></tr>';
+    }
+    if (messageEl) {
+      messageEl.classList.add('error');
+      messageEl.textContent = error.message || 'Unable to load withdrawal requests.';
     }
   }
 }
 
 async function updateWithdrawalRequest(requestId, status) {
+  const messageEl = document.getElementById('withdrawalAdminMessage');
+  if (messageEl) {
+    messageEl.textContent = '';
+    messageEl.classList.remove('success', 'error');
+  }
   try {
-    const response = await fetch(`/api/withdrawals/admin/${requestId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-
-    if (!response.ok) {
-      return;
+    const endpoint = status === 'approved'
+      ? `/api/withdrawals/admin/${requestId}/approve`
+      : status === 'rejected'
+        ? `/api/withdrawals/admin/${requestId}/reject`
+        : null;
+    if (!endpoint) {
+      throw new Error('CEO can only approve or reject withdrawals. Cashier handles payout.');
     }
-
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to update withdrawal request.');
+    }
+    if (messageEl) {
+      messageEl.classList.add('success');
+      messageEl.textContent = data.message
+        || (status === 'approved'
+          ? 'Withdrawal approved and sent to the Cashier payment queue.'
+          : 'Withdrawal request rejected.');
+    }
     await loadWithdrawalRequests();
     await fetchSummary();
   } catch (error) {
     console.error('Failed to update withdrawal request:', error);
+    if (messageEl) {
+      messageEl.classList.add('error');
+      messageEl.textContent = error.message || 'Unable to update withdrawal request.';
+    }
   }
 }
 
@@ -8109,8 +8156,8 @@ document.addEventListener('click', async (event) => {
     if (action === 'approve') {
       await updateWithdrawalRequest(id, 'approved');
     }
-    if (action === 'process') {
-      await updateWithdrawalRequest(id, 'processed');
+    if (action === 'reject') {
+      await updateWithdrawalRequest(id, 'rejected');
     }
     return;
   }

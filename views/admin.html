@@ -721,12 +721,17 @@
       <section class="page-section" data-page-section="withdrawals">
         <section class="panel-card table-card-wide">
           <h2 data-i18n="admin.sections.withdrawalRequests">Withdrawal Requests</h2>
+          <p class="table-subtitle">
+            Review member withdrawal requests. Approve to send them to the Cashier payment queue.
+            Payouts are paid only from the member’s Advance Balance — never from savings or locked funds.
+          </p>
           <div class="table-wrapper">
             <table class="data-table">
               <thead>
                 <tr>
                   <th data-i18n="table.member">Member</th>
                   <th data-i18n="table.amount">Amount</th>
+                  <th>Advance Balance</th>
                   <th data-i18n="table.status">Status</th>
                   <th data-i18n="table.reason">Reason</th>
                   <th data-i18n="table.action">Action</th>
@@ -735,6 +740,7 @@
               <tbody id="withdrawalRequestsList"></tbody>
             </table>
           </div>
+          <p id="withdrawalAdminMessage" class="message"></p>
         </section>
       </section>
 
