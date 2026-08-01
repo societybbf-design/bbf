@@ -12,6 +12,7 @@ const {
 const monthlyTargetJs = fs.readFileSync(path.join(__dirname, '../services/monthlyTargetService.js'), 'utf8');
 const adminDepositsJs = fs.readFileSync(path.join(__dirname, '../routes/adminDeposits.js'), 'utf8');
 const staffJs = fs.readFileSync(path.join(__dirname, '../public/js/staff-dashboard.js'), 'utf8');
+const staffHtml = fs.readFileSync(path.join(__dirname, '../views/staff.html'), 'utf8');
 
 test('evaluateCashierDepositEligibility excludes fully paid current month without arrears', () => {
   const result = evaluateCashierDepositEligibility({
@@ -58,19 +59,32 @@ test('evaluateCashierDepositEligibility includes unpaid with low advance', () =>
   assert.equal(result.reason, 'needs_manual_deposit');
 });
 
-test('evaluateCashierDepositEligibility hides members when advance covers total dues including arrears', () => {
+test('strict rule hides when advance covers current target + prior dues', () => {
+  const result = evaluateCashierDepositEligibility({
+    currentUnpaid: 5000,
+    previousUnpaidCount: 1,
+    previousUnpaidTotal: 5000,
+    advanceBalance: 98750,
+    requiredAmount: 5000,
+  });
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'advance_covers_dues');
+  assert.equal(result.coverageNeed, 10000);
+});
+
+test('strict rule hides when advance equals exact current target + prior dues', () => {
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 54000,
     previousUnpaidCount: 1,
     previousUnpaidTotal: 20000,
-    advanceBalance: 80750,
+    advanceBalance: 74000,
     requiredAmount: 54000,
   });
   assert.equal(result.eligible, false);
   assert.ok(['advance_covers_target', 'advance_covers_dues'].includes(result.reason));
 });
 
-test('evaluateCashierDepositEligibility keeps prior arrears when advance cannot cover total dues', () => {
+test('evaluateCashierDepositEligibility keeps members when advance cannot cover total obligation', () => {
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 54000,
     previousUnpaidCount: 2,
@@ -80,6 +94,8 @@ test('evaluateCashierDepositEligibility keeps prior arrears when advance cannot 
   });
   assert.equal(result.eligible, true);
   assert.equal(result.reason, 'prior_arrears');
+  // Obligation uses full current target + prior (154000), not merely remaining.
+  assert.equal(result.totalObligation, 154000);
 });
 
 test('evaluateCashierDepositEligibility hides cleared dues even if prior count is stale', () => {
@@ -93,20 +109,33 @@ test('evaluateCashierDepositEligibility hides cleared dues even if prior count i
   assert.equal(result.eligible, false);
 });
 
-test('eligible-members route and deposit dropdown wiring exist', () => {
+test('partial current unpaid still hides when advance covers remaining dues', () => {
+  const result = evaluateCashierDepositEligibility({
+    currentUnpaid: 2000,
+    previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
+    advanceBalance: 5000,
+    requiredAmount: 5000,
+  });
+  // Strict product formula uses full current target (5000); advance 5000 covers it.
+  assert.equal(result.eligible, false);
+});
+
+test('eligible-members list syncs dues and applies advance coverage filter', () => {
   assert.match(monthlyTargetJs, /async function listCashierDepositEligibleMembers/);
   assert.match(monthlyTargetJs, /function evaluateCashierDepositEligibility/);
-  assert.match(monthlyTargetJs, /previousUnpaidTotal/);
-  assert.match(monthlyTargetJs, /insufficient Advance Balance/);
+  assert.match(monthlyTargetJs, /await syncMonthDues\(yearMonth/);
+  assert.match(monthlyTargetJs, /currentTargetComponent/);
+  assert.match(monthlyTargetJs, /coverageNeed/);
+  assert.match(monthlyTargetJs, /Advance Balance is less than current target \+ prior dues/);
   assert.match(adminDepositsJs, /\/eligible-members/);
   assert.match(adminDepositsJs, /listCashierDepositEligibleMembers/);
   assert.match(adminDepositsJs, /requireCashierRole/);
-  // Static path must be registered before /:id/receipt.
   const eligibleIdx = adminDepositsJs.indexOf("router.get('/eligible-members'");
   const receiptIdx = adminDepositsJs.indexOf("router.get('/:id/receipt'");
   assert.ok(eligibleIdx >= 0 && eligibleIdx < receiptIdx);
   assert.match(staffJs, /function ensureDepositEligibleMemberOptions/);
   assert.match(staffJs, /\/api\/admin\/deposits\/eligible-members/);
   assert.match(staffJs, /ensureDepositEligibleMemberOptions\(\)/);
-  assert.match(staffJs, /cashierAdvanceMember/);
+  assert.match(staffHtml, /Members whose advance already covers/);
 });
