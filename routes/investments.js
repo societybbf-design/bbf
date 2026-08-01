@@ -21,6 +21,7 @@ const {
   listCashierPaymentQueue,
   listInvestorPortfolios,
   listInvestorUsers,
+  listExternalInvestorUsers,
   listProjectManagers,
   updateInvestment,
 } = require('../services/investmentService');
@@ -76,6 +77,16 @@ router.get('/investors', requirePermission('can_manage_investments'), async (req
     return res.json({ investors });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load investors.' });
+  }
+});
+
+/** External co-funders only — used by Create Project ownership dropdown. */
+router.get('/external-investors', requirePermission('can_manage_investments'), async (req, res) => {
+  try {
+    const investors = await listExternalInvestorUsers();
+    return res.json({ investors });
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load external investors.' });
   }
 });
 

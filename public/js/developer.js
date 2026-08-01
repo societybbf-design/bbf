@@ -45,7 +45,7 @@ function formatDate(value) {
 
 const TAB_TITLE_KEYS = {
   overview: ['um.overview', 'Overview', 'um.focusedNote', 'Account lifecycle and security only — finance modules stay on the CEO dashboard.'],
-  create: ['um.createAccount', 'Create Account', 'um.createSubtitle', 'Exclusive path for members, investors, project managers, cashiers, employees, and CEOs.'],
+  create: ['um.createAccount', 'Create Account', 'um.createSubtitle', 'Exclusive path for members, investors, external investors, project managers, cashiers, employees, and CEOs.'],
   users: ['um.allAccounts', 'All Accounts', 'um.directoryNote', 'Browse accounts by role. Accounts stay active, inactive, or blocked — never deleted.'],
   recovery: ['um.otpRecovery', 'OTP Recovery', 'um.otpNote', 'When a locked or forgotten-password user shares their OTP, select their account, enter the OTP, and set a new password.'],
   audits: ['um.securityAudit', 'Security Audit', 'um.auditNote', 'Login failures, lockouts, OTP requests, password changes, and email updates.'],
@@ -56,6 +56,7 @@ const TAB_TITLE_KEYS = {
 const ROLE_DIRECTORY = [
   { id: 'member', labelKey: 'um.members', label: 'Members', roles: ['member'] },
   { id: 'investor', labelKey: 'um.investors', label: 'Investors', roles: ['investor'] },
+  { id: 'external_investor', labelKey: 'um.externalInvestors', label: 'External Investors', roles: ['external_investor'] },
   { id: 'ceo', labelKey: 'um.ceos', label: 'CEOs', roles: ['ceo', 'admin'] },
   { id: 'project_manager', labelKey: 'um.managers', label: 'Managers', roles: ['project_manager'] },
   { id: 'cashier', labelKey: 'um.cashiers', label: 'Cashiers', roles: ['cashier'] },
