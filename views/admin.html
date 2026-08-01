@@ -99,6 +99,10 @@
         <span class="nav-icon-wrap"><span class="nav-icon">👥</span></span>
         <span class="nav-label" data-i18n="nav.members">Members</span>
       </a>
+      <a href="#external-investors" class="nav-item" data-page="external-investors" data-requires-permission="can_manage_investments">
+        <span class="nav-icon-wrap"><span class="nav-icon">🌐</span></span>
+        <span class="nav-label" data-i18n="nav.externalInvestors">External Investors</span>
+      </a>
       <a href="#messages" class="nav-item" data-page="messages" data-requires-permission="can_manage_chat">
         <span class="nav-icon-wrap"><span class="nav-icon">💬</span></span>
         <span class="nav-label" data-i18n="nav.messages">Messages</span>
@@ -1790,6 +1794,40 @@
             <button type="button" class="secondary-btn" id="backToInvestorsBtn" data-i18n="admin.buttons.backToInvestors">← Back to Investors</button>
           </div>
           <div id="investorDetailContent"></div>
+        </section>
+      </section>
+
+      <section class="page-section" data-page-section="external-investors">
+        <section class="panel-card table-card-wide" id="externalInvestorsListPanel">
+          <h2 data-i18n="admin.sections.externalInvestors">External Investors</h2>
+          <p class="table-subtitle">
+            Manage external co-funders: open a profile to view isolated ledgers, capital deposits, profit/returns, and project ownership shares.
+            Accounts are created in User Management → External Investors.
+          </p>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="table.name">Name</th>
+                  <th data-i18n="table.email">Email</th>
+                  <th data-i18n="table.phone">Phone</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th data-i18n="table.action">Action</th>
+                </tr>
+              </thead>
+              <tbody id="externalInvestorsModuleList">
+                <tr><td colspan="5">Loading external investors...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="externalInvestorsModuleMessage" class="message"></p>
+        </section>
+
+        <section class="panel-card table-card-wide hidden" id="externalInvestorDetailPanel">
+          <div class="page-actions u-mb-075">
+            <button type="button" class="secondary-btn" id="backToExternalInvestorsBtn">← Back to External Investors</button>
+          </div>
+          <div id="externalInvestorDetailContent"></div>
         </section>
       </section>
 

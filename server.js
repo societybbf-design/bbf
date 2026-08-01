@@ -286,6 +286,10 @@ function buildApp(sessionStore) {
     sendHtmlPage(res, 'admin.html');
   });
 
+  app.get('/admin/external-investors/:investorId', ensureAuthPage, ensureAdminOpsPage, (req, res) => {
+    sendHtmlPage(res, 'admin.html');
+  });
+
   app.get('/admin/project-managers/:managerId', ensureAuthPage, ensureAdminOpsPage, (req, res) => {
     sendHtmlPage(res, 'admin.html');
   });

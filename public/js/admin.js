@@ -1319,12 +1319,32 @@ const ADMIN_PAGE_I18N_KEYS = {
   ceo: 'ceo',
   investors: 'investors',
   'project-managers': 'projectManagers',
+  'external-investors': 'externalInvestors',
 };
 
 function adminPageText(page, field, fallback) {
   const slug = ADMIN_PAGE_I18N_KEYS[page] || 'dashboard';
   return window.I18n?.t(`page.admin.${slug}.${field}`, fallback) || fallback;
 }
+
+const ADMIN_PAGE_FALLBACKS = {
+  'external-investors': {
+    title: 'External Investors',
+    note: 'View ledgers, capital deposits, returns, and project ownership shares for external co-funders.',
+  },
+  investors: {
+    title: 'Investors',
+    note: 'Open investor portfolios and project assignments.',
+  },
+  'project-managers': {
+    title: 'Project Managers',
+    note: 'Review assigned projects, returns, and manager activity.',
+  },
+  members: {
+    title: 'Members',
+    note: 'Manage society members and profiles.',
+  },
+};
 
 function updatePageContent(page, loanTab = null) {
   const pageTitle = document.getElementById('pageTitle') || document.querySelector('.topbar-left h1');
@@ -1335,8 +1355,9 @@ function updatePageContent(page, loanTab = null) {
   }
 
   const headerSlug = ADMIN_PAGE_I18N_KEYS[page] || 'dashboard';
-  pageTitle.textContent = adminPageText(page, 'title', pageTitle.textContent);
-  pageNote.textContent = adminPageText(page, 'note', pageNote.textContent);
+  const fallbacks = ADMIN_PAGE_FALLBACKS[page] || {};
+  pageTitle.textContent = adminPageText(page, 'title', fallbacks.title || pageTitle.textContent);
+  pageNote.textContent = adminPageText(page, 'note', fallbacks.note || pageNote.textContent);
 
   switch (page) {
     case 'dashboard':
@@ -1400,6 +1421,9 @@ function updatePageContent(page, loanTab = null) {
       break;
     case 'project-managers':
       void loadProjectManagersModule();
+      break;
+    case 'external-investors':
+      void loadExternalInvestorsModule();
       break;
     default:
       if (!ADMIN_PAGE_I18N_KEYS[page]) {
@@ -1727,6 +1751,251 @@ async function loadInvestorsModule() {
     if (message) message.textContent = '';
   } catch (error) {
     body.innerHTML = `<tr><td colspan="5">${escapeCeoHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function loadExternalInvestorsModule() {
+  const body = document.getElementById('externalInvestorsModuleList');
+  const message = document.getElementById('externalInvestorsModuleMessage');
+  const listPanel = document.getElementById('externalInvestorsListPanel');
+  const detailPanel = document.getElementById('externalInvestorDetailPanel');
+  if (!body) return;
+
+  if (listPanel) listPanel.classList.remove('hidden');
+  if (detailPanel) detailPanel.classList.add('hidden');
+
+  try {
+    const response = await fetch('/api/admin/investments/external-investors');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load external investors.');
+
+    const investors = data.investors || [];
+    if (!investors.length) {
+      body.innerHTML = '<tr><td colspan="5">No external investors yet. Register them from User Management → External Investors.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = investors.map((user) => `
+      <tr class="clickable-row" data-open-external-investor-row="${user._id}" style="cursor:pointer;">
+        <td><a href="/admin/external-investors/${user._id}" class="table-link" data-open-external-investor="${user._id}">${escapeCeoHtml(user.name)}</a></td>
+        <td>${escapeCeoHtml(user.email || '-')}</td>
+        <td>${escapeCeoHtml(user.phone || '-')}</td>
+        <td>${escapeCeoHtml(user.status || 'active')}</td>
+        <td><button type="button" class="secondary-btn" data-open-external-investor="${user._id}">Open Management</button></td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('[data-open-external-investor], [data-open-external-investor-row]').forEach((el) => {
+      el.addEventListener('click', (event) => {
+        event.preventDefault();
+        const id = el.dataset.openExternalInvestor || el.dataset.openExternalInvestorRow;
+        if (id) openExternalInvestorDetail(id, { pushUrl: true });
+      });
+    });
+    if (message) message.textContent = '';
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="5">${escapeCeoHtml(error.message)}</td></tr>`;
+  }
+}
+
+function formatExternalLedgerType(type) {
+  return String(type || '')
+    .replace(/^external_/, '')
+    .replace(/_/g, ' ')
+    || '—';
+}
+
+async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) {
+  navigateToPage('external-investors', null, { syncUrl: false });
+  const listPanel = document.getElementById('externalInvestorsListPanel');
+  const detailPanel = document.getElementById('externalInvestorDetailPanel');
+  const content = document.getElementById('externalInvestorDetailContent');
+  if (!content) return;
+
+  if (listPanel) listPanel.classList.add('hidden');
+  if (detailPanel) detailPanel.classList.remove('hidden');
+  content.innerHTML = '<p class="table-subtitle">Loading external investor management view…</p>';
+
+  if (pushUrl) {
+    window.history.pushState({ externalInvestorId: investorId }, '', `/admin/external-investors/${investorId}`);
+  }
+
+  try {
+    const response = await fetch(`/api/admin/investments/external-investors/${investorId}/portfolio`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load external investor portfolio.');
+
+    const investor = data.investor || {};
+    const summary = data.summary || {};
+    const projects = data.projects || [];
+    const deposits = data.deposits || [];
+    const returns = data.returns || [];
+    const ledgerEntries = data.ledgerEntries || [];
+    const payoutRequests = data.payoutRequests || [];
+
+    content.innerHTML = `
+      <h2 style="margin:0 0 0.35rem;">${escapeCeoHtml(investor.name || 'External Investor')} · External Management</h2>
+      <p class="table-subtitle">${escapeCeoHtml(investor.email || '')}${investor.phone ? ` · ${escapeCeoHtml(investor.phone)}` : ''} · Status ${escapeCeoHtml(investor.status || 'active')}</p>
+      <div class="metrics-grid u-my-1">
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${summary.projectCount || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${formatMoney(Number(summary.capitalReceived || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit balance</span><strong class="metric-value">${formatMoney(Number(summary.profitBalance || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Ledger balance</span><strong class="metric-value">${formatMoney(Number(summary.ledgerBalance || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending payouts</span><strong class="metric-value">${summary.pendingPayouts || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Deposits recorded</span><strong class="metric-value">${summary.depositCount || 0}</strong></div></div>
+      </div>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">Project ownership shares</h3>
+        <p class="table-subtitle">External stakes only — society pool totals are not shown here.</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Asset / Type</th>
+                <th>Ownership</th>
+                <th>Capital</th>
+                <th>Profit</th>
+                <th>Ledger</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${projects.length ? projects.map((p) => {
+                const asset = [p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · ');
+                return `
+                  <tr>
+                    <td><strong>${escapeCeoHtml(p.investmentCode || '-')}</strong></td>
+                    <td>${escapeCeoHtml(p.investmentType || '-')}${asset ? `<br><span class="table-subtitle">${escapeCeoHtml(asset)}</span>` : ''}</td>
+                    <td>${Number(p.ownershipPct || 0).toFixed(2)}%</td>
+                    <td>${formatMoney(Number(p.capitalReceived || 0), 2)} / ${formatMoney(Number(p.capitalCommitted || 0), 2)}</td>
+                    <td>${formatMoney(Number(p.profitBalance || 0), 2)}</td>
+                    <td>${formatMoney(Number(p.ledgerBalance || 0), 2)}</td>
+                    <td>${escapeCeoHtml(p.status || '-')}</td>
+                  </tr>
+                `;
+              }).join('') : '<tr><td colspan="7">No project shares assigned yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">Capital deposits</h3>
+        <p class="table-subtitle">Inbound external capital recorded on the isolated external ledger (society bank unchanged).</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Amount</th>
+                <th>Note</th>
+                <th>Recorded by</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${deposits.length ? deposits.map((row) => `
+                <tr>
+                  <td>${row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}</td>
+                  <td>${formatMoney(Number(row.amount || 0), 2)}</td>
+                  <td>${escapeCeoHtml(row.note || '—')}</td>
+                  <td>${escapeCeoHtml(row.createdBy || '—')}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="4">No external capital deposits recorded yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">Returns &amp; profit activity</h3>
+        <p class="table-subtitle">Accruals, profit payouts, and capital returns on this investor’s projects.</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${returns.length ? returns.map((row) => `
+                <tr>
+                  <td>${row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}</td>
+                  <td>${escapeCeoHtml(formatExternalLedgerType(row.type))}</td>
+                  <td>${row.direction === 'debit' ? '−' : '+'}${formatMoney(Number(row.amount || 0), 2)}</td>
+                  <td>${escapeCeoHtml(row.payoutStatus || row.direction || '—')}</td>
+                  <td>${escapeCeoHtml(row.note || '—')}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="5">No return / profit activity yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">Payout approval queue</h3>
+        <p class="table-subtitle">Settlements and monthly profits waiting for this External Investor’s explicit approval before final ledger payout.</p>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Kind</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${payoutRequests.length ? payoutRequests.map((row) => `
+                <tr>
+                  <td>${escapeCeoHtml(row.investmentCode || '—')}</td>
+                  <td>${escapeCeoHtml(row.kind || row.source || '—')}</td>
+                  <td>${formatMoney(Number(row.amount || 0), 2)}</td>
+                  <td>${escapeCeoHtml(String(row.status || '').replace(/_/g, ' '))}</td>
+                  <td>${row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="5">No payout requests.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">Full external ledger</h3>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Balance after</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ledgerEntries.length ? ledgerEntries.map((row) => `
+                <tr>
+                  <td>${row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}</td>
+                  <td>${escapeCeoHtml(formatExternalLedgerType(row.type))}</td>
+                  <td>${row.direction === 'debit' ? '−' : '+'}${formatMoney(Number(row.amount || 0), 2)}</td>
+                  <td>${formatMoney(Number(row.balanceAfter || 0), 2)}</td>
+                  <td>${escapeCeoHtml(row.note || '—')}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="5">No ledger entries yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  } catch (error) {
+    content.innerHTML = `<p class="message error">${escapeCeoHtml(error.message)}</p>`;
   }
 }
 
@@ -2770,9 +3039,14 @@ function bindInvestorPmNavigation() {
     navigateToPage('project-managers');
     loadProjectManagersModule();
   });
+  document.getElementById('backToExternalInvestorsBtn')?.addEventListener('click', () => {
+    window.history.pushState({}, '', '/admin#external-investors');
+    navigateToPage('external-investors');
+    loadExternalInvestorsModule();
+  });
 
   window.addEventListener('hashchange', () => {
-    if (/^\/admin\/(investors|project-managers)\//i.test(window.location.pathname)
+    if (/^\/admin\/(investors|external-investors|project-managers)\//i.test(window.location.pathname)
       || /^\/members\//i.test(window.location.pathname)) {
       return;
     }
@@ -2786,11 +3060,16 @@ function bindInvestorPmNavigation() {
 function handleAdminDeepLink() {
   const path = window.location.pathname;
   const investorMatch = path.match(/^\/admin\/investors\/([a-f\d]{24})$/i);
+  const externalInvestorMatch = path.match(/^\/admin\/external-investors\/([a-f\d]{24})$/i);
   const pmMatch = path.match(/^\/admin\/project-managers\/([a-f\d]{24})$/i);
   const memberMatch = path.match(/^\/members\/([^/]+)$/i);
 
   if (investorMatch) {
     openInvestorDetail(investorMatch[1], { pushUrl: false });
+    return true;
+  }
+  if (externalInvestorMatch) {
+    openExternalInvestorDetail(externalInvestorMatch[1], { pushUrl: false });
     return true;
   }
   if (pmMatch) {
