@@ -46,7 +46,7 @@ test('createSocietyInvestment rejects internal investor role for co-funding stak
     investmentService,
     /role:\s*'external_investor'[\s\S]*Internal Investors cannot be used/
   );
-  assert.match(investmentService, /User Management → External Investors/);
+  assert.match(investmentService, /User Management \(External Investors tab\)/);
 });
 
 test('API exposes dedicated external-investors endpoint', () => {
@@ -65,7 +65,7 @@ test('Create Project dropdown loads external investors only', () => {
   assert.match(optionsFn, /investmentFormOptions\.externalInvestors/);
   assert.doesNotMatch(optionsFn, /investmentFormOptions\.investors/);
   assert.match(adminHtml, /External Investors/);
-  assert.match(adminHtml, /Internal Investors and project managers are not listed/);
+  assert.match(adminHtml, /Investor \/ Operator and Project Manager assigned above are not listed/);
 });
 
 test('User Management exposes External Investors tab for registration', () => {

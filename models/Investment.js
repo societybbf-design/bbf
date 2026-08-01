@@ -89,12 +89,21 @@ const InvestmentSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
+  /**
+   * Assigned Investor / Operator (User.role === 'investor').
+   * Runs the project using society-pool (and any external co-funding) capital.
+   * Distinct from externalInvestors[], who only co-own capital stakes.
+   */
   investor: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null,
     index: true,
   },
+  /**
+   * Supervising Project Manager (User.role === 'project_manager').
+   * Oversees the operator, tracks activity, and reports through approvals.
+   */
   projectManager: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
