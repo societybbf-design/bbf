@@ -601,6 +601,10 @@ function showStaffView(viewId, { forceReload = false } = {}) {
   if (!isCashierRole() && CASHIER_ONLY_VIEWS.has(next)) {
     next = 'home';
   }
+  // Project Managers never open deposit tracking (even via deep link).
+  if ((staffSessionUser?.role || '') === 'project_manager' && next === 'tracking') {
+    next = 'home';
+  }
   const prev = staffCurrentView;
   const sameView = prev === next;
   const cacheFresh = isStaffViewCacheFresh(next);
