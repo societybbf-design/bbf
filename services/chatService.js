@@ -11,6 +11,8 @@ const MAX_MESSAGE_LENGTH = 2000;
 const MAX_ATTACHMENTS = 4;
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
 const STAFF_CHAT_ROLES = ['ceo', 'cashier', 'project_manager', 'employee', 'developer', 'admin'];
+/** Roles allowed as peers/senders for External Investor ↔ CEO/PM messaging. */
+const EXTERNAL_CHAT_PEER_ROLES = ['ceo', 'admin', 'project_manager', 'external_investor'];
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -315,7 +317,11 @@ async function assertStaffPeer(userId) {
   const user = await User.findById(userId).select('name email role status');
   if (!user) throw httpError('Staff user not found.', 404);
   const role = normalizeRole(user.role);
-  if (!STAFF_CHAT_ROLES.includes(role)) {
+  const rawRole = String(user.role || '').toLowerCase();
+  const allowed = STAFF_CHAT_ROLES.includes(role)
+    || rawRole === 'external_investor'
+    || EXTERNAL_CHAT_PEER_ROLES.includes(rawRole);
+  if (!allowed) {
     throw httpError('Selected user is not available for staff messaging.', 400);
   }
   if (user.status === 'deleted') {
@@ -326,8 +332,14 @@ async function assertStaffPeer(userId) {
 
 async function getStaffChatDirectory(viewer) {
   const viewerId = String(viewer?.id || viewer?._id || '');
+  const viewerRole = normalizeRole(viewer?.role);
+  const roleFilter = [...STAFF_CHAT_ROLES];
+  // CEO/admin can message External Investors; PMs see external investors on their projects via portal.
+  if (viewerRole === 'ceo' || String(viewer?.role || '').toLowerCase() === 'admin') {
+    roleFilter.push('external_investor');
+  }
   const peers = await User.find({
-    role: { $in: STAFF_CHAT_ROLES },
+    role: { $in: roleFilter },
     status: { $in: ['active', 'inactive'] },
     _id: { $ne: viewerId },
   })
@@ -431,9 +443,25 @@ async function sendStaffMessage({
   }
 
   const peer = await assertStaffPeer(peerId);
+  const senderRawRole = String(sender.role || '').toLowerCase();
   const senderRole = normalizeRole(sender.role);
-  if (!STAFF_CHAT_ROLES.includes(senderRole)) {
+  const peerRawRole = String(peer.role || '').toLowerCase();
+  const peerRole = normalizeRole(peer.role);
+  const senderOk = STAFF_CHAT_ROLES.includes(senderRole) || senderRawRole === 'external_investor';
+  if (!senderOk) {
     throw httpError('Your role cannot use staff messaging.', 403);
+  }
+  // External investors may only message CEO/admin or Project Managers.
+  if (senderRawRole === 'external_investor') {
+    if (!['ceo', 'admin', 'project_manager'].includes(peerRawRole) && peerRole !== 'ceo') {
+      throw httpError('External Investors can only message the CEO or their Project Manager.', 403);
+    }
+  }
+  // Staff messaging an external investor: only CEO/admin (or PM) may initiate.
+  if (peerRawRole === 'external_investor') {
+    if (!['ceo', 'admin', 'project_manager'].includes(senderRawRole) && senderRole !== 'ceo') {
+      throw httpError('Only the CEO or Project Manager can message External Investors.', 403);
+    }
   }
 
   const trimmedBody = String(body || '').trim();
@@ -499,6 +527,7 @@ async function sendStaffMessage({
 module.exports = {
   MAX_MESSAGE_LENGTH,
   STAFF_CHAT_ROLES,
+  EXTERNAL_CHAT_PEER_ROLES,
   serializeMessage,
   getMessagesForMember,
   markMessagesReadForAdmin,

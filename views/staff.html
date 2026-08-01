@@ -109,6 +109,20 @@
                 <div class="metrics-grid" id="staffRoleHomeModules"></div>
               </section>
 
+              <section class="panel-card hidden" id="externalInvestorHomeCard" data-external-investor-home aria-label="External investor portfolio">
+                <div class="panel-card-header">
+                  <h3>Your external portfolio</h3>
+                  <p class="text-secondary">
+                    Isolated view of your stakes, deposits, profits, and pending payout approvals. Society pool and member data are not shown.
+                  </p>
+                </div>
+                <div class="metrics-grid" id="externalInvestorHomeMetrics"></div>
+                <div class="inline-actions u-mt-1" style="gap:0.5rem;flex-wrap:wrap;">
+                  <button type="button" class="primary-btn" data-staff-nav="external-portal">Open portfolio</button>
+                  <button type="button" class="secondary-btn" data-staff-nav="external-chat">Message CEO / PM</button>
+                </div>
+              </section>
+
               <section class="cashier-summary-grid" data-cashier-home-only aria-label="Monthly payment status">
                 <article class="cashier-summary-card cashier-summary-paid">
                   <div class="cashier-summary-head">
@@ -1042,6 +1056,107 @@
         </div>
 
         <!-- CHAT / MESSENGER -->
+        <div class="panel-card hidden" data-staff-view="external-portal" id="moduleExternalPortal">
+          <div class="panel-card-header">
+            <div>
+              <h2>External Investor portal</h2>
+              <p class="text-secondary">Your projects, ledger activity, payout approvals, and Project Manager reviews — your data only.</p>
+            </div>
+            <button type="button" class="secondary-btn" id="externalPortalRefreshBtn">Refresh</button>
+          </div>
+          <div class="metrics-grid u-mb-1" id="externalPortalMetrics"></div>
+          <div class="form-row-2">
+            <section class="panel-card">
+              <h3>Assigned projects</h3>
+              <div id="externalPortalProjects" class="stack-list"><p class="text-secondary">Loading…</p></div>
+            </section>
+            <section class="panel-card">
+              <h3>Pending payout approvals</h3>
+              <div id="externalPortalPayouts" class="stack-list"><p class="text-secondary">Loading…</p></div>
+            </section>
+          </div>
+          <div class="form-row-2 u-mt-1">
+            <section class="panel-card">
+              <h3>Deposits &amp; ledger</h3>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="externalPortalDepositsBody">
+                    <tr><td colspan="4">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <section class="panel-card">
+              <h3>Project Manager review</h3>
+              <form id="externalPmReviewForm" class="add-member-form">
+                <div class="form-group">
+                  <label>
+                    Project
+                    <select id="externalPmReviewProject" required>
+                      <option value="">Choose project…</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>
+                    Rating (1–5)
+                    <input type="number" id="externalPmReviewRating" min="1" max="5" step="1" value="5" required />
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label>
+                    Feedback
+                    <textarea id="externalPmReviewFeedback" rows="3" maxlength="2000" placeholder="Share feedback about your Project Manager…"></textarea>
+                  </label>
+                </div>
+                <button type="submit" class="primary-btn">Submit review</button>
+                <p id="externalPmReviewMessage" class="message"></p>
+              </form>
+              <div id="externalPortalReviews" class="stack-list u-mt-1"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="panel-card hidden" data-staff-view="external-chat" id="moduleExternalChat">
+          <div class="panel-card-header">
+            <div>
+              <h2>Secure messages</h2>
+              <p class="text-secondary">Chat directly with the CEO and your assigned Project Manager.</p>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div>
+              <h3>Contacts</h3>
+              <div id="externalChatPeers" class="stack-list"><p class="text-secondary">Loading…</p></div>
+            </div>
+            <div>
+              <h3 id="externalChatTitle">Conversation</h3>
+              <div id="externalChatMessages" class="chat-thread" style="min-height:220px;max-height:360px;overflow:auto;border:1px solid var(--border-color, #ddd);padding:0.75rem;border-radius:8px;">
+                <p class="text-secondary">Select a contact to start messaging.</p>
+              </div>
+              <form id="externalChatForm" class="add-member-form u-mt-1">
+                <input type="hidden" id="externalChatPeerId" value="" />
+                <div class="form-group">
+                  <label>
+                    Message
+                    <textarea id="externalChatBody" rows="2" maxlength="2000" placeholder="Write a message…" required></textarea>
+                  </label>
+                </div>
+                <button type="submit" class="primary-btn" id="externalChatSendBtn" disabled>Send</button>
+                <p id="externalChatMessage" class="message"></p>
+              </form>
+            </div>
+          </div>
+        </div>
+
         <div class="panel-card hidden" data-staff-view="chat" id="moduleChat">
           <div class="panel-card-header">
             <h2>Messenger</h2>

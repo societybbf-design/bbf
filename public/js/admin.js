@@ -2080,6 +2080,7 @@ function updateProjectLiquidatePreview() {
   const sale = Number(document.getElementById('projectLiquidateSaleAmount')?.value || 0);
   const costs = Number(document.getElementById('projectLiquidateCosts')?.value || 0);
   const tax = Number(document.getElementById('projectLiquidateTax')?.value || 0);
+  const externalExtra = Math.max(0, Number(document.getElementById('projectLiquidateExternalExpenses')?.value || 0));
   const capital = Number(item.amount || 0);
   const netProceeds = Number((sale - costs - tax).toFixed(2));
   const netProfit = Number((netProceeds - capital).toFixed(2));
@@ -2096,6 +2097,7 @@ function updateProjectLiquidatePreview() {
   let allocatedCapital = societyCapital;
   let allocatedProfit = societyProfit;
   let allocatedLoss = societyLoss;
+  let remainingExtra = externalExtra;
   const investorCards = (stakes.length
     ? stakes
     : (Number(item.investorOwnershipPct) > 0
@@ -2122,18 +2124,24 @@ function updateProjectLiquidatePreview() {
       allocatedLoss = Number((allocatedLoss + lossShare).toFixed(2));
     }
     const accrued = Number(stake.profitBalance || 0);
-    const payout = Number(Math.max(0, capitalShare + profitShare - lossShare + accrued).toFixed(2));
+    let profitPool = Number(Math.max(0, profitShare - lossShare + accrued).toFixed(2));
+    const expenseTaken = Number(Math.min(remainingExtra, profitPool).toFixed(2));
+    remainingExtra = Number((remainingExtra - expenseTaken).toFixed(2));
+    profitPool = Number((profitPool - expenseTaken).toFixed(2));
+    const payout = Number(Math.max(0, capitalShare + profitPool).toFixed(2));
     return `
       <div class="metric-card"><div class="metric-content">
         <span class="metric-label">${escapeHtml(stake.investorName || stake.investor?.name || 'Investor')} (${Number(stake.ownershipPct || 0)}%)</span>
         <strong class="metric-value">${formatMoney(payout, 2)}</strong>
+        <span class="table-subtitle">Queued for external approval${expenseTaken > 0 ? ` · expense −${formatMoney(expenseTaken, 2)}` : ''}</span>
       </div></div>
     `;
   });
+  const expenseApplied = Number((externalExtra - remainingExtra).toFixed(2));
 
   box.innerHTML = `
     <p><strong>${escapeHtml(item.investmentCode || '')}</strong> · ${escapeHtml(projectOwnershipLabel(item))} · ${escapeHtml(projectReturnModeLabel(item.returnMode))}</p>
-    <p class="table-subtitle">Capital ${formatMoney(capital, 2)} · Net proceeds ${formatMoney(netProceeds, 2)} · Net P/L ${netProfit >= 0 ? '+' : '-'}${formatMoney(Math.abs(netProfit), 2)}</p>
+    <p class="table-subtitle">Capital ${formatMoney(capital, 2)} · Net proceeds ${formatMoney(netProceeds, 2)} · Net P/L ${netProfit >= 0 ? '+' : '-'}${formatMoney(Math.abs(netProfit), 2)}${expenseApplied > 0 ? ` · External expense ${formatMoney(expenseApplied, 2)}` : ''}</p>
     <div class="metrics-grid u-my-1">
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Society capital</span><strong class="metric-value">${formatMoney(societyCapital, 2)}</strong></div></div>
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Society profit share</span><strong class="metric-value">${formatMoney(societyProfit, 2)}</strong></div></div>
@@ -2589,7 +2597,7 @@ function bindProjectsModule() {
       }
     }, 300);
   });
-  ['projectLiquidateSaleAmount', 'projectLiquidateCosts', 'projectLiquidateTax'].forEach((id) => {
+  ['projectLiquidateSaleAmount', 'projectLiquidateCosts', 'projectLiquidateTax', 'projectLiquidateExternalExpenses'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', updateProjectLiquidatePreview);
   });
 
@@ -2616,6 +2624,7 @@ function bindProjectsModule() {
       saleAmount: Number(Number(document.getElementById('projectLiquidateSaleAmount')?.value || 0).toFixed(2)),
       additionalCosts: Number(Number(document.getElementById('projectLiquidateCosts')?.value || 0).toFixed(2)),
       tax: Number(Number(document.getElementById('projectLiquidateTax')?.value || 0).toFixed(2)),
+      externalExtraExpenses: Number(Number(document.getElementById('projectLiquidateExternalExpenses')?.value || 0).toFixed(2)),
       notes: document.getElementById('projectLiquidateNotes')?.value?.trim() || '',
     };
     if (!(payload.saleAmount >= 0) || !Number.isFinite(payload.saleAmount)) {
@@ -2660,6 +2669,9 @@ function bindProjectsModule() {
       form.reset();
       document.getElementById('projectLiquidateCosts').value = '0';
       document.getElementById('projectLiquidateTax').value = '0';
+      if (document.getElementById('projectLiquidateExternalExpenses')) {
+        document.getElementById('projectLiquidateExternalExpenses').value = '0';
+      }
       document.getElementById('projectLiquidateCode').value = '';
       setProjectLiquidateTarget(null, { scroll: false });
       await loadProjectsModule();
@@ -2686,6 +2698,7 @@ function bindProjectsModule() {
 
     const projectId = document.getElementById('projectMonthlySelect')?.value;
     const amount = Number(document.getElementById('projectMonthlyAmount')?.value || 0);
+    const externalExtraExpenses = Number(Number(document.getElementById('projectMonthlyExternalExpenses')?.value || 0).toFixed(2));
     const notes = document.getElementById('projectMonthlyNotes')?.value?.trim() || '';
     if (!projectId || !(amount > 0)) {
       if (messageEl) {
@@ -2699,7 +2712,7 @@ function bindProjectsModule() {
       const response = await fetch(`/api/admin/investments/${projectId}/monthly-return`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, notes }),
+        body: JSON.stringify({ amount, notes, externalExtraExpenses }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to record monthly return.');

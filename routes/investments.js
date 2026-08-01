@@ -354,6 +354,7 @@ router.post('/:id/monthly-return', requirePermission('can_manage_deposits', 'can
     const result = await recordMonthlyProjectReturn({
       investmentId: req.params.id,
       profitAmount: req.body?.profitAmount || req.body?.amount,
+      externalExtraExpenses: req.body?.externalExtraExpenses || req.body?.externalExpenses || 0,
       notes: req.body?.notes,
       recordedBy: req.session?.user?.name || 'Cashier',
       yearMonth: req.body?.yearMonth || null,
@@ -398,6 +399,7 @@ router.post('/:id/liquidate', requirePermission('can_manage_profit'), requirePas
       saleAmount: req.body?.saleAmount,
       additionalCosts: req.body?.additionalCosts,
       tax: req.body?.tax,
+      externalExtraExpenses: req.body?.externalExtraExpenses || req.body?.externalExpenses || 0,
       notes: req.body?.notes,
       productName: req.body?.productName,
       recordedBy: req.session?.user?.name || 'Admin',

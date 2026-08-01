@@ -38,6 +38,7 @@ const { seedDefaultUsers } = require('./services/seedService');
 const { ensureDefaultInvestmentTypes } = require('./services/investmentTypeService');
 const { startScheduledJobs, stopScheduledJobs } = require('./services/scheduledJobsService');
 const { isFullAccessRole, isDeveloperRole, canAccessDeveloperModule, dashboardPathForRole } = require('./services/rbac');
+const { requireAuth } = require('./middleware/auth');
 
 require('dotenv').config();
 
@@ -207,6 +208,7 @@ function buildApp(sessionStore) {
   app.use('/api/member/notifications', memberNotificationRoutes);
   app.use('/api/admin/chat', adminChatRoutes);
   app.use('/api/member/chat', memberChatRoutes);
+  app.use('/api/external-investor', requireAuth, require('./routes/externalInvestor'));
 
   function ensureAuthPage(req, res, next) {
     if (req.session?.user) return next();

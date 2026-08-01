@@ -213,6 +213,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
   ],
   external_investor: [
     'can_view_reports',
+    'can_manage_chat',
   ],
   member: [],
 });
