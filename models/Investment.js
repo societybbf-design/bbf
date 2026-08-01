@@ -305,6 +305,49 @@ const InvestmentSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /**
+   * initial — greenfield society project
+   * capital_expansion — funding round that increases an existing running project's capital
+   *   after member approval + cashier payment (parentInvestment required)
+   */
+  fundingKind: {
+    type: String,
+    enum: ['initial', 'capital_expansion'],
+    default: 'initial',
+    index: true,
+  },
+  parentInvestment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Investment',
+    default: null,
+    index: true,
+  },
+  expansionAppliedAt: {
+    type: Date,
+    default: null,
+  },
+  expansionAppliedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  /** Audit trail of capital expansions applied onto this running project. */
+  capitalExpansionHistory: {
+    type: [{
+      expansionInvestment: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Investment',
+        default: null,
+      },
+      expansionCode: { type: String, trim: true, default: '' },
+      amount: { type: Number, default: 0, min: 0 },
+      societyAmount: { type: Number, default: 0, min: 0 },
+      externalAmount: { type: Number, default: 0, min: 0 },
+      appliedAt: { type: Date, default: Date.now },
+      appliedBy: { type: String, trim: true, default: '' },
+    }],
+    default: [],
+  },
   createdBy: {
     type: String,
     trim: true,

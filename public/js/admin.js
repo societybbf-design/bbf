@@ -2011,6 +2011,43 @@ function updateProjectLiquidatePreview() {
   `;
 }
 
+function populateProjectExpandSelect(activeProjects = []) {
+  const select = document.getElementById('projectExpandParentSelect');
+  if (!select) return;
+  const current = select.value || document.getElementById('projectExpandParentId')?.value || '';
+  const rows = (activeProjects || []).filter((p) => p.status === 'active' && !p.ledgerLockedAt);
+  select.innerHTML = `<option value="">Choose running project…</option>${rows.map((p) => `
+    <option value="${p._id}">${escapeHtml(p.investmentCode || p._id)} · ${formatMoney(Number(p.amount || 0), 2)}</option>
+  `).join('')}`;
+  if (current && rows.some((p) => String(p._id) === String(current))) {
+    select.value = current;
+  }
+}
+
+function setProjectExpandTarget(item, { scroll = true } = {}) {
+  const idEl = document.getElementById('projectExpandParentId');
+  const select = document.getElementById('projectExpandParentSelect');
+  const summaryEl = document.getElementById('projectExpandSummary');
+  if (idEl) idEl.value = item?._id || '';
+  if (select && item?._id) {
+    if (![...select.options].some((opt) => opt.value === String(item._id))) {
+      const opt = document.createElement('option');
+      opt.value = item._id;
+      opt.textContent = `${item.investmentCode || item._id} · ${formatMoney(Number(item.amount || 0), 2)}`;
+      select.appendChild(opt);
+    }
+    select.value = String(item._id);
+  }
+  if (summaryEl) {
+    summaryEl.textContent = item
+      ? `${item.investmentCode || 'Project'} current capital ${formatMoney(Number(item.amount || 0), 2)} · ownership ${projectOwnershipLabel(item)}. Core terms stay unchanged.`
+      : 'Select a running project to expand.';
+  }
+  if (scroll) {
+    document.getElementById('projectExpandCapitalPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
 function setProjectLiquidateTarget(item, { scroll = true } = {}) {
   projectLiquidateState = item || null;
   const idEl = document.getElementById('projectLiquidateId');
@@ -2103,7 +2140,7 @@ async function loadProjectsModule() {
     if (closedCount) closedCount.textContent = String(closed.length);
     if (capitalEl) {
       const capital = open
-        .filter((p) => p.status === 'active')
+        .filter((p) => p.status === 'active' && p.fundingKind !== 'capital_expansion')
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
       capitalEl.textContent = formatMoney(capital, 2);
     }
@@ -2123,9 +2160,12 @@ async function loadProjectsModule() {
             <td>${escapeHtml(projectExternalCapitalLabel(item))}</td>
             <td>${escapeHtml(item.displayStatus || item.status || '-')}</td>
             <td>
-              ${item.status === 'active' && !item.ledgerLockedAt
-                ? `<button type="button" class="secondary-btn" data-liquidate-project="${item._id}">Liquidate</button>`
-                : '<span class="kpi-footnote">—</span>'}
+              ${item.status === 'active' && !item.ledgerLockedAt && item.fundingKind !== 'capital_expansion'
+                ? `<button type="button" class="secondary-btn" data-expand-project="${item._id}">Expand capital</button>
+                   <button type="button" class="secondary-btn" data-liquidate-project="${item._id}">Liquidate</button>`
+                : (item.fundingKind === 'capital_expansion'
+                  ? '<span class="kpi-footnote">Expansion round</span>'
+                  : '<span class="kpi-footnote">—</span>')}
             </td>
           </tr>
         `).join('')
@@ -2137,6 +2177,13 @@ async function loadProjectsModule() {
           if (item) setProjectLiquidateTarget(item);
         });
       });
+      openBody.querySelectorAll('[data-expand-project]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const item = open.find((p) => String(p._id) === String(btn.dataset.expandProject));
+          if (item) setProjectExpandTarget(item);
+        });
+      });
+      populateProjectExpandSelect(active.filter((p) => p.fundingKind !== 'capital_expansion' && !p.ledgerLockedAt));
     }
 
     if (closedBody) {
@@ -2211,6 +2258,57 @@ function bindProjectsModule() {
   document.getElementById('projectReturnMode')?.addEventListener('change', (event) => {
     const termFields = document.getElementById('projectTermFields');
     if (termFields) termFields.classList.toggle('hidden', event.target.value === 'monthly');
+  });
+
+  document.getElementById('projectExpandParentSelect')?.addEventListener('change', (event) => {
+    const id = event.target.value;
+    const active = (projectsModuleCache?.open || []).filter((p) => p.status === 'active');
+    const item = active.find((p) => String(p._id) === String(id));
+    setProjectExpandTarget(item || null, { scroll: false });
+  });
+
+  document.getElementById('projectExpandCapitalForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const messageEl = document.getElementById('projectExpandMessage');
+    if (messageEl) {
+      messageEl.textContent = '';
+      messageEl.classList.remove('success', 'error');
+    }
+    const parentId = document.getElementById('projectExpandParentId')?.value
+      || document.getElementById('projectExpandParentSelect')?.value
+      || '';
+    const expansionAmount = Number(document.getElementById('projectExpandAmount')?.value || 0);
+    const notes = document.getElementById('projectExpandNotes')?.value || '';
+    if (!parentId || !(expansionAmount > 0)) {
+      if (messageEl) {
+        messageEl.classList.add('error');
+        messageEl.textContent = 'Choose a running project and enter an expansion amount greater than zero.';
+      }
+      return;
+    }
+    try {
+      const response = await fetch(`/api/admin/investments/${encodeURIComponent(parentId)}/expand-capital`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expansionAmount, notes }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to propose capital expansion.');
+      if (messageEl) {
+        messageEl.classList.add('success');
+        messageEl.textContent = data.message
+          || `Capital expansion ${data.investment?.investmentCode || ''} submitted for member approval.`;
+      }
+      event.target.reset();
+      document.getElementById('projectExpandParentId').value = '';
+      setProjectExpandTarget(null, { scroll: false });
+      await loadProjectsModule();
+    } catch (error) {
+      if (messageEl) {
+        messageEl.classList.add('error');
+        messageEl.textContent = error.message;
+      }
+    }
   });
 
   document.getElementById('projectCreateForm')?.addEventListener('submit', async (event) => {

@@ -7,6 +7,7 @@ const {
   coverCashierPaymentShortfallFromAdvance,
   coverCashierPaymentShortfallFromReserve,
   createSocietyInvestment,
+  proposeCapitalExpansion,
   deleteInvestment,
   getGroupedSocietyInvestments,
   getInvestmentApprovalDetails,
@@ -448,6 +449,27 @@ router.post('/', requirePermission('can_manage_investments'), requirePasswordCon
     return res.status(201).json(result);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to save investment.' });
+  }
+});
+
+/** CEO: propose capital expansion on a running project → member approval → existing cashier queue. */
+router.post('/:id/expand-capital', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await proposeCapitalExpansion({
+      parentInvestmentId: req.params.id,
+      expansionAmount: req.body?.expansionAmount ?? req.body?.amount,
+      notes: req.body?.notes || '',
+      createdBy: req.session?.user?.name || 'CEO',
+      societyOwnershipPct: req.body?.societyOwnershipPct,
+      investorOwnershipPct: req.body?.investorOwnershipPct,
+      societyAmount: req.body?.societyAmount,
+      externalAmount: req.body?.externalAmount,
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to propose capital expansion.',
+    });
   }
 });
 

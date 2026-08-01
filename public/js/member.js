@@ -1240,21 +1240,28 @@ async function loadMemberInvestmentRequests() {
       const docs = (item.documents || []).map((doc) => `
         <li><a href="${doc.filePath}" target="_blank" rel="noopener">${doc.originalName || 'Document'}</a></li>
       `).join('') || '<li>No documents attached.</li>';
+      const isExpansion = item.fundingKind === 'capital_expansion' || item.isCapitalExpansion;
+      const title = item.requestTitle
+        || (isExpansion
+          ? `Capital expansion · ${item.parentInvestment?.investmentCode || item.investmentCode || 'Project'}`
+          : `${item.investmentCode || 'Investment'} · ${item.investmentType || ''}`);
+      const approveLabel = isExpansion ? 'Approve Capital Expansion' : 'Approve Investment';
 
       return `
         <article class="panel-card" style="margin-bottom: 0.85rem;" data-request-id="${item._id}">
-          <h3 style="margin:0 0 0.35rem;">${item.investmentCode || 'Investment'} · ${item.investmentType || ''}</h3>
+          <h3 style="margin:0 0 0.35rem;">${escapeHtml(title)}</h3>
           <p class="table-subtitle">
-            Investor: ${item.investorName || item.investor?.name || '-'} ·
-            Amount: ${formatMoney(Number(item.amount || 0), 2)} ·
-            Approvals: ${item.approvalCount || 0}/${item.requiredApprovals || 0}
+            ${isExpansion
+              ? `Additional capital: ${formatMoney(Number(item.amount || 0), 2)} · Parent stays ${escapeHtml(item.parentInvestment?.investmentCode || 'same project ID')}`
+              : `Investor: ${escapeHtml(item.investorName || item.investor?.name || '-')} · Amount: ${formatMoney(Number(item.amount || 0), 2)}`}
+            · Approvals: ${item.approvalCount || 0}/${item.requiredApprovals || 0}
           </p>
-          <p>${item.notes || 'No notes provided.'}</p>
+          <p>${escapeHtml(item.notes || 'No notes provided.')}</p>
           <h4>Documents</h4>
           <ul>${docs}</ul>
           ${item.alreadyApproved
             ? '<p class="message success">You already approved this request.</p>'
-            : `<button type="button" class="primary-btn" data-approve-investment="${item._id}">Approve Investment</button>`}
+            : `<button type="button" class="primary-btn" data-approve-investment="${item._id}">${approveLabel}</button>`}
         </article>
       `;
     }).join('');
