@@ -73,8 +73,13 @@ const PERMISSIONS = Object.freeze([
   },
   {
     key: 'can_manage_withdrawals',
-    label: 'Manage withdrawals',
-    description: 'Review and process withdrawal requests.',
+    label: 'Review withdrawals',
+    description: 'Approve or reject member withdrawal requests (CEO). Cashier disbursement is separate.',
+  },
+  {
+    key: 'can_disburse_withdrawals',
+    label: 'Disburse withdrawals',
+    description: 'Pay CEO-approved withdrawals from the member Advance Balance (Cashier only).',
   },
   {
     key: 'can_manage_loans',
@@ -150,6 +155,7 @@ const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze([
   'can_disburse_loans',
   'can_manage_deposits',
   'can_disburse_refunds',
+  'can_disburse_withdrawals',
 ]);
 
 /** User Management–only permissions (developer role or explicit grant — not CEO full-access bypass). */
@@ -174,7 +180,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
   ],
   cashier: [
     'can_manage_deposits',
-    'can_manage_withdrawals',
+    'can_disburse_withdrawals',
     'can_disburse_refunds',
     'can_disburse_loans',
     'can_manage_profit',
@@ -298,9 +304,14 @@ function publicUserPayload(userDoc) {
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_disburse_refunds')) {
     permissions = [...permissions, 'can_disburse_refunds'];
   }
-  // Refund review stays with CEO; strip legacy can_manage_refunds from cashier sessions.
+  if (normalizeRole(role) === 'cashier' && !permissions.includes('can_disburse_withdrawals')) {
+    permissions = [...permissions, 'can_disburse_withdrawals'];
+  }
+  // Refund/withdrawal review stays with CEO; strip legacy review keys from cashier sessions.
   if (normalizeRole(role) === 'cashier') {
-    permissions = permissions.filter((key) => key !== 'can_manage_refunds');
+    permissions = permissions.filter(
+      (key) => key !== 'can_manage_refunds' && key !== 'can_manage_withdrawals'
+    );
   }
   // Ensure cashiers retain Profit & Loss management even if stored permissions predate the grant.
   if (normalizeRole(role) === 'cashier' && !permissions.includes('can_manage_profit')) {

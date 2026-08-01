@@ -220,54 +220,80 @@ async function collectStaffItems(user) {
     }
   }
 
-  if (userHasPermission(user, 'can_manage_withdrawals')) {
-    const pendingWithdrawals = await WithdrawalRequest.find({ status: { $in: ['pending', 'approved'] } })
-      .populate('member', 'name email')
+  // CEO reviews pending withdrawal requests.
+  if (userHasPermission(user, 'can_manage_withdrawals') && !isCashier) {
+    const pendingWithdrawals = await WithdrawalRequest.find({ status: 'pending' })
+      .populate('member', 'name email advanceBalance')
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
     for (const row of pendingWithdrawals) {
-      const actions = [];
-      if (row.status === 'pending') {
-        actions.push({
-          key: 'approve',
-          label: 'Accept',
-          method: 'PATCH',
-          path: `/api/withdrawals/admin/${row._id}`,
-          body: { status: 'approved' },
-          requiresPassword: true,
-        });
-        actions.push({
-          key: 'reject',
-          label: 'Reject',
-          method: 'PATCH',
-          path: `/api/withdrawals/admin/${row._id}`,
-          body: { status: 'rejected' },
-          requiresPassword: true,
-        });
-      }
-      if (row.status === 'approved') {
-        actions.push({
-          key: 'complete',
-          label: 'Mark processed',
-          method: 'PATCH',
-          path: `/api/withdrawals/admin/${row._id}`,
-          body: { status: 'processed' },
-          requiresPassword: true,
-        });
-      }
       items.push(item({
         id: `withdrawal:${row._id}`,
         type: 'withdrawal',
         title: `Withdrawal — ${row.member?.name || 'Member'}`,
-        subtitle: row.status === 'pending' ? 'Awaiting approval' : 'Approved — ready to process',
+        subtitle: `Awaiting CEO approval · Advance ${formatMoney(Number(row.member?.advanceBalance || 0), 2)}`,
         amount: row.amount,
         status: row.status,
-        priority: row.status === 'pending' ? 'high' : 'normal',
+        priority: 'high',
         createdAt: row.createdAt,
         entityId: row._id,
-        actions,
-        deepLink: { dashboard: isCashier ? 'staff' : 'admin', hash: '#withdrawals' },
+        actions: [
+          {
+            key: 'approve',
+            label: 'Accept',
+            method: 'POST',
+            path: `/api/withdrawals/admin/${row._id}/approve`,
+            body: {},
+            requiresPassword: true,
+          },
+          {
+            key: 'reject',
+            label: 'Reject',
+            method: 'POST',
+            path: `/api/withdrawals/admin/${row._id}/reject`,
+            body: {},
+            requiresPassword: true,
+          },
+        ],
+        deepLink: { dashboard: 'admin', hash: '#withdrawals' },
+      }));
+    }
+  }
+
+  // Cashier pays only CEO-approved withdrawals from Advance Balance.
+  if (userHasPermission(user, 'can_disburse_withdrawals') && isCashier) {
+    const approvedWithdrawals = await WithdrawalRequest.find({ status: 'approved' })
+      .populate('member', 'name email advanceBalance')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    for (const row of approvedWithdrawals) {
+      const advance = Number(row.member?.advanceBalance || 0);
+      const enough = advance + 0.001 >= Number(row.amount || 0);
+      items.push(item({
+        id: `withdrawal_pay:${row._id}`,
+        type: 'withdrawal',
+        title: `Withdrawal payout — ${row.member?.name || 'Member'}`,
+        subtitle: enough
+          ? `CEO approved · Advance ${formatMoney(advance, 2)} — ready to pay`
+          : `CEO approved · Insufficient Advance ${formatMoney(advance, 2)} — payout blocked`,
+        amount: row.amount,
+        status: row.status,
+        priority: enough ? 'high' : 'normal',
+        createdAt: row.createdAt,
+        entityId: row._id,
+        actions: enough
+          ? [{
+            key: 'complete',
+            label: 'Pay from Advance',
+            method: 'POST',
+            path: `/api/withdrawals/admin/${row._id}/cashier-complete`,
+            body: { paymentMethod: 'cash' },
+            requiresPassword: true,
+          }]
+          : [],
+        deepLink: { dashboard: 'staff', hash: '#withdrawals' },
       }));
     }
   }

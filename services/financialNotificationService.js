@@ -51,16 +51,16 @@ async function notifyWithdrawalEvent({
     await createAdminNotification({
       type: 'withdrawal',
       title: `Withdrawal request from ${member.name}`,
-      message: `${member.name} requested ${amountLabel}.`,
+      message: `${member.name} requested ${amountLabel} from Advance Balance. CEO approval required before Cashier payout.`,
       relatedId: request._id,
       relatedModel: 'WithdrawalRequest',
-      targetRoles: ['ceo', 'cashier'],
+      targetRoles: ['ceo'],
     });
     await createMemberNotification({
       memberId: member._id,
       type: 'withdrawal',
       title: 'Withdrawal request submitted',
-      message: `Your withdrawal request for ${amountLabel} has been submitted and is awaiting review.`,
+      message: `Your withdrawal request for ${amountLabel} has been submitted and is awaiting CEO approval. Payouts come from your Advance Balance only.`,
       relatedId: request._id,
       relatedModel: 'WithdrawalRequest',
     });

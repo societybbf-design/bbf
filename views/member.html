@@ -492,12 +492,16 @@
       <section class="page-section" data-page-section="withdrawals">
         <section class="panel-card card-form-wide">
           <h2 data-i18n="memberUi.submitWithdrawal">Submit a Withdrawal Request</h2>
+          <p class="table-subtitle" id="withdrawalAdvanceHelp">
+            Withdrawals are paid only from your Advance Balance after CEO approval and Cashier verification. Savings and other locked funds cannot be used.
+          </p>
+          <p class="table-subtitle">Available Advance Balance: <strong id="withdrawalAdvanceAvailable">৳0.00</strong></p>
           <form id="withdrawalForm" class="add-member-form">
             <div class="form-row-2">
               <div class="form-group">
                 <label>
                   Amount (৳)
-                  <input type="number" name="amount" min="0.01" step="0.01" required />
+                  <input type="number" name="amount" id="withdrawalAmountInput" min="0.01" step="0.01" required />
                 </label>
               </div>
               <div class="form-group">

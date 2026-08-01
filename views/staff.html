@@ -849,13 +849,25 @@
         <!-- WITHDRAWALS -->
         <div class="panel-card hidden" data-staff-view="withdrawals" id="moduleWithdrawals">
           <div class="panel-card-header">
-            <h2>Withdrawals</h2>
-            <p class="text-secondary">Review and process member withdrawal requests in your cashier workspace.</p>
+            <h2>Withdrawal Payouts</h2>
+            <p class="text-secondary">
+              Pay CEO-approved withdrawal requests from the member’s Advance Balance only.
+              If Advance Balance is insufficient, payout is blocked — savings and locked funds cannot be used.
+            </p>
           </div>
           <div class="table-wrapper">
             <table class="data-table table-cards">
-              <thead><tr><th>Member</th><th data-i18n="table.amount">Amount</th><th data-i18n="table.status">Status</th><th>Reason</th><th data-i18n="table.actions">Actions</th></tr></thead>
-              <tbody id="cashierWithdrawalsBody"><tr><td colspan="5" data-i18n="common.loading">Loading…</td></tr></tbody>
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th data-i18n="table.amount">Amount</th>
+                  <th>Advance Balance</th>
+                  <th data-i18n="table.status">Status</th>
+                  <th>Reason</th>
+                  <th data-i18n="table.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cashierWithdrawalsBody"><tr><td colspan="6" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
           </div>
           <p id="cashierWithdrawalsMessage" class="message"></p>

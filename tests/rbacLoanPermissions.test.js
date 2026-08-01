@@ -10,7 +10,7 @@ const {
 test('can_disburse_loans is cashier-exclusive', () => {
   assert.deepEqual(
     CASHIER_EXCLUSIVE_PERMISSIONS,
-    ['can_disburse_loans', 'can_manage_deposits', 'can_disburse_refunds']
+    ['can_disburse_loans', 'can_manage_deposits', 'can_disburse_refunds', 'can_disburse_withdrawals']
   );
   assert.equal(userHasPermission({ role: 'cashier', permissions: [] }, 'can_disburse_loans'), true);
   assert.equal(userHasPermission({ role: 'ceo', permissions: ['can_disburse_loans'] }, 'can_disburse_loans'), false);
