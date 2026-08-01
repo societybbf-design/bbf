@@ -7772,25 +7772,36 @@ async function loadLoanApplications() {
     const loans = data.loans || [];
     list.innerHTML = loans.length ? loans.map((loan) => `
       <tr>
-        <td>
-          <button type="button" class="member-loan-hub-link" data-member-id="${loan.member?._id || ''}">${loan.member?.name || 'Unknown'}</button>
-          <br><small>${loan.member?.email || ''}</small>
+        <td class="loan-col-member">
+          <button type="button" class="member-loan-hub-link" data-member-id="${loan.member?._id || ''}">${escapeHtml(loan.member?.name || 'Unknown')}</button>
+          <span class="loan-cell-sub">${escapeHtml(loan.member?.email || '')}</span>
         </td>
-        <td>${formatLoanTypeLabel(loan.loanType)}</td>
-        <td>${formatMoney(Number(loan.amount || 0), 2)}</td>
-        <td>${formatMoney(Number(loan.memberSavingsAtApply || loan.member?.savings || 0), 2)}<br><small>Max: ${formatLoanMaxEligible(loan)}</small></td>
-        <td>${loan.reason || '-'}</td>
-        <td>${loan.witnessName || '-'}<br><small>${loan.witnessPhone || ''}</small></td>
-        <td>${formatLoanStatusBadge(loan.status)}${loan.autoRejected ? '<br><small>Auto-rejected</small>' : ''}${loan.status === 'disbursed' ? `<br><small>Outstanding: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</small>` : ''}${loan.status === 'approved' ? '<br><small>Awaiting Cashier</small>' : ''}</td>
-        <td>${loan.status === 'disbursed'
-          ? `${formatMoney(Number(loan.amount || 0), 2)} via ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursedAt ? `<br><small>${new Date(loan.disbursedAt).toLocaleString()}</small>` : ''}`
+        <td class="loan-col-type">${formatLoanTypeLabel(loan.loanType)}</td>
+        <td class="loan-col-money">${formatMoney(Number(loan.amount || 0), 2)}</td>
+        <td class="loan-col-savings">
+          <span class="loan-cell-main">${formatMoney(Number(loan.memberSavingsAtApply || loan.member?.savings || 0), 2)}</span>
+          <span class="loan-cell-sub">Max: ${formatLoanMaxEligible(loan)}</span>
+        </td>
+        <td class="loan-col-reason" title="${escapeHtml(loan.reason || '')}">${escapeHtml(loan.reason || '-')}</td>
+        <td class="loan-col-witness">
+          <span class="loan-cell-main">${escapeHtml(loan.witnessName || '-')}</span>
+          <span class="loan-cell-sub">${escapeHtml(loan.witnessPhone || '')}</span>
+        </td>
+        <td class="loan-col-status">
+          ${formatLoanStatusBadge(loan.status)}
+          ${loan.autoRejected ? '<span class="loan-cell-sub">Auto-rejected</span>' : ''}
+          ${loan.status === 'disbursed' ? `<span class="loan-cell-sub">Outstanding: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</span>` : ''}
+          ${loan.status === 'approved' ? '<span class="loan-cell-sub">Awaiting Cashier</span>' : ''}
+        </td>
+        <td class="loan-col-transfer">${loan.status === 'disbursed'
+          ? `<span class="loan-cell-main">${formatMoney(Number(loan.amount || 0), 2)} · ${formatPaymentMethodLabel(loan.paymentMethod)}</span>${loan.disbursedAt ? `<span class="loan-cell-sub">${new Date(loan.disbursedAt).toLocaleString()}</span>` : ''}`
           : loan.status === 'approved'
             ? '<span class="status-badge status-pending">Pending Transfer</span>'
             : '-'
         }</td>
-        <td>${new Date(loan.createdAt).toLocaleString()}</td>
-        <td>
-          <button class="secondary-btn" data-loan-review="${loan._id}">Review</button>
+        <td class="loan-col-date">${new Date(loan.createdAt).toLocaleString()}</td>
+        <td class="loan-col-action">
+          <button type="button" class="secondary-btn loan-action-btn" data-loan-review="${loan._id}">Review</button>
         </td>
       </tr>
     `).join('') : '<tr><td colspan="10">No loan applications yet.</td></tr>';
@@ -7823,20 +7834,26 @@ async function loadLoanRepayments() {
     const repayments = data.repayments || [];
     list.innerHTML = repayments.length ? repayments.map((item) => `
       <tr>
-        <td>${item.member?.name || 'Unknown'}<br><small>${item.member?.email || ''}</small></td>
-        <td>${formatLoanTypeLabel(item.loan?.loanType)}<br><small>${formatMoney(Number(item.loan?.amount || 0), 2)}</small></td>
-        <td>${formatMoney(Number(item.amount || 0), 2)}</td>
-        <td>${item.repaymentType === 'full' ? 'Full' : (item.repaymentType === 'partial' ? 'Partial' : 'Installment')}</td>
-        <td>${formatPaymentMethodLabel(item.paymentMethod)}</td>
-        <td>${formatMoney(Number(item.loan?.outstandingBalance ?? item.balanceBefore ?? 0), 2)}</td>
-        <td>${formatRepaymentStatusBadge(item.status)}</td>
-        <td>${new Date(item.createdAt).toLocaleString()}</td>
-        <td>
+        <td class="loan-col-member">
+          <span class="loan-cell-main">${escapeHtml(item.member?.name || 'Unknown')}</span>
+          <span class="loan-cell-sub">${escapeHtml(item.member?.email || '')}</span>
+        </td>
+        <td class="loan-col-loan">
+          <span class="loan-cell-main">${formatLoanTypeLabel(item.loan?.loanType)}</span>
+          <span class="loan-cell-sub">${formatMoney(Number(item.loan?.amount || 0), 2)}</span>
+        </td>
+        <td class="loan-col-money">${formatMoney(Number(item.amount || 0), 2)}</td>
+        <td class="loan-col-type">${item.repaymentType === 'full' ? 'Full' : (item.repaymentType === 'partial' ? 'Partial' : 'Installment')}</td>
+        <td class="loan-col-payment">${formatPaymentMethodLabel(item.paymentMethod)}</td>
+        <td class="loan-col-money">${formatMoney(Number(item.loan?.outstandingBalance ?? item.balanceBefore ?? 0), 2)}</td>
+        <td class="loan-col-status">${formatRepaymentStatusBadge(item.status)}</td>
+        <td class="loan-col-date">${new Date(item.createdAt).toLocaleString()}</td>
+        <td class="loan-col-action">
           ${item.status === 'pending' && canDisburseLoansInSession() ? `
-            <button type="button" class="primary-btn" data-loan-repayment-action="approved" data-loan-repayment-id="${item._id}">Approve</button>
-            <button type="button" class="secondary-btn" data-loan-repayment-action="rejected" data-loan-repayment-id="${item._id}">Reject</button>
-          ` : item.status === 'pending' ? '<small>Cashier action required</small>' : ''}
-          ${item.status === 'approved' && item.receiptPath ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button" target="_blank" rel="noopener">Receipt</a>` : ''}
+            <button type="button" class="primary-btn loan-action-btn" data-loan-repayment-action="approved" data-loan-repayment-id="${item._id}">Approve</button>
+            <button type="button" class="secondary-btn loan-action-btn" data-loan-repayment-action="rejected" data-loan-repayment-id="${item._id}">Reject</button>
+          ` : item.status === 'pending' ? '<span class="loan-cell-sub">Cashier action required</span>' : ''}
+          ${item.status === 'approved' && item.receiptPath ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button loan-action-btn" target="_blank" rel="noopener">Receipt</a>` : ''}
         </td>
       </tr>
     `).join('') : '<tr><td colspan="9">No loan repayment requests yet.</td></tr>';

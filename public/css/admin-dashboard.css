@@ -462,6 +462,197 @@
   max-width: 62ch;
 }
 
+/* ===== CEO Loans / Repayment tables =====
+   Override global page-section table wrap/hyphen rules that shred
+   short action labels ("Review", "Receipt") and money/date columns. */
+.admin-dashboard .loan-admin-table-card {
+  min-width: 0;
+}
+
+.admin-dashboard .loan-admin-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-dashboard .loan-admin-table {
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-dashboard .loan-applications-table {
+  min-width: 1120px;
+}
+
+.admin-dashboard .loan-repayments-table {
+  min-width: 980px;
+}
+
+.admin-dashboard .loan-admin-table th,
+.admin-dashboard .loan-admin-table td {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+  vertical-align: middle;
+  line-height: 1.35;
+  font-size: 0.84rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.admin-dashboard .loan-admin-table th {
+  white-space: nowrap;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-dashboard .loan-admin-table .loan-cell-main,
+.admin-dashboard .loan-admin-table .loan-cell-sub {
+  display: block;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+}
+
+.admin-dashboard .loan-admin-table .loan-cell-main {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-dashboard .loan-admin-table .loan-cell-sub {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-member {
+  min-width: 9.5rem;
+  max-width: 12.5rem;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-member .loan-cell-sub,
+.admin-dashboard .loan-admin-table .loan-col-member .member-loan-hub-link {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-type,
+.admin-dashboard .loan-admin-table .loan-col-payment,
+.admin-dashboard .loan-admin-table .loan-col-money,
+.admin-dashboard .loan-admin-table .loan-col-date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-money {
+  min-width: 6.5rem;
+  text-align: right;
+}
+
+.admin-dashboard .loan-admin-table th.loan-col-money {
+  text-align: right;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-savings,
+.admin-dashboard .loan-admin-table .loan-col-loan,
+.admin-dashboard .loan-admin-table .loan-col-witness {
+  min-width: 7.5rem;
+  white-space: nowrap;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-savings .loan-cell-main,
+.admin-dashboard .loan-admin-table .loan-col-savings .loan-cell-sub,
+.admin-dashboard .loan-admin-table .loan-col-loan .loan-cell-main,
+.admin-dashboard .loan-admin-table .loan-col-loan .loan-cell-sub {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-reason {
+  min-width: 8.5rem;
+  max-width: 14rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-status {
+  min-width: 7rem;
+  white-space: nowrap;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-status .status-badge {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  max-width: none;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-status .loan-cell-sub {
+  white-space: nowrap;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-transfer {
+  min-width: 9.5rem;
+  max-width: 13rem;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-transfer .loan-cell-main,
+.admin-dashboard .loan-admin-table .loan-col-transfer .loan-cell-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12.5rem;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-date {
+  min-width: 9.5rem;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-action {
+  min-width: 6.75rem;
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-action .loan-action-btn,
+.admin-dashboard .loan-admin-table .loan-action-btn.receipt-button,
+.admin-dashboard .loan-admin-table a.loan-action-btn,
+.admin-dashboard .loan-admin-table button.loan-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
+  flex-shrink: 0;
+  width: auto;
+  min-width: max-content;
+  max-width: none;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  transform: none;
+}
+
+.admin-dashboard .loan-admin-table .loan-col-action .loan-action-btn + .loan-action-btn {
+  margin-left: 0.35rem;
+}
+
+.admin-dashboard .loan-admin-table .loan-action-btn.receipt-button:hover {
+  transform: none;
+}
+
 /* ===== Reports page ===== */
 .admin-dashboard .reports-page,
 .admin-dashboard .reports-page-inner {
