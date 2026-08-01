@@ -123,6 +123,26 @@ const InvestmentSchema = new mongoose.Schema({
     default: 'Fixed Investment',
     index: true,
   },
+  /**
+   * Specific asset / item category for this project
+   * (e.g. Livestock, Vehicles) — separate from investmentType.
+   */
+  projectAssetCategory: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true,
+  },
+  /**
+   * Exact asset / item / business goods being funded
+   * (e.g. cattle, cars, specific merchandise).
+   */
+  projectAsset: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true,
+  },
   investorName: {
     type: String,
     trim: true,

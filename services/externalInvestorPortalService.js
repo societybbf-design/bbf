@@ -45,7 +45,7 @@ async function getExternalInvestorDashboard(actor) {
   })
     .select(
       // Intentionally omit society pool / member-facing fields for isolation.
-      'investmentCode investmentType location status returnMode '
+      'investmentCode investmentType projectAsset projectAssetCategory location status returnMode '
       + 'externalInvestors projectManager '
       + 'closedAt soldAt createdAt'
     )
@@ -61,6 +61,8 @@ async function getExternalInvestorDashboard(actor) {
       id: inv._id,
       investmentCode: inv.investmentCode,
       investmentType: inv.investmentType,
+      projectAssetCategory: inv.projectAssetCategory || '',
+      projectAsset: inv.projectAsset || '',
       location: inv.location || '',
       status: inv.status,
       returnMode: inv.returnMode,
