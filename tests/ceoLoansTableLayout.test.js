@@ -19,21 +19,25 @@ test('CEO loan tables use dedicated layout classes', () => {
   assert.match(adminHtml, /class="loan-col-money"/);
 });
 
-test('Loan table CSS overrides wrap/hyphen shredding and keeps action labels intact', () => {
+test('Loan table CSS uses fixed layout and forbids horizontal scroll', () => {
   assert.match(adminCss, /\.admin-dashboard \.loan-admin-table/);
-  assert.match(adminCss, /overflow-wrap:\s*normal/);
+  assert.match(adminCss, /table-layout:\s*fixed/);
+  assert.match(adminCss, /loan-admin-table-wrap[\s\S]*overflow-x:\s*hidden/);
+  assert.match(adminCss, /text-overflow:\s*ellipsis/);
   assert.match(adminCss, /word-break:\s*keep-all/);
   assert.match(adminCss, /hyphens:\s*none/);
   assert.match(adminCss, /\.loan-action-btn/);
-  assert.match(adminCss, /white-space:\s*nowrap/);
-  assert.match(adminCss, /min-width:\s*1120px/);
-  assert.match(adminCss, /min-width:\s*980px/);
-  assert.match(adminCss, /loan-admin-table-wrap[\s\S]*overflow-x:\s*auto/);
+  assert.doesNotMatch(adminCss, /loan-applications-table\s*\{\s*min-width:\s*1120px/);
+  assert.doesNotMatch(adminCss, /loan-repayments-table\s*\{\s*min-width:\s*980px/);
+  assert.doesNotMatch(adminCss, /loan-admin-table-wrap[\s\S]{0,120}overflow-x:\s*auto/);
+  assert.doesNotMatch(adminCss, /\.admin-dashboard \.loan-admin-table\s*\{[^}]*width:\s*max-content/);
 });
 
-test('Loan application and repayment rows render structured cells and action buttons', () => {
+test('Loan application and repayment rows render compact structured cells', () => {
   assert.match(adminJs, /async function loadLoanApplications/);
   assert.match(adminJs, /async function loadLoanRepayments/);
+  assert.match(adminJs, /function formatLoanTableDateParts/);
+  assert.match(adminJs, /function renderLoanTableDateCell/);
   assert.match(adminJs, /loan-col-member/);
   assert.match(adminJs, /loan-col-money/);
   assert.match(adminJs, /loan-col-reason/);
@@ -42,4 +46,5 @@ test('Loan application and repayment rows render structured cells and action but
   assert.match(adminJs, /receipt-button loan-action-btn[\s\S]*Receipt/);
   assert.match(adminJs, /loan-cell-main/);
   assert.match(adminJs, /loan-cell-sub/);
+  assert.match(adminJs, /renderLoanTableDateCell\(/);
 });

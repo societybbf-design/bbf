@@ -7756,6 +7756,27 @@ function bindLoanReviewUi() {
   });
 }
 
+/** Compact date/time for fixed-width CEO loan tables (date + time stacked). */
+function formatLoanTableDateParts(value) {
+  if (!value) return { date: '—', time: '', title: '' };
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return { date: '—', time: '', title: '' };
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return { date, time, title: d.toLocaleString() };
+}
+
+function renderLoanTableDateCell(value) {
+  const parts = formatLoanTableDateParts(value);
+  return `
+    <td class="loan-col-date" title="${escapeHtml(parts.title || parts.date)}">
+      <span class="loan-cell-main">${escapeHtml(parts.date)}</span>
+      ${parts.time ? `<span class="loan-cell-sub">${escapeHtml(parts.time)}</span>` : ''}
+    </td>
+  `;
+}
+
 async function loadLoanApplications() {
   const list = document.getElementById('loanApplicationsList');
   if (!list) return;
@@ -7770,41 +7791,51 @@ async function loadLoanApplications() {
     const response = await fetch(`/api/loans/admin?${params.toString()}`);
     const data = await response.json();
     const loans = data.loans || [];
-    list.innerHTML = loans.length ? loans.map((loan) => `
+    list.innerHTML = loans.length ? loans.map((loan) => {
+      const memberName = loan.member?.name || 'Unknown';
+      const memberEmail = loan.member?.email || '';
+      const reason = loan.reason || '-';
+      const savingsLabel = formatMoney(Number(loan.memberSavingsAtApply || loan.member?.savings || 0), 2);
+      const maxLabel = formatLoanMaxEligible(loan);
+      const transferTitle = loan.status === 'disbursed'
+        ? `${formatMoney(Number(loan.amount || 0), 2)} · ${formatPaymentMethodLabel(loan.paymentMethod)}${loan.disbursedAt ? ` · ${new Date(loan.disbursedAt).toLocaleString()}` : ''}`
+        : '';
+      return `
       <tr>
-        <td class="loan-col-member">
-          <button type="button" class="member-loan-hub-link" data-member-id="${loan.member?._id || ''}">${escapeHtml(loan.member?.name || 'Unknown')}</button>
-          <span class="loan-cell-sub">${escapeHtml(loan.member?.email || '')}</span>
+        <td class="loan-col-member" title="${escapeHtml(`${memberName}${memberEmail ? ` · ${memberEmail}` : ''}`)}">
+          <button type="button" class="member-loan-hub-link" data-member-id="${loan.member?._id || ''}">${escapeHtml(memberName)}</button>
+          <span class="loan-cell-sub">${escapeHtml(memberEmail)}</span>
         </td>
-        <td class="loan-col-type">${formatLoanTypeLabel(loan.loanType)}</td>
-        <td class="loan-col-money">${formatMoney(Number(loan.amount || 0), 2)}</td>
-        <td class="loan-col-savings">
-          <span class="loan-cell-main">${formatMoney(Number(loan.memberSavingsAtApply || loan.member?.savings || 0), 2)}</span>
-          <span class="loan-cell-sub">Max: ${formatLoanMaxEligible(loan)}</span>
+        <td class="loan-col-type" title="${escapeHtml(formatLoanTypeLabel(loan.loanType))}">${formatLoanTypeLabel(loan.loanType)}</td>
+        <td class="loan-col-money" title="${escapeHtml(formatMoney(Number(loan.amount || 0), 2))}">${formatMoney(Number(loan.amount || 0), 2)}</td>
+        <td class="loan-col-savings" title="${escapeHtml(`${savingsLabel} · Max: ${maxLabel}`)}">
+          <span class="loan-cell-main">${savingsLabel}</span>
+          <span class="loan-cell-sub">Max: ${maxLabel}</span>
         </td>
-        <td class="loan-col-reason" title="${escapeHtml(loan.reason || '')}">${escapeHtml(loan.reason || '-')}</td>
-        <td class="loan-col-witness">
+        <td class="loan-col-reason" title="${escapeHtml(reason)}">${escapeHtml(reason)}</td>
+        <td class="loan-col-witness" title="${escapeHtml(`${loan.witnessName || '-'}${loan.witnessPhone ? ` · ${loan.witnessPhone}` : ''}`)}">
           <span class="loan-cell-main">${escapeHtml(loan.witnessName || '-')}</span>
           <span class="loan-cell-sub">${escapeHtml(loan.witnessPhone || '')}</span>
         </td>
         <td class="loan-col-status">
           ${formatLoanStatusBadge(loan.status)}
           ${loan.autoRejected ? '<span class="loan-cell-sub">Auto-rejected</span>' : ''}
-          ${loan.status === 'disbursed' ? `<span class="loan-cell-sub">Outstanding: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</span>` : ''}
+          ${loan.status === 'disbursed' ? `<span class="loan-cell-sub" title="Outstanding: ${escapeHtml(formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2))}">Out: ${formatMoney(Number(loan.outstandingBalance ?? loan.amount ?? 0), 2)}</span>` : ''}
           ${loan.status === 'approved' ? '<span class="loan-cell-sub">Awaiting Cashier</span>' : ''}
         </td>
-        <td class="loan-col-transfer">${loan.status === 'disbursed'
-          ? `<span class="loan-cell-main">${formatMoney(Number(loan.amount || 0), 2)} · ${formatPaymentMethodLabel(loan.paymentMethod)}</span>${loan.disbursedAt ? `<span class="loan-cell-sub">${new Date(loan.disbursedAt).toLocaleString()}</span>` : ''}`
+        <td class="loan-col-transfer" title="${escapeHtml(transferTitle)}">${loan.status === 'disbursed'
+          ? `<span class="loan-cell-main">${formatMoney(Number(loan.amount || 0), 2)} · ${formatPaymentMethodLabel(loan.paymentMethod)}</span>${loan.disbursedAt ? (() => { const p = formatLoanTableDateParts(loan.disbursedAt); return `<span class="loan-cell-sub">${escapeHtml(p.date)} ${escapeHtml(p.time)}</span>`; })() : ''}`
           : loan.status === 'approved'
-            ? '<span class="status-badge status-pending">Pending Transfer</span>'
+            ? '<span class="status-badge status-pending">Pending</span>'
             : '-'
         }</td>
-        <td class="loan-col-date">${new Date(loan.createdAt).toLocaleString()}</td>
+        ${renderLoanTableDateCell(loan.createdAt)}
         <td class="loan-col-action">
           <button type="button" class="secondary-btn loan-action-btn" data-loan-review="${loan._id}">Review</button>
         </td>
       </tr>
-    `).join('') : '<tr><td colspan="10">No loan applications yet.</td></tr>';
+    `;
+    }).join('') : '<tr><td colspan="10">No loan applications yet.</td></tr>';
   } catch (error) {
     list.innerHTML = '<tr><td colspan="10">Unable to load loan applications.</td></tr>';
   }
@@ -7832,22 +7863,28 @@ async function loadLoanRepayments() {
     const response = await fetch(`/api/loans/admin/repayments?${params.toString()}`);
     const data = await response.json();
     const repayments = data.repayments || [];
-    list.innerHTML = repayments.length ? repayments.map((item) => `
+    list.innerHTML = repayments.length ? repayments.map((item) => {
+      const memberName = item.member?.name || 'Unknown';
+      const memberEmail = item.member?.email || '';
+      const paymentLabel = formatPaymentMethodLabel(item.paymentMethod);
+      const amountLabel = formatMoney(Number(item.amount || 0), 2);
+      const outstandingLabel = formatMoney(Number(item.loan?.outstandingBalance ?? item.balanceBefore ?? 0), 2);
+      return `
       <tr>
-        <td class="loan-col-member">
-          <span class="loan-cell-main">${escapeHtml(item.member?.name || 'Unknown')}</span>
-          <span class="loan-cell-sub">${escapeHtml(item.member?.email || '')}</span>
+        <td class="loan-col-member" title="${escapeHtml(`${memberName}${memberEmail ? ` · ${memberEmail}` : ''}`)}">
+          <span class="loan-cell-main">${escapeHtml(memberName)}</span>
+          <span class="loan-cell-sub">${escapeHtml(memberEmail)}</span>
         </td>
-        <td class="loan-col-loan">
+        <td class="loan-col-loan" title="${escapeHtml(`${formatLoanTypeLabel(item.loan?.loanType)} · ${formatMoney(Number(item.loan?.amount || 0), 2)}`)}">
           <span class="loan-cell-main">${formatLoanTypeLabel(item.loan?.loanType)}</span>
           <span class="loan-cell-sub">${formatMoney(Number(item.loan?.amount || 0), 2)}</span>
         </td>
-        <td class="loan-col-money">${formatMoney(Number(item.amount || 0), 2)}</td>
+        <td class="loan-col-money" title="${escapeHtml(amountLabel)}">${amountLabel}</td>
         <td class="loan-col-type">${item.repaymentType === 'full' ? 'Full' : (item.repaymentType === 'partial' ? 'Partial' : 'Installment')}</td>
-        <td class="loan-col-payment">${formatPaymentMethodLabel(item.paymentMethod)}</td>
-        <td class="loan-col-money">${formatMoney(Number(item.loan?.outstandingBalance ?? item.balanceBefore ?? 0), 2)}</td>
+        <td class="loan-col-payment" title="${escapeHtml(paymentLabel)}">${escapeHtml(paymentLabel)}</td>
+        <td class="loan-col-money" title="${escapeHtml(outstandingLabel)}">${outstandingLabel}</td>
         <td class="loan-col-status">${formatRepaymentStatusBadge(item.status)}</td>
-        <td class="loan-col-date">${new Date(item.createdAt).toLocaleString()}</td>
+        ${renderLoanTableDateCell(item.createdAt)}
         <td class="loan-col-action">
           ${item.status === 'pending' && canDisburseLoansInSession() ? `
             <button type="button" class="primary-btn loan-action-btn" data-loan-repayment-action="approved" data-loan-repayment-id="${item._id}">Approve</button>
@@ -7856,7 +7893,8 @@ async function loadLoanRepayments() {
           ${item.status === 'approved' && item.receiptPath ? `<a href="/api/loans/admin/repayments/${item._id}/receipt" class="receipt-button loan-action-btn" target="_blank" rel="noopener">Receipt</a>` : ''}
         </td>
       </tr>
-    `).join('') : '<tr><td colspan="9">No loan repayment requests yet.</td></tr>';
+    `;
+    }).join('') : '<tr><td colspan="9">No loan repayment requests yet.</td></tr>';
   } catch (error) {
     list.innerHTML = '<tr><td colspan="9">Unable to load loan repayments.</td></tr>';
   }
