@@ -654,22 +654,22 @@
             <button type="button" class="secondary-btn" id="refreshLoanApplicationsBtn" data-i18n="admin.buttons.refresh">Refresh</button>
           </div>
         </section>
-        <section class="panel-card table-card-wide">
+        <section class="panel-card table-card-wide loan-admin-table-card">
           <h2 data-i18n="admin.sections.loanApplications">Loan Applications</h2>
-          <div class="table-wrapper">
-            <table class="data-table">
+          <div class="table-wrapper loan-admin-table-wrap">
+            <table class="data-table loan-admin-table loan-applications-table">
               <thead>
                 <tr>
-                  <th data-i18n="table.member">Member</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.savingsMax">Savings / Max</th>
-                  <th data-i18n="table.reason">Reason</th>
-                  <th data-i18n="table.witness">Witness</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.transfer">Transfer</th>
-                  <th data-i18n="table.date">Date</th>
-                  <th data-i18n="table.action">Action</th>
+                  <th class="loan-col-member" data-i18n="table.member">Member</th>
+                  <th class="loan-col-type" data-i18n="table.type">Type</th>
+                  <th class="loan-col-money" data-i18n="table.amount">Amount</th>
+                  <th class="loan-col-savings" data-i18n="table.savingsMax">Savings / Max</th>
+                  <th class="loan-col-reason" data-i18n="table.reason">Reason</th>
+                  <th class="loan-col-witness" data-i18n="table.witness">Witness</th>
+                  <th class="loan-col-status" data-i18n="table.status">Status</th>
+                  <th class="loan-col-transfer" data-i18n="table.transfer">Transfer</th>
+                  <th class="loan-col-date" data-i18n="table.date">Date</th>
+                  <th class="loan-col-action" data-i18n="table.action">Action</th>
                 </tr>
               </thead>
               <tbody id="loanApplicationsList">
@@ -679,7 +679,7 @@
           </div>
         </section>
 
-        <section class="panel-card table-card-wide">
+        <section class="panel-card table-card-wide loan-admin-table-card">
           <h2 data-i18n="admin.sections.loanRepaymentVerification">Loan Repayment Verification</h2>
           <p class="table-subtitle">Read-only monitoring of loan repayments. The Cashier records and verifies repayments from the Cashier dashboard.</p>
           <div class="loan-admin-filters">
@@ -694,19 +694,19 @@
             </label>
             <button type="button" class="secondary-btn" id="refreshLoanRepaymentsBtn" data-i18n="admin.buttons.refresh">Refresh</button>
           </div>
-          <div class="table-wrapper">
-            <table class="data-table">
+          <div class="table-wrapper loan-admin-table-wrap">
+            <table class="data-table loan-admin-table loan-repayments-table">
               <thead>
                 <tr>
-                  <th data-i18n="table.member">Member</th>
-                  <th data-i18n="table.loan">Loan</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.payment">Payment</th>
-                  <th data-i18n="table.outstanding">Outstanding</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.date">Date</th>
-                  <th data-i18n="table.action">Action</th>
+                  <th class="loan-col-member" data-i18n="table.member">Member</th>
+                  <th class="loan-col-loan" data-i18n="table.loan">Loan</th>
+                  <th class="loan-col-money" data-i18n="table.amount">Amount</th>
+                  <th class="loan-col-type" data-i18n="table.type">Type</th>
+                  <th class="loan-col-payment" data-i18n="table.payment">Payment</th>
+                  <th class="loan-col-money" data-i18n="table.outstanding">Outstanding</th>
+                  <th class="loan-col-status" data-i18n="table.status">Status</th>
+                  <th class="loan-col-date" data-i18n="table.date">Date</th>
+                  <th class="loan-col-action" data-i18n="table.action">Action</th>
                 </tr>
               </thead>
               <tbody id="loanRepaymentsList">
