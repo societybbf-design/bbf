@@ -31,9 +31,22 @@ test('soft-delete routes return gone and UI no longer exposes delete controls', 
   assert.match(routesJs, /status\(410\)/);
   assert.doesNotMatch(developerJs, /data-action="soft-delete"/);
   assert.doesNotMatch(developerJs, /openDeletionSettlementModal/);
+  assert.doesNotMatch(developerJs, /bindDeletionSettlementModal/);
   assert.doesNotMatch(umHtml, /devDeleteSettleModal/);
   assert.doesNotMatch(umHtml, /value="deleted"/);
   assert.match(umHtml, /never deleted/i);
+});
+
+test('UM init does not redirect authenticated developers on workspace load errors', () => {
+  assert.match(developerJs, /async function initDeveloperControls/);
+  assert.match(developerJs, /User Management workspace load failed/);
+  assert.match(developerJs, /bounce developer sessions between \/ and \/user-management/);
+  // Auth failure may redirect; post-auth workspace errors must not.
+  const initFn = developerJs.match(
+    /async function initDeveloperControls\(\) \{[\s\S]*?\n\}/
+  )?.[0] || '';
+  assert.match(initFn, /bindUi\(\)/);
+  assert.doesNotMatch(initFn, /bindDeletionSettlementModal/);
 });
 
 test('createManagedUser blocks developer role and CEO escalation for non-developers', () => {
