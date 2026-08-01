@@ -1948,6 +1948,13 @@ function projectReturnModeLabel(mode) {
 
 function projectOwnershipLabel(item) {
   const society = Number(item.societyOwnershipPct ?? 100);
+  const stakes = Array.isArray(item.externalInvestors)
+    ? item.externalInvestors.filter((row) => Number(row.ownershipPct) > 0)
+    : [];
+  if (stakes.length) {
+    const parts = stakes.map((row) => `${row.investorName || row.investor?.name || 'Investor'} ${Number(row.ownershipPct)}%`);
+    return `Society ${society}% / ${parts.join(' · ')}`;
+  }
   const investor = Number(item.investorOwnershipPct ?? Math.max(0, 100 - society));
   return `Society ${society}% / Investor ${investor}%`;
 }
@@ -1961,15 +1968,93 @@ function projectExternalCapitalLabel(item) {
   return `Awaiting ${formatMoney(needed, 2)}`;
 }
 
+function collectProjectExternalInvestorRows() {
+  const rows = [];
+  document.querySelectorAll('#projectExternalInvestorRows .project-external-investor-row').forEach((rowEl) => {
+    const investorId = rowEl.querySelector('[data-investor-id]')?.value || '';
+    const ownershipPct = Number(rowEl.querySelector('[data-investor-pct]')?.value || 0);
+    if (!investorId && !(ownershipPct > 0)) return;
+    const investor = (investmentFormOptions.investors || []).find((item) => String(item._id) === String(investorId));
+    rows.push({
+      investorId,
+      investorName: investor?.name || '',
+      ownershipPct,
+    });
+  });
+  return rows;
+}
+
+function syncProjectExternalOwnershipTotal() {
+  const rows = collectProjectExternalInvestorRows();
+  const externalPct = Number(rows.reduce((sum, row) => sum + (Number(row.ownershipPct) || 0), 0).toFixed(2));
+  const investorInput = document.getElementById('projectInvestorPct');
+  if (investorInput) investorInput.value = String(externalPct);
+  return externalPct;
+}
+
 function refreshProjectOwnershipPreview() {
   const total = Number(document.getElementById('projectTotalAmount')?.value || 0);
   const societyPct = Number(document.getElementById('projectSocietyPct')?.value || 0);
-  const investorPct = Number(document.getElementById('projectInvestorPct')?.value || 0);
+  const investorPct = syncProjectExternalOwnershipTotal();
   const preview = document.getElementById('projectOwnershipPreview');
   if (!preview) return;
   const societyAmt = Number(((total * societyPct) / 100).toFixed(2));
   const investorAmt = Number((total - societyAmt).toFixed(2));
-  preview.textContent = `Society capital ${formatMoney(societyAmt, 2)} (${societyPct || 0}%) · External capital ${formatMoney(investorAmt, 2)} (${investorPct || 0}%)`;
+  const rows = collectProjectExternalInvestorRows().filter((row) => row.ownershipPct > 0);
+  const stakePreview = rows.length
+    ? ` · ${rows.map((row) => `${row.investorName || 'Investor'} ${row.ownershipPct}%`).join(' · ')}`
+    : '';
+  const sumOk = Math.abs(societyPct + investorPct - 100) <= 0.05;
+  preview.textContent = `Society capital ${formatMoney(societyAmt, 2)} (${societyPct || 0}%) · External capital ${formatMoney(investorAmt, 2)} (${investorPct || 0}%)${stakePreview}${sumOk ? '' : ' · Ownership must equal 100%'}`;
+}
+
+function investorOptionsHtml(selectedId = '') {
+  const options = [`<option value="">Choose investor…</option>`];
+  for (const item of investmentFormOptions.investors || []) {
+    const selected = String(item._id) === String(selectedId) ? ' selected' : '';
+    options.push(`<option value="${item._id}"${selected}>${escapeHtml(item.name)} (${escapeHtml(item.email || '')})</option>`);
+  }
+  return options.join('');
+}
+
+function addProjectExternalInvestorRow({ investorId = '', ownershipPct = '' } = {}) {
+  const container = document.getElementById('projectExternalInvestorRows');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'form-row-2 project-external-investor-row u-mb-1';
+  row.innerHTML = `
+    <div class="form-group">
+      <label>
+        Investor
+        <select data-investor-id>${investorOptionsHtml(investorId)}</select>
+      </label>
+    </div>
+    <div class="form-group">
+      <label>
+        Ownership (%)
+        <input type="number" data-investor-pct min="0.01" max="100" step="0.01" value="${ownershipPct}" placeholder="e.g. 20" />
+      </label>
+      <button type="button" class="secondary-btn" data-remove-investor-row style="margin-top:0.5rem">Remove</button>
+    </div>
+  `;
+  row.querySelector('[data-remove-investor-row]')?.addEventListener('click', () => {
+    row.remove();
+    refreshProjectOwnershipPreview();
+  });
+  row.querySelector('[data-investor-id]')?.addEventListener('change', refreshProjectOwnershipPreview);
+  row.querySelector('[data-investor-pct]')?.addEventListener('input', refreshProjectOwnershipPreview);
+  container.appendChild(row);
+  refreshProjectOwnershipPreview();
+}
+
+function resetProjectExternalInvestorRows() {
+  const container = document.getElementById('projectExternalInvestorRows');
+  if (container) container.innerHTML = '';
+  const societyInput = document.getElementById('projectSocietyPct');
+  const investorInput = document.getElementById('projectInvestorPct');
+  if (societyInput) societyInput.value = '100';
+  if (investorInput) investorInput.value = '0';
+  refreshProjectOwnershipPreview();
 }
 
 function updateProjectLiquidatePreview() {
@@ -1988,25 +2073,60 @@ function updateProjectLiquidatePreview() {
   const netProceeds = Number((sale - costs - tax).toFixed(2));
   const netProfit = Number((netProceeds - capital).toFixed(2));
   const societyPct = Number(item.societyOwnershipPct ?? 100);
-  const investorPct = Number(item.investorOwnershipPct ?? Math.max(0, 100 - societyPct));
+  const stakes = Array.isArray(item.externalInvestors)
+    ? item.externalInvestors.filter((row) => Number(row.ownershipPct) > 0)
+    : [];
   const societyCapital = Number(((capital * societyPct) / 100).toFixed(2));
-  const investorCapital = Number((capital - societyCapital).toFixed(2));
   const profitBase = Math.max(netProfit, 0);
   const lossBase = netProfit < 0 ? Math.abs(netProfit) : 0;
   const societyProfit = Number(((profitBase * societyPct) / 100).toFixed(2));
-  const investorProfit = Number((profitBase - societyProfit).toFixed(2));
   const societyLoss = Number(((lossBase * societyPct) / 100).toFixed(2));
-  const investorLoss = Number((lossBase - societyLoss).toFixed(2));
-  const investorPayout = Number(Math.max(0, investorCapital + investorProfit - investorLoss + Number(item.investorProfitBalance || 0)).toFixed(2));
+
+  let allocatedCapital = societyCapital;
+  let allocatedProfit = societyProfit;
+  let allocatedLoss = societyLoss;
+  const investorCards = (stakes.length
+    ? stakes
+    : (Number(item.investorOwnershipPct) > 0
+      ? [{
+        investorName: item.investorName || item.investor?.name || 'Investor',
+        ownershipPct: Number(item.investorOwnershipPct),
+        profitBalance: Number(item.investorProfitBalance || 0),
+      }]
+      : [])
+  ).map((stake, index, arr) => {
+    const isLast = index === arr.length - 1;
+    const capitalShare = isLast
+      ? Number((capital - allocatedCapital).toFixed(2))
+      : Number(((capital * Number(stake.ownershipPct || 0)) / 100).toFixed(2));
+    const profitShare = isLast
+      ? Number((profitBase - allocatedProfit).toFixed(2))
+      : Number(((profitBase * Number(stake.ownershipPct || 0)) / 100).toFixed(2));
+    const lossShare = isLast
+      ? Number((lossBase - allocatedLoss).toFixed(2))
+      : Number(((lossBase * Number(stake.ownershipPct || 0)) / 100).toFixed(2));
+    if (!isLast) {
+      allocatedCapital = Number((allocatedCapital + capitalShare).toFixed(2));
+      allocatedProfit = Number((allocatedProfit + profitShare).toFixed(2));
+      allocatedLoss = Number((allocatedLoss + lossShare).toFixed(2));
+    }
+    const accrued = Number(stake.profitBalance || 0);
+    const payout = Number(Math.max(0, capitalShare + profitShare - lossShare + accrued).toFixed(2));
+    return `
+      <div class="metric-card"><div class="metric-content">
+        <span class="metric-label">${escapeHtml(stake.investorName || stake.investor?.name || 'Investor')} (${Number(stake.ownershipPct || 0)}%)</span>
+        <strong class="metric-value">${formatMoney(payout, 2)}</strong>
+      </div></div>
+    `;
+  });
 
   box.innerHTML = `
     <p><strong>${escapeHtml(item.investmentCode || '')}</strong> · ${escapeHtml(projectOwnershipLabel(item))} · ${escapeHtml(projectReturnModeLabel(item.returnMode))}</p>
     <p class="table-subtitle">Capital ${formatMoney(capital, 2)} · Net proceeds ${formatMoney(netProceeds, 2)} · Net P/L ${netProfit >= 0 ? '+' : '-'}${formatMoney(Math.abs(netProfit), 2)}</p>
     <div class="metrics-grid u-my-1">
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Society capital</span><strong class="metric-value">${formatMoney(societyCapital, 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Investor capital</span><strong class="metric-value">${formatMoney(investorCapital, 2)}</strong></div></div>
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Society profit share</span><strong class="metric-value">${formatMoney(societyProfit, 2)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Investor payout (est.)</span><strong class="metric-value">${formatMoney(investorPayout, 2)}</strong></div></div>
+      ${investorCards.join('') || '<div class="metric-card"><div class="metric-content"><span class="metric-label">External payout</span><strong class="metric-value">৳0.00</strong></div></div>'}
     </div>
   `;
 }
@@ -2062,7 +2182,7 @@ function setProjectLiquidateTarget(item, { scroll = true } = {}) {
     if (idEl) idEl.value = '';
     if (summaryEl) summaryEl.value = '';
   } else if (summaryEl) {
-    summaryEl.value = `${item.investmentType || 'Project'} · ${item.investor?.name || item.investorName || 'Investor'} · ${formatMoney(Number(item.amount || 0), 2)}`;
+    summaryEl.value = `${item.investmentType || 'Project'} · ${projectOwnershipLabel(item)} · ${formatMoney(Number(item.amount || 0), 2)}`;
   }
   updateProjectLiquidatePreview();
   if (scroll && item) {
@@ -2152,7 +2272,14 @@ async function loadProjectsModule() {
         ? open.map((item) => `
           <tr>
             <td><strong>${escapeHtml(item.investmentCode || '-')}</strong></td>
-            <td>${escapeHtml(item.investor?.name || item.investorName || '-')}</td>
+            <td>${escapeHtml(
+              (Array.isArray(item.externalInvestors) && item.externalInvestors.length
+                ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
+                : '')
+              || item.investor?.name
+              || item.investorName
+              || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
+            )}</td>
             <td>${escapeHtml(item.investmentType || '-')}</td>
             <td>${escapeHtml(projectReturnModeLabel(item.returnMode))}</td>
             <td>${escapeHtml(projectOwnershipLabel(item))}</td>
@@ -2193,7 +2320,14 @@ async function loadProjectsModule() {
           return `
             <tr>
               <td><strong>${escapeHtml(item.investmentCode || '-')}</strong></td>
-              <td>${escapeHtml(item.investor?.name || item.investorName || '-')}</td>
+              <td>${escapeHtml(
+              (Array.isArray(item.externalInvestors) && item.externalInvestors.length
+                ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
+                : '')
+              || item.investor?.name
+              || item.investorName
+              || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
+            )}</td>
               <td>${escapeHtml(item.investmentType || '-')}</td>
               <td>${escapeHtml(projectOwnershipLabel(item))}</td>
               <td>${formatMoney(Number(item.amount || 0), 2)}</td>
@@ -2233,27 +2367,18 @@ function bindProjectsModule() {
 
   document.getElementById('scrollToCreateProjectBtn')?.addEventListener('click', () => {
     document.getElementById('createProjectPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    document.getElementById('projectInvestorSelect')?.focus();
+    document.getElementById('projectSocietyPct')?.focus();
   });
   document.getElementById('refreshProjectsModuleBtn')?.addEventListener('click', () => {
     void loadProjectsModule();
     void loadInvestmentIous().catch(() => {});
   });
 
-  ['projectTotalAmount', 'projectSocietyPct', 'projectInvestorPct'].forEach((id) => {
+  ['projectTotalAmount', 'projectSocietyPct'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', refreshProjectOwnershipPreview);
   });
-  document.getElementById('projectSocietyPct')?.addEventListener('input', (event) => {
-    const investorInput = document.getElementById('projectInvestorPct');
-    if (!investorInput) return;
-    investorInput.value = Number((100 - Number(event.target.value || 0)).toFixed(2));
-    refreshProjectOwnershipPreview();
-  });
-  document.getElementById('projectInvestorPct')?.addEventListener('input', (event) => {
-    const societyInput = document.getElementById('projectSocietyPct');
-    if (!societyInput) return;
-    societyInput.value = Number((100 - Number(event.target.value || 0)).toFixed(2));
-    refreshProjectOwnershipPreview();
+  document.getElementById('projectAddInvestorBtn')?.addEventListener('click', () => {
+    addProjectExternalInvestorRow();
   });
   document.getElementById('projectReturnMode')?.addEventListener('change', (event) => {
     const termFields = document.getElementById('projectTermFields');
@@ -2321,8 +2446,12 @@ function bindProjectsModule() {
 
     const form = event.target;
     const formData = new FormData(form);
+    const externalInvestors = collectProjectExternalInvestorRows();
+    const externalPct = Number(
+      externalInvestors.reduce((sum, row) => sum + (Number(row.ownershipPct) || 0), 0).toFixed(2)
+    );
     const payload = {
-      investorId: formData.get('investorId'),
+      investorId: externalInvestors[0]?.investorId || null,
       investmentType: formData.get('investmentType'),
       projectManagerId: formData.get('projectManagerId') || null,
       location: String(formData.get('location') || '').trim() || 'Not specified',
@@ -2331,24 +2460,44 @@ function bindProjectsModule() {
       termMonths: formData.get('termMonths') || null,
       maturityDate: formData.get('maturityDate') || null,
       societyOwnershipPct: Number(formData.get('societyOwnershipPct')),
-      investorOwnershipPct: Number(formData.get('investorOwnershipPct')),
+      investorOwnershipPct: externalPct,
+      externalInvestors: externalInvestors.filter((row) => row.investorId && row.ownershipPct > 0),
       notes: formData.get('notes') || '',
     };
 
-    if (!payload.investorId || !payload.investmentType || !(payload.amount > 0)) {
+    if (!payload.investmentType || !(payload.amount > 0)) {
       if (messageEl) {
         messageEl.classList.add('error');
-        messageEl.textContent = 'Investor, project type, and a valid total amount are required.';
+        messageEl.textContent = 'Project type and a valid total amount are required.';
       }
       return;
     }
-    if (!Number.isFinite(payload.societyOwnershipPct) || !Number.isFinite(payload.investorOwnershipPct)
-      || Math.abs(payload.societyOwnershipPct + payload.investorOwnershipPct - 100) > 0.05) {
+    if (!Number.isFinite(payload.societyOwnershipPct)
+      || Math.abs(payload.societyOwnershipPct + externalPct - 100) > 0.05) {
       if (messageEl) {
         messageEl.classList.add('error');
-        messageEl.textContent = 'Society and investor ownership percentages must add up to 100%.';
+        messageEl.textContent = 'Society ownership (%) plus all external investors’ ownership (%) must equal exactly 100%.';
       }
       return;
+    }
+    if (externalPct > 0) {
+      const missing = externalInvestors.some((row) => row.ownershipPct > 0 && !row.investorId);
+      const dupes = new Set();
+      let hasDupe = false;
+      for (const row of payload.externalInvestors) {
+        const key = String(row.investorId);
+        if (dupes.has(key)) hasDupe = true;
+        dupes.add(key);
+      }
+      if (missing || hasDupe) {
+        if (messageEl) {
+          messageEl.classList.add('error');
+          messageEl.textContent = missing
+            ? 'Select a registered investor for each external ownership row.'
+            : 'Duplicate external investors are not allowed.';
+        }
+        return;
+      }
     }
 
     try {
@@ -2366,10 +2515,8 @@ function bindProjectsModule() {
           || `Project ${data.investment?.investmentCode || ''} created for member approval. Cashier will record external capital after society payout.`;
       }
       form.reset();
-      document.getElementById('projectSocietyPct').value = '70';
-      document.getElementById('projectInvestorPct').value = '30';
+      resetProjectExternalInvestorRows();
       document.getElementById('projectTermFields')?.classList.remove('hidden');
-      refreshProjectOwnershipPreview();
       await loadProjectsModule();
       await loadInvestments().catch(() => {});
     } catch (error) {
@@ -6183,14 +6330,20 @@ async function loadInvestmentFormOptions() {
     labelFn: (item) => item.name,
     placeholder: 'Choose type…',
   });
-  fillSelectOptions(document.getElementById('projectInvestorSelect'), investmentFormOptions.investors, {
-    labelFn: (item) => `${item.name} (${item.email})`,
-    placeholder: 'Choose investor…',
-  });
   fillSelectOptions(document.getElementById('projectManagerSelect'), investmentFormOptions.projectManagers, {
     labelFn: (item) => `${item.name} (${item.email})`,
     placeholder: 'Unassigned',
   });
+  // Refresh investor dropdowns inside dynamic multi-investor rows.
+  document.querySelectorAll('#projectExternalInvestorRows [data-investor-id]').forEach((selectEl) => {
+    const current = selectEl.value;
+    selectEl.innerHTML = investorOptionsHtml(current);
+  });
+  if (!document.getElementById('projectSocietyPct')?.value) {
+    resetProjectExternalInvestorRows();
+  } else {
+    refreshProjectOwnershipPreview();
+  }
 }
 
 function applySelectedInvestorDefaults() {
