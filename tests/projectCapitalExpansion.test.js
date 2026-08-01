@@ -25,9 +25,13 @@ test('Investment model supports capital expansion linkage and history', () => {
 test('proposeCapitalExpansion reuses createSocietyInvestment then applies after cashier payment', () => {
   assert.match(investmentJs, /async function proposeCapitalExpansion/);
   assert.match(investmentJs, /async function applyCompletedCapitalExpansion/);
+  assert.match(investmentJs, /async function authorizeInvestmentByCeo/);
   assert.match(investmentJs, /fundingKind:\s*'capital_expansion'/);
   assert.match(investmentJs, /createSocietyInvestment\(\{/);
   assert.match(investmentJs, /pending_member_approval/);
+  // Maker-checker: members → CEO authorization → cashier (not skip CEO).
+  assert.match(investmentJs, /pending_ceo_authorization/);
+  assert.match(investmentJs, /investment\.status = 'pending_ceo_authorization'/);
   // Cashier core funding path remains intact.
   assert.match(investmentJs, /const savingsUpdate = await fundInvestmentFromMembers\(investment\._id, societyFundingAmount\)/);
   assert.match(investmentJs, /getCashierPaymentFundingSnapshot/);
@@ -46,6 +50,8 @@ test('expand-capital route is CEO/investments gated', () => {
   assert.match(routesJs, /\/:id\/expand-capital/);
   assert.match(routesJs, /requirePermission\('can_manage_investments'\)/);
   assert.match(routesJs, /requirePasswordConfirmation/);
+  assert.match(routesJs, /\/:id\/ceo-authorize/);
+  assert.match(routesJs, /authorizeInvestmentByCeo/);
 });
 
 test('CEO / member / cashier UIs surface capital expansion without rewriting payment core', () => {

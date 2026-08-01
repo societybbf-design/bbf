@@ -1,5 +1,5 @@
 const { formatMoney } = require('./moneyFormat');
-const { userHasPermission, normalizeRole } = require('./rbac');
+const { userHasPermission, normalizeRole, isFullAccessRole } = require('./rbac');
 const {
   listPendingMemberInvestmentRequests,
 } = require('./investmentService');
@@ -330,7 +330,12 @@ async function collectStaffItems(user) {
   if (userHasPermission(user, 'can_manage_investments') && !isCashier) {
     const pendingInvestments = await Investment.find({
       member: null,
-      status: { $in: ['pending_member_approval', 'pending_cashier_payment'] },
+      status: {
+        $in: ['pending_member_approval', 'pending_ceo_authorization', 'pending_cashier_payment'],
+      },
+      ...(user.role === 'project_manager'
+        ? { projectManager: user.id || user._id }
+        : {}),
     })
       .populate('investor', 'name email')
       .sort({ createdAt: -1 })
@@ -338,18 +343,21 @@ async function collectStaffItems(user) {
       .lean();
     for (const inv of pendingInvestments) {
       const isExpansion = inv.fundingKind === 'capital_expansion';
+      const statusLabel = inv.status === 'pending_member_approval'
+        ? (isExpansion ? 'Awaiting member approvals for capital expansion' : 'Awaiting member approvals')
+        : inv.status === 'pending_ceo_authorization'
+          ? (isExpansion ? 'Awaiting CEO authorization for capital expansion' : 'Awaiting CEO authorization')
+          : (isExpansion ? 'Awaiting Cashier payment for capital expansion' : 'Awaiting Cashier payment');
       items.push(item({
         id: `investment_monitor:${inv._id}`,
         type: 'investment_monitor',
         title: isExpansion
           ? `Capital expansion — ${inv.investmentCode || 'Investment'}`
           : `Project workflow — ${inv.investmentCode || 'Investment'}`,
-        subtitle: inv.status === 'pending_member_approval'
-          ? (isExpansion ? 'Awaiting member approvals for capital expansion' : 'Awaiting member approvals')
-          : (isExpansion ? 'Awaiting Cashier payment for capital expansion' : 'Awaiting Cashier payment'),
+        subtitle: statusLabel,
         amount: inv.amount,
         status: inv.status,
-        priority: 'normal',
+        priority: inv.status === 'pending_ceo_authorization' ? 'high' : 'normal',
         createdAt: inv.createdAt,
         entityId: inv._id,
         actions: [
@@ -363,8 +371,132 @@ async function collectStaffItems(user) {
           returnMode: inv.returnMode === 'monthly' ? 'Monthly return' : (inv.returnMode || 'Fixed/term'),
           fundingKind: inv.fundingKind || 'initial',
         },
-        deepLink: { dashboard: 'admin', hash: '#projects' },
+        deepLink: { dashboard: user.role === 'project_manager' ? 'staff' : 'admin', hash: user.role === 'project_manager' ? '#investments' : '#projects' },
       }));
+    }
+  }
+
+  // CEO authorization queue (after member approvals, before cashier).
+  if (isFullAccessRole(user.role) || user.role === 'ceo' || user.role === 'admin') {
+    const awaitingCeo = await Investment.find({
+      member: null,
+      status: 'pending_ceo_authorization',
+    })
+      .populate('investor', 'name email')
+      .populate('projectManager', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    for (const inv of awaitingCeo) {
+      const isExpansion = inv.fundingKind === 'capital_expansion';
+      items.push(item({
+        id: `investment_ceo_auth:${inv._id}`,
+        type: 'investment_ceo_authorization',
+        title: isExpansion
+          ? `Authorize capital expansion — ${inv.investmentCode || 'Investment'}`
+          : `Authorize project — ${inv.investmentCode || 'Investment'}`,
+        subtitle: `Members approved · ${inv.projectManager?.name || 'PM'} · final CEO authorization required`,
+        amount: inv.amount,
+        status: inv.status,
+        priority: 'high',
+        createdAt: inv.updatedAt || inv.createdAt,
+        entityId: inv._id,
+        actions: [
+          {
+            key: 'approve',
+            label: 'Authorize → Cashier queue',
+            method: 'POST',
+            path: `/api/admin/investments/${inv._id}/ceo-authorize`,
+            body: { approve: true },
+            requiresPassword: true,
+          },
+          {
+            key: 'reject',
+            label: 'Reject',
+            method: 'POST',
+            path: `/api/admin/investments/${inv._id}/ceo-authorize`,
+            body: { approve: false },
+            requiresPassword: true,
+          },
+        ],
+        details: {
+          projectCode: inv.investmentCode || '',
+          fundingKind: inv.fundingKind || 'initial',
+          projectManager: inv.projectManager?.name || '',
+        },
+        deepLink: { dashboard: 'admin', hash: '#approvals' },
+      }));
+    }
+
+    try {
+      const { listPendingCeoProjectOps } = require('./projectOpsService');
+      const ops = await listPendingCeoProjectOps();
+      for (const exp of ops.expenses || []) {
+        items.push(item({
+          id: `project_expense:${exp._id}`,
+          type: 'project_expense_review',
+          title: `Project expense — ${exp.investmentCode || 'Project'}`,
+          subtitle: exp.description || 'Operational expense',
+          amount: exp.amount,
+          status: exp.status,
+          priority: 'normal',
+          createdAt: exp.submittedAt || exp.createdAt,
+          entityId: exp._id,
+          actions: [
+            {
+              key: 'approve',
+              label: 'Approve (external sub-ledger)',
+              method: 'POST',
+              path: `/api/admin/investments/expenses/${exp._id}/ceo-review`,
+              body: { approve: true },
+              requiresPassword: true,
+            },
+            {
+              key: 'reject',
+              label: 'Reject',
+              method: 'POST',
+              path: `/api/admin/investments/expenses/${exp._id}/ceo-review`,
+              body: { approve: false },
+              requiresPassword: true,
+            },
+          ],
+          deepLink: { dashboard: 'admin', hash: '#approvals' },
+        }));
+      }
+      for (const report of ops.reports || []) {
+        items.push(item({
+          id: `project_pnl:${report._id}`,
+          type: 'project_monthly_report',
+          title: `Monthly P&L — ${report.investmentCode} (${report.yearMonth})`,
+          subtitle: `Gross ${formatMoney(report.grossRevenue, 2)} − Expenses ${formatMoney(report.totalExpenses, 2)} = Net ${formatMoney(report.netProfit, 2)}`,
+          amount: report.netProfit,
+          status: report.status,
+          priority: 'high',
+          createdAt: report.submittedAt || report.createdAt,
+          entityId: report._id,
+          actions: [
+            {
+              key: 'approve',
+              label: 'Approve → external payout channel',
+              method: 'POST',
+              path: `/api/admin/investments/monthly-reports/${report._id}/ceo-review`,
+              body: { approve: true },
+              requiresPassword: true,
+            },
+            {
+              key: 'reject',
+              label: 'Reject',
+              method: 'POST',
+              path: `/api/admin/investments/monthly-reports/${report._id}/ceo-review`,
+              body: { approve: false },
+              requiresPassword: true,
+            },
+          ],
+          deepLink: { dashboard: 'admin', hash: '#approvals' },
+        }));
+      }
+    } catch (error) {
+      console.warn('[approvals] project ops inbox skipped:', error.message);
     }
   }
 
