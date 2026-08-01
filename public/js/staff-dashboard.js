@@ -841,7 +841,7 @@ function renderProjectApprovalTrackingCard(project) {
         <div>
           <h4>${escapeHtml(project.investmentCode || 'Project')} · ${escapeHtml(project.investorName || 'Investor')}</h4>
           <p class="table-subtitle">
-            ${escapeHtml(project.investmentType || 'Investment')} · ${money(project.amount)}
+            ${escapeHtml(project.investmentType || 'Investment')}${project.projectAsset ? ` · ${escapeHtml([project.projectAssetCategory, project.projectAsset].filter(Boolean).join(' · '))}` : ''} · ${money(project.amount)}
             · ${escapeHtml(project.displayStatus || project.status || '')}
           </p>
         </div>
@@ -4330,7 +4330,7 @@ function renderExternalPortal(data) {
       ? projects.map((p) => `
         <article class="panel-card u-mb-1">
           <h4>${escapeHtml(p.investmentCode || 'Project')} · ${escapeHtml(p.status || '')}</h4>
-          <p>${escapeHtml(p.investmentType || 'Project')}${p.location ? ` · ${escapeHtml(p.location)}` : ''}</p>
+          <p>${escapeHtml(p.investmentType || 'Project')}${p.projectAsset ? ` · ${escapeHtml([p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · '))}` : ''}${p.location ? ` · ${escapeHtml(p.location)}` : ''}</p>
           <p class="table-subtitle">Your ownership ${Number(p.ownershipPct || 0).toFixed(2)}% · Capital ${money(p.capitalReceived)} / ${money(p.capitalCommitted)} · Profit ${money(p.profitBalance)} · Ledger ${money(p.ledgerBalance)}</p>
           ${p.projectManager ? `<p><strong>Project Manager:</strong> ${escapeHtml(p.projectManager.name || '—')}${p.projectManager.email ? ` · ${escapeHtml(p.projectManager.email)}` : ''}${p.projectManager.phone ? ` · ${escapeHtml(p.projectManager.phone)}` : ''}</p>` : '<p class="text-secondary">No Project Manager assigned.</p>'}
         </article>
@@ -5831,11 +5831,12 @@ function renderPmProjectsList(projects = []) {
           ${projects.map((p) => {
             const code = p.investmentCode || pmInvestmentId(p).slice(-6) || '—';
             const type = p.investmentType || p.title || p.name || 'Project';
+            const asset = [p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · ');
             const funding = p.fundingKind === 'capital_expansion' ? ' · Expansion' : '';
             return `
               <tr>
                 <td><strong>${escapeHtml(code)}</strong></td>
-                <td>${escapeHtml(type)}${escapeHtml(funding)}</td>
+                <td>${escapeHtml(type)}${asset ? `<br><span class="table-subtitle">${escapeHtml(asset)}</span>` : ''}${escapeHtml(funding)}</td>
                 <td>${money(p.amount)}</td>
                 <td>${pmStatusBadge(p.status)}</td>
                 <td>${renderPmStakeholders(p.stakeholders || {})}</td>
@@ -5903,7 +5904,8 @@ function populatePmProjectSelects(projects = []) {
     const current = el.value;
     el.innerHTML = `<option value="">${escapeHtml(emptyLabel)}</option>${list.map((p) => {
       const id = pmInvestmentId(p);
-      const label = `${p.investmentCode || id} — ${p.investmentType || 'Project'} (${money(p.amount)})`;
+      const assetBit = [p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · ');
+      const label = `${p.investmentCode || id} — ${p.investmentType || 'Project'}${assetBit ? ` · ${assetBit}` : ''} (${money(p.amount)})`;
       return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
     }).join('')}`;
     if (current && [...el.options].some((o) => o.value === current)) el.value = current;

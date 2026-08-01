@@ -1953,6 +1953,13 @@ function projectReturnModeLabel(mode, { compact = false } = {}) {
       || 'Fixed / Term (locked until maturity)');
 }
 
+function projectAssetLabel(item) {
+  const name = String(item?.projectAsset || '').trim();
+  const category = String(item?.projectAssetCategory || '').trim();
+  if (name && category) return `${category} · ${name}`;
+  return name || category || '';
+}
+
 function projectOwnershipLabel(item) {
   const society = Number(item.societyOwnershipPct ?? 100);
   const stakes = Array.isArray(item.externalInvestors)
@@ -2201,7 +2208,8 @@ function setProjectLiquidateTarget(item, { scroll = true } = {}) {
     if (idEl) idEl.value = '';
     if (summaryEl) summaryEl.value = '';
   } else if (summaryEl) {
-    summaryEl.value = `${item.investmentType || 'Project'} · ${projectOwnershipLabel(item)} · ${formatMoney(Number(item.amount || 0), 2)}`;
+    const assetBit = projectAssetLabel(item);
+    summaryEl.value = `${item.investmentType || 'Project'}${assetBit ? ` · ${assetBit}` : ''} · ${projectOwnershipLabel(item)} · ${formatMoney(Number(item.amount || 0), 2)}`;
   }
   updateProjectLiquidatePreview();
   if (scroll && item) {
@@ -2301,6 +2309,7 @@ async function loadProjectsModule() {
           const statusLabel = item.displayStatus || item.status || '-';
           const amountLabel = formatMoney(Number(item.amount || 0), 2);
           const typeLabel = item.investmentType || '-';
+          const assetLabel = projectAssetLabel(item);
           return `
           <tr>
             <td class="pm-col-id" title="${escapeHtml(item.investmentCode || '-')}"><strong class="pm-cell-main">${escapeHtml(item.investmentCode || '-')}</strong></td>
@@ -2308,7 +2317,10 @@ async function loadProjectsModule() {
               <span class="pm-cell-main">${escapeHtml(operatorLabel)}</span>
               ${pmLabel ? `<span class="pm-cell-sub">PM: ${escapeHtml(pmLabel)}</span>` : ''}
             </td>
-            <td class="pm-col-type" title="${escapeHtml(typeLabel)}"><span class="pm-cell-main">${escapeHtml(typeLabel)}</span></td>
+            <td class="pm-col-type" title="${escapeHtml(assetLabel ? `${typeLabel} · ${assetLabel}` : typeLabel)}">
+              <span class="pm-cell-main">${escapeHtml(typeLabel)}</span>
+              ${assetLabel ? `<span class="pm-cell-sub">${escapeHtml(assetLabel)}</span>` : ''}
+            </td>
             <td class="pm-col-return" title="${escapeHtml(returnFull)}"><span class="pm-cell-main">${escapeHtml(returnLabel)}</span></td>
             <td class="pm-col-ownership" title="${escapeHtml(ownershipLabel)}"><span class="pm-cell-main">${escapeHtml(ownershipLabel)}</span></td>
             <td class="pm-col-money" title="${escapeHtml(amountLabel)}"><span class="pm-cell-main">${amountLabel}</span></td>
@@ -2360,6 +2372,7 @@ async function loadProjectsModule() {
           const statusLabel = item.displayStatus || item.status || 'closed';
           const dateLabel = formatInvestmentDate(item.closedAt || item.soldAt || item.updatedAt);
           const typeLabel = item.investmentType || '-';
+          const assetLabel = projectAssetLabel(item);
           return `
             <tr>
               <td class="pm-col-id" title="${escapeHtml(item.investmentCode || '-')}"><strong class="pm-cell-main">${escapeHtml(item.investmentCode || '-')}</strong></td>
@@ -2367,7 +2380,10 @@ async function loadProjectsModule() {
                 <span class="pm-cell-main">${escapeHtml(operatorLabel)}</span>
                 ${pmLabel ? `<span class="pm-cell-sub">PM: ${escapeHtml(pmLabel)}</span>` : ''}
               </td>
-              <td class="pm-col-type" title="${escapeHtml(typeLabel)}"><span class="pm-cell-main">${escapeHtml(typeLabel)}</span></td>
+              <td class="pm-col-type" title="${escapeHtml(assetLabel ? `${typeLabel} · ${assetLabel}` : typeLabel)}">
+                <span class="pm-cell-main">${escapeHtml(typeLabel)}</span>
+                ${assetLabel ? `<span class="pm-cell-sub">${escapeHtml(assetLabel)}</span>` : ''}
+              </td>
               <td class="pm-col-ownership" title="${escapeHtml(ownershipLabel)}"><span class="pm-cell-main">${escapeHtml(ownershipLabel)}</span></td>
               <td class="pm-col-money" title="${escapeHtml(investedLabel)}"><span class="pm-cell-main">${investedLabel}</span></td>
               <td class="pm-col-money" title="${escapeHtml(saleLabel)}"><span class="pm-cell-main">${saleLabel}</span></td>
@@ -2386,7 +2402,7 @@ async function loadProjectsModule() {
       monthlySelect.innerHTML = '<option value="">Choose monthly project…</option>'
         + monthly.map((item) => `
           <option value="${item._id}">
-            ${escapeHtml(item.investmentCode || '')} · ${escapeHtml(item.investmentType || 'Project')} · ${formatMoney(Number(item.amount || 0), 2)}
+            ${escapeHtml(item.investmentCode || '')} · ${escapeHtml(item.investmentType || 'Project')}${item.projectAsset ? ` · ${escapeHtml(projectAssetLabel(item))}` : ''} · ${formatMoney(Number(item.amount || 0), 2)}
           </option>
         `).join('');
       if (current) monthlySelect.value = current;
@@ -2493,6 +2509,8 @@ function bindProjectsModule() {
       // Operator (role: investor) — distinct from external co-funders below.
       investorId: formData.get('investorId') || null,
       investmentType: formData.get('investmentType'),
+      projectAssetCategory: String(formData.get('projectAssetCategory') || '').trim(),
+      projectAsset: String(formData.get('projectAsset') || '').trim(),
       projectManagerId: formData.get('projectManagerId') || null,
       location: String(formData.get('location') || '').trim() || 'Not specified',
       amount: Number(formData.get('amount')),
@@ -2516,6 +2534,13 @@ function bindProjectsModule() {
       if (messageEl) {
         messageEl.classList.add('error');
         messageEl.textContent = 'Project type and a valid total amount are required.';
+      }
+      return;
+    }
+    if (!payload.projectAsset) {
+      if (messageEl) {
+        messageEl.classList.add('error');
+        messageEl.textContent = 'Enter the specific project asset / item name (e.g. cattle, cars, goods).';
       }
       return;
     }

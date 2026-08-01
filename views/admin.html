@@ -905,6 +905,43 @@
             </div>
             <div class="form-row-2">
               <div class="form-group">
+                <label for="projectAssetCategory">
+                  Project asset category
+                  <select name="projectAssetCategory" id="projectAssetCategory">
+                    <option value="">Choose category…</option>
+                    <option value="Livestock">Livestock</option>
+                    <option value="Vehicles">Vehicles</option>
+                    <option value="Goods / Merchandise">Goods / Merchandise</option>
+                    <option value="Equipment">Equipment</option>
+                    <option value="Property">Property</option>
+                    <option value="Agriculture">Agriculture</option>
+                    <option value="Services">Services</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+                <p class="table-subtitle">
+                  What kind of asset or business inventory this project funds (separate from Investment Type).
+                </p>
+              </div>
+              <div class="form-group">
+                <label for="projectAssetName">
+                  Project asset / item name
+                  <input
+                    type="text"
+                    name="projectAsset"
+                    id="projectAssetName"
+                    maxlength="160"
+                    placeholder="e.g. Cattle (12 cows), Toyota HiAce, cement stock"
+                    required
+                  />
+                </label>
+                <p class="table-subtitle">
+                  Exact items, assets, or goods assigned to this project.
+                </p>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
                 <label data-i18n="admin.forms.assignInvestorOperator">
                   Assign Investor / Operator
                   <select name="investorId" id="projectOperatorSelect" required>

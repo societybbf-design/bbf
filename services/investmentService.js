@@ -851,6 +851,8 @@ async function proposeCapitalExpansion({
     location: parent.location || 'Not specified',
     sector: parent.sector || parent.investmentType || 'General',
     partner: parent.partner || parent.investorName || parent.investor?.name || 'Society',
+    projectAssetCategory: parent.projectAssetCategory || '',
+    projectAsset: parent.projectAsset || '',
     notes: expansionNotes,
     documents: [],
     createdBy,
@@ -891,6 +893,8 @@ async function createSocietyInvestment({
   location,
   sector,
   partner,
+  projectAssetCategory = '',
+  projectAsset = '',
   notes = '',
   documents = [],
   createdBy = 'Admin',
@@ -1012,6 +1016,8 @@ async function createSocietyInvestment({
     .map((row) => row.investorName)
     .filter(Boolean);
   const normalizedType = investmentType?.trim() || 'Fixed Investment';
+  const normalizedAssetCategory = String(projectAssetCategory || '').trim();
+  const normalizedAsset = String(projectAsset || '').trim();
   const operatorName = investorUser?.name || investorName?.trim() || partner?.trim() || '';
   const normalizedName = operatorName
     || (ownership.investorOwnershipPct > 0
@@ -1073,6 +1079,8 @@ async function createSocietyInvestment({
   const investment = await Investment.create({
     investmentCode,
     investmentType: normalizedType,
+    projectAssetCategory: normalizedAssetCategory,
+    projectAsset: normalizedAsset,
     // Operator link stays on investor; external co-funders live only in externalInvestors[].
     investor: investorUser?._id || null,
     projectManager: projectManagerUser?._id || null,
@@ -2426,6 +2434,12 @@ async function updateInvestment(investmentId, updates = {}) {
 
   if (updates.investmentType?.trim()) {
     investment.investmentType = updates.investmentType.trim();
+  }
+  if (typeof updates.projectAssetCategory !== 'undefined') {
+    investment.projectAssetCategory = String(updates.projectAssetCategory || '').trim();
+  }
+  if (typeof updates.projectAsset !== 'undefined') {
+    investment.projectAsset = String(updates.projectAsset || updates.projectAssetName || '').trim();
   }
 
   const nextName = updates.investorName?.trim() || investment.investorName || investment.partner;
