@@ -475,9 +475,24 @@ async function getInvestmentByCode(code) {
   return ensureInvestmentCode(investment);
 }
 
+/** Internal investees — people the society funds for projects/work. */
 async function listInvestorUsers() {
   return User.find({
     role: 'investor',
+    status: { $ne: 'deleted' },
+  })
+    .select('name email phone address dateOfBirth status createdAt')
+    .sort({ name: 1 })
+    .lean();
+}
+
+/**
+ * External co-funders — third parties who provide capital for project ownership %.
+ * Kept strictly separate from internal `investor` (investee) accounts.
+ */
+async function listExternalInvestorUsers() {
+  return User.find({
+    role: 'external_investor',
     status: { $ne: 'deleted' },
   })
     .select('name email phone address dateOfBirth status createdAt')
@@ -876,17 +891,21 @@ async function createSocietyInvestment({
   for (const row of rawExternalInvestors) {
     const rowInvestorId = row.investorId || row.investor || null;
     if (!rowInvestorId) {
-      const error = new Error('Each external investor must be selected from registered investors.');
+      const error = new Error('Each external investor must be selected from registered External Investors.');
       error.status = 400;
       throw error;
     }
     const user = await User.findOne({
       _id: rowInvestorId,
-      role: 'investor',
+      role: 'external_investor',
       status: { $ne: 'deleted' },
     });
     if (!user) {
-      const error = new Error('One or more selected investors were not found. Register them in Investor Management first.');
+      const error = new Error(
+        'One or more selected external investors were not found. '
+        + 'Register External Investors from User Management (External Investors tab) first. '
+        + 'Internal Investors cannot be used for project ownership co-funding.'
+      );
       error.status = 404;
       throw error;
     }
@@ -903,13 +922,22 @@ async function createSocietyInvestment({
     || resolvedExternalInvestors[0]?.investor
     || null;
   if (primaryInvestorId) {
+    // Project co-funding uses external_investor; legacy single-investor payload may still
+    // reference the same role when ownership is shared.
+    const allowedRoles = resolvedExternalInvestors.length
+      ? ['external_investor']
+      : ['investor', 'external_investor'];
     investorUser = await User.findOne({
       _id: primaryInvestorId,
-      role: 'investor',
+      role: { $in: allowedRoles },
       status: { $ne: 'deleted' },
     });
     if (!investorUser) {
-      const error = new Error('Selected investor was not found. Create the investor from the CEO Panel first.');
+      const error = new Error(
+        resolvedExternalInvestors.length
+          ? 'Selected external investor was not found. Create them under User Management → External Investors.'
+          : 'Selected investor was not found. Create the investor from User Management first.'
+      );
       error.status = 404;
       throw error;
     }
@@ -2454,6 +2482,7 @@ module.exports = {
   getSavingsPool,
   listInvestorPortfolios,
   listInvestorUsers,
+  listExternalInvestorUsers,
   listProjectManagers,
   refundToTotalSavings,
   updateInvestment,

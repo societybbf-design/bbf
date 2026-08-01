@@ -1974,7 +1974,7 @@ function collectProjectExternalInvestorRows() {
     const investorId = rowEl.querySelector('[data-investor-id]')?.value || '';
     const ownershipPct = Number(rowEl.querySelector('[data-investor-pct]')?.value || 0);
     if (!investorId && !(ownershipPct > 0)) return;
-    const investor = (investmentFormOptions.investors || []).find((item) => String(item._id) === String(investorId));
+    const investor = (investmentFormOptions.externalInvestors || []).find((item) => String(item._id) === String(investorId));
     rows.push({
       investorId,
       investorName: investor?.name || '',
@@ -2009,8 +2009,12 @@ function refreshProjectOwnershipPreview() {
 }
 
 function investorOptionsHtml(selectedId = '') {
-  const options = [`<option value="">Choose investor…</option>`];
-  for (const item of investmentFormOptions.investors || []) {
+  const options = [`<option value="">Choose external investor…</option>`];
+  const list = investmentFormOptions.externalInvestors || [];
+  if (!list.length) {
+    options.push('<option value="" disabled>No external investors registered — add them in User Management</option>');
+  }
+  for (const item of list) {
     const selected = String(item._id) === String(selectedId) ? ' selected' : '';
     options.push(`<option value="${item._id}"${selected}>${escapeHtml(item.name)} (${escapeHtml(item.email || '')})</option>`);
   }
@@ -6264,6 +6268,7 @@ async function loadInvestmentCodePreview() {
 
 let investmentFormOptions = {
   investors: [],
+  externalInvestors: [],
   projectManagers: [],
   types: [],
 };
@@ -6287,23 +6292,27 @@ function fillSelectOptions(selectEl, items, { valueKey = '_id', labelFn, placeho
 }
 
 async function loadInvestmentFormOptions() {
-  const [typesRes, investorsRes, managersRes] = await Promise.all([
+  const [typesRes, investorsRes, externalInvestorsRes, managersRes] = await Promise.all([
     fetch('/api/admin/investments/types'),
     fetch('/api/admin/investments/investors'),
+    fetch('/api/admin/investments/external-investors'),
     fetch('/api/admin/investments/project-managers'),
   ]);
 
   const typesData = await typesRes.json();
   const investorsData = await investorsRes.json();
+  const externalInvestorsData = await externalInvestorsRes.json().catch(() => ({}));
   const managersData = await managersRes.json();
 
   if (!typesRes.ok) throw new Error(typesData.error || 'Unable to load investment types.');
   if (!investorsRes.ok) throw new Error(investorsData.error || 'Unable to load investors.');
+  if (!externalInvestorsRes.ok) throw new Error(externalInvestorsData.error || 'Unable to load external investors.');
   if (!managersRes.ok) throw new Error(managersData.error || 'Unable to load project managers.');
 
   investmentFormOptions = {
     types: typesData.types || [],
     investors: investorsData.investors || [],
+    externalInvestors: externalInvestorsData.investors || [],
     projectManagers: managersData.projectManagers || [],
   };
 

@@ -308,8 +308,12 @@ function buildApp(sessionStore) {
     sendHtmlPage(res, 'staff.html');
   });
 
-  app.get('/dashboard/investor', ensureAuthPage, ensureStaffRolePage('investor'), (req, res) => {
-    sendHtmlPage(res, 'staff.html');
+  app.get('/dashboard/investor', ensureAuthPage, (req, res, next) => {
+    const userRole = req.session?.user?.role;
+    if (userRole === 'investor' || userRole === 'external_investor' || isFullAccessRole(userRole)) {
+      return sendHtmlPage(res, 'staff.html');
+    }
+    return res.redirect(dashboardPathForRole(userRole) || '/');
   });
 
   app.get('/api/health', (req, res) => {

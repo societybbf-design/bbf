@@ -882,7 +882,7 @@
         <section class="panel-card card-form-wide" id="createProjectPanel">
           <h2 data-i18n="admin.sections.createProject">Create Project</h2>
           <p class="table-subtitle" data-i18n="admin.projects.createHelp">
-            Society ownership defaults to 100%. Optionally add one or more pre-registered external investors so Society % + all external ownership % equals exactly 100%. After member approval and cashier payout, the Cashier records inbound external capital.
+            Society ownership defaults to 100%. Optionally add External Investors (third-party co-funders registered under User Management → External Investors) so Society % + all external ownership % equals exactly 100%. Internal Investors are not used for ownership sharing. After member approval and cashier payout, the Cashier records inbound external capital.
           </p>
           <form id="projectCreateForm" class="add-member-form">
             <div class="form-row-2">
@@ -964,7 +964,11 @@
             </div>
             <div class="form-group" id="projectExternalInvestorsBlock">
               <label>External investors (optional)</label>
-              <p class="table-subtitle">Add pre-registered investors. Their ownership percentages plus Society ownership must equal exactly 100%.</p>
+              <p class="table-subtitle">
+                Add pre-registered <strong>External Investors</strong> (third-party co-funders from User Management → External Investors).
+                Internal Investors and project managers are not listed here.
+                Their ownership percentages plus Society ownership must equal exactly 100%.
+              </p>
               <div id="projectExternalInvestorRows"></div>
               <button type="button" class="secondary-btn" id="projectAddInvestorBtn">Add external investor</button>
             </div>

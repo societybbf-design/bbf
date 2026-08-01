@@ -9,6 +9,8 @@ const ROLES = Object.freeze({
   CASHIER: 'cashier',
   EMPLOYEE: 'employee',
   INVESTOR: 'investor',
+  /** Third-party co-funders who own a % of society projects (not internal investees). */
+  EXTERNAL_INVESTOR: 'external_investor',
   MEMBER: 'member',
   /** @deprecated legacy alias for ceo */
   ADMIN: 'admin',
@@ -21,6 +23,7 @@ const ROLE_LABELS = Object.freeze({
   cashier: 'Cashier',
   employee: 'Employee',
   investor: 'Investor',
+  external_investor: 'External Investor',
   member: 'Member',
   admin: 'Admin (legacy)',
 });
@@ -32,6 +35,7 @@ const ASSIGNABLE_ROLES = Object.freeze([
   'cashier',
   'employee',
   'investor',
+  'external_investor',
   'member',
 ]);
 
@@ -41,6 +45,7 @@ const CEO_PANEL_ASSIGNABLE_ROLES = Object.freeze([
   'cashier',
   'employee',
   'investor',
+  'external_investor',
   'member',
 ]);
 
@@ -51,6 +56,7 @@ const ALL_ROLES = Object.freeze([
   'cashier',
   'employee',
   'investor',
+  'external_investor',
   'member',
   'admin',
 ]);
@@ -195,6 +201,9 @@ const DEFAULT_PERMISSIONS_BY_ROLE = Object.freeze({
   investor: [
     'can_view_reports',
   ],
+  external_investor: [
+    'can_view_reports',
+  ],
   member: [],
 });
 
@@ -206,6 +215,7 @@ const DASHBOARD_PATHS = Object.freeze({
   cashier: '/dashboard/cashier',
   employee: '/dashboard/employee',
   investor: '/dashboard/investor',
+  external_investor: '/dashboard/investor',
   member: '/member',
 });
 
