@@ -726,9 +726,11 @@ function bindUi() {
 }
 
 async function initDeveloperControls() {
+  let sessionUser = null;
   try {
     const session = await api('/api/session');
-    developerSessionUser = session.user;
+    sessionUser = session.user || null;
+    developerSessionUser = sessionUser;
     if (!developerSessionUser || !['developer', 'ceo', 'admin'].includes(developerSessionUser.role)) {
       window.location.href = session.user?.redirectTo || '/';
       return;
@@ -739,14 +741,26 @@ async function initDeveloperControls() {
     if (nameEl) nameEl.textContent = developerSessionUser.name || 'User Management';
     if (initialEl) initialEl.textContent = (developerSessionUser.name || 'U')[0].toUpperCase();
 
+    // Bind UI outside the redirect-on-error path so a leftover handler cannot
+    // bounce developer sessions between / and /user-management forever.
     bindUi();
+  } catch (error) {
+    console.error('User Management auth/init failed:', error);
+    // Only redirect on auth/session failure. Developers always land back on
+    // /user-management from /, which would otherwise create a reload loop.
+    if (!sessionUser || !['developer', 'ceo', 'admin'].includes(sessionUser.role)) {
+      window.location.href = sessionUser?.redirectTo || '/';
+    }
+    return;
+  }
+
+  try {
     showTab('overview');
     await loadStats();
     await loadUsers();
     await ensureCreateForm();
   } catch (error) {
-    console.error('User Management init failed:', error);
-    window.location.href = '/';
+    console.error('User Management workspace load failed:', error);
   }
 }
 
