@@ -640,8 +640,6 @@ function bindUi() {
     document.getElementById('devUserModal')?.classList.add('hidden');
   });
 
-  bindDeletionSettlementModal();
-
   document.getElementById('closeUmProxyModal')?.addEventListener('click', closeProxyApprovalModal);
   document.getElementById('umProxyApprovalModal')?.addEventListener('click', (event) => {
     if (event.target?.id === 'umProxyApprovalModal') closeProxyApprovalModal();

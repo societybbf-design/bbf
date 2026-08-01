@@ -31,6 +31,7 @@ test('soft-delete routes return gone and UI no longer exposes delete controls', 
   assert.match(routesJs, /status\(410\)/);
   assert.doesNotMatch(developerJs, /data-action="soft-delete"/);
   assert.doesNotMatch(developerJs, /openDeletionSettlementModal/);
+  assert.doesNotMatch(developerJs, /bindDeletionSettlementModal/);
   assert.doesNotMatch(umHtml, /devDeleteSettleModal/);
   assert.doesNotMatch(umHtml, /value="deleted"/);
   assert.match(umHtml, /never deleted/i);
