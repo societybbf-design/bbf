@@ -669,6 +669,185 @@
   }
 }
 
+/* ===== CEO Project Management tables (Open / Settled) =====
+   Beat .page-section .table-wrapper / .data-table wrap+hyphen shredding. */
+.admin-dashboard .page-section .pm-admin-table-card {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.admin-dashboard .page-section .table-wrapper.pm-admin-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: auto;
+}
+
+.admin-dashboard .page-section .data-table.pm-admin-table {
+  table-layout: fixed;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+}
+
+/* Open Projects — 9 columns */
+.admin-dashboard .page-section .pm-open-table .pm-col-id { width: 11%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-investor { width: 11%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-type { width: 10%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-return { width: 10%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-ownership { width: 12%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-money { width: 9%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-external { width: 11%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-status { width: 11%; }
+.admin-dashboard .page-section .pm-open-table .pm-col-actions { width: 15%; }
+
+/* Settled / Closed — 9 columns */
+.admin-dashboard .page-section .pm-closed-table .pm-col-id { width: 12%; }
+.admin-dashboard .page-section .pm-closed-table .pm-col-investor { width: 12%; }
+.admin-dashboard .page-section .pm-closed-table .pm-col-type { width: 12%; }
+.admin-dashboard .page-section .pm-closed-table .pm-col-ownership { width: 14%; }
+.admin-dashboard .page-section .pm-closed-table .pm-col-money { width: 11%; }
+.admin-dashboard .page-section .pm-closed-table .pm-col-status { width: 9%; }
+.admin-dashboard .page-section .pm-closed-table .pm-col-date { width: 9%; }
+
+.admin-dashboard .page-section .pm-admin-table th,
+.admin-dashboard .page-section .pm-admin-table td {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+  vertical-align: middle;
+  line-height: 1.3;
+  font-size: 0.78rem;
+  padding: 0.55rem 0.45rem;
+  box-sizing: border-box;
+}
+
+.admin-dashboard .page-section .pm-admin-table th {
+  white-space: normal;
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-cell-main {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-col-money .pm-cell-main,
+.admin-dashboard .page-section .pm-admin-table .pm-col-date .pm-cell-main,
+.admin-dashboard .page-section .pm-admin-table .pm-col-id .pm-cell-main {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-col-money,
+.admin-dashboard .page-section .pm-admin-table th.pm-col-money {
+  text-align: right;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-col-date {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-status-badge {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-net-positive .pm-cell-main {
+  color: #4ade80;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-net-negative .pm-cell-main {
+  color: #f87171;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-col-actions {
+  overflow: visible;
+  vertical-align: middle;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-action-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-action-btn,
+.admin-dashboard .page-section .pm-admin-table button.pm-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
+  padding: 0.38rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+  border-radius: 8px;
+  transform: none;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-action-note {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1100px) {
+  .admin-dashboard .page-section .pm-admin-table th,
+  .admin-dashboard .page-section .pm-admin-table td {
+    font-size: 0.72rem;
+    padding: 0.45rem 0.32rem;
+  }
+
+  .admin-dashboard .page-section .pm-admin-table th {
+    font-size: 0.6rem;
+  }
+
+  .admin-dashboard .page-section .pm-admin-table .pm-action-btn {
+    padding: 0.32rem 0.4rem;
+    font-size: 0.68rem;
+  }
+}
+
 /* ===== Reports page ===== */
 .admin-dashboard .reports-page,
 .admin-dashboard .reports-page-inner {
