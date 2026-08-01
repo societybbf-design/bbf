@@ -43,6 +43,45 @@ const InvestmentApprovalSchema = new mongoose.Schema({
   },
 }, { _id: false });
 
+/** One external co-investor stake on a society project (multi-investor support). */
+const ExternalInvestorStakeSchema = new mongoose.Schema({
+  investor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true,
+  },
+  investorName: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  ownershipPct: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+  },
+  amount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  capitalReceived: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  capitalReceivedAt: {
+    type: Date,
+    default: null,
+  },
+  profitBalance: {
+    type: Number,
+    default: 0,
+  },
+}, { _id: true });
+
 const InvestmentSchema = new mongoose.Schema({
   member: {
     type: mongoose.Schema.Types.ObjectId,
@@ -133,6 +172,14 @@ const InvestmentSchema = new mongoose.Schema({
     default: 0,
     min: 0,
     max: 100,
+  },
+  /**
+   * Multi-investor stakes. Aggregate investorOwnershipPct / externalAmount /
+   * investorProfitBalance stay in sync for legacy single-investor consumers.
+   */
+  externalInvestors: {
+    type: [ExternalInvestorStakeSchema],
+    default: [],
   },
   societyAmount: {
     type: Number,

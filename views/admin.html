@@ -876,17 +876,9 @@
         <section class="panel-card card-form-wide" id="createProjectPanel">
           <h2 data-i18n="admin.sections.createProject">Create Project</h2>
           <p class="table-subtitle" data-i18n="admin.projects.createHelp">
-            Combine society funds and external investor capital with ownership percentages. Choose monthly returns or fixed/term lock until maturity. After member approval and cashier payout, the Cashier records inbound external capital.
+            Society ownership defaults to 100%. Optionally add one or more pre-registered external investors so Society % + all external ownership % equals exactly 100%. After member approval and cashier payout, the Cashier records inbound external capital.
           </p>
           <form id="projectCreateForm" class="add-member-form">
-            <div class="form-group">
-              <label data-i18n="admin.forms.selectInvestor">
-                Select Investor
-                <select name="investorId" id="projectInvestorSelect" required>
-                  <option value="">Choose investor…</option>
-                </select>
-              </label>
-            </div>
             <div class="form-row-2">
               <div class="form-group">
                 <label data-i18n="admin.forms.investmentType">
@@ -954,17 +946,23 @@
               <div class="form-group">
                 <label data-i18n="admin.forms.societyOwnershipPct">
                   Society ownership (%)
-                  <input type="number" name="societyOwnershipPct" id="projectSocietyPct" min="0" max="100" step="0.01" value="70" required />
+                  <input type="number" name="societyOwnershipPct" id="projectSocietyPct" min="0" max="100" step="0.01" value="100" required />
                 </label>
               </div>
               <div class="form-group">
                 <label data-i18n="admin.forms.investorOwnershipPct">
-                  External investor ownership (%)
-                  <input type="number" name="investorOwnershipPct" id="projectInvestorPct" min="0" max="100" step="0.01" value="30" required />
+                  External ownership total (%)
+                  <input type="number" name="investorOwnershipPct" id="projectInvestorPct" min="0" max="100" step="0.01" value="0" readonly />
                 </label>
               </div>
             </div>
-            <p class="table-subtitle" id="projectOwnershipPreview">Society capital ৳0.00 · External capital ৳0.00</p>
+            <div class="form-group" id="projectExternalInvestorsBlock">
+              <label>External investors (optional)</label>
+              <p class="table-subtitle">Add pre-registered investors. Their ownership percentages plus Society ownership must equal exactly 100%.</p>
+              <div id="projectExternalInvestorRows"></div>
+              <button type="button" class="secondary-btn" id="projectAddInvestorBtn">Add external investor</button>
+            </div>
+            <p class="table-subtitle" id="projectOwnershipPreview">Society capital ৳0.00 (100%) · External capital ৳0.00 (0%)</p>
             <button type="submit" class="primary-btn" data-i18n="admin.buttons.createProject">Create Project</button>
             <p id="projectCreateMessage" class="message"></p>
           </form>

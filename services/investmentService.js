@@ -396,6 +396,7 @@ function getInvestmentDisplayStatus(status) {
 async function getGroupedSocietyInvestments({ syncSaleStatus = false } = {}) {
   const investments = await Investment.find(SOCIETY_INVESTMENT_FILTER)
     .populate('investor', 'name email role phone address dateOfBirth')
+    .populate('externalInvestors.investor', 'name email role phone')
     .populate('projectManager', 'name email role')
     .sort({ createdAt: -1 });
 
@@ -634,10 +635,55 @@ async function applyCompletedCapitalExpansion(expansionInvestment, {
   parent.amount = moneyAmount(Number(parent.amount || 0) + addAmount);
   parent.societyAmount = moneyAmount(Number(parent.societyAmount || 0) + addSociety);
   parent.externalAmount = moneyAmount(Number(parent.externalAmount || 0) + addExternal);
+
+  // Scale / merge multi-investor stake capital at the same ownership ratios.
+  const expansionStakes = Array.isArray(expansionInvestment.externalInvestors)
+    ? expansionInvestment.externalInvestors
+    : [];
+  if (expansionStakes.length) {
+    if (!Array.isArray(parent.externalInvestors)) parent.externalInvestors = [];
+    for (const addStake of expansionStakes) {
+      const addStakeAmount = moneyAmount(addStake.amount);
+      const investorKey = String(addStake.investor?._id || addStake.investor || '');
+      const parentStake = parent.externalInvestors.find((row) => {
+        const rowKey = String(row.investor?._id || row.investor || '');
+        if (investorKey && rowKey) return rowKey === investorKey;
+        return String(row.investorName || '') === String(addStake.investorName || '');
+      });
+      if (parentStake) {
+        parentStake.amount = moneyAmount(Number(parentStake.amount || 0) + addStakeAmount);
+        if (addStake.ownershipPct != null) {
+          parentStake.ownershipPct = Number(addStake.ownershipPct);
+        }
+      } else {
+        parent.externalInvestors.push({
+          investor: addStake.investor?._id || addStake.investor || null,
+          investorName: addStake.investorName || '',
+          ownershipPct: Number(addStake.ownershipPct || 0),
+          amount: addStakeAmount,
+          capitalReceived: 0,
+          capitalReceivedAt: null,
+          profitBalance: 0,
+        });
+      }
+    }
+    parent.investorProfitBalance = moneyAmount(
+      parent.externalInvestors.reduce((sum, row) => sum + Number(row.profitBalance || 0), 0)
+    );
+  }
+
   const total = moneyAmount(parent.amount);
   if (total > 0) {
-    parent.societyOwnershipPct = moneyAmount((Number(parent.societyAmount || 0) / total) * 100);
-    parent.investorOwnershipPct = moneyAmount(100 - Number(parent.societyOwnershipPct || 0));
+    // Prefer keeping declared ownership percentages from the expansion/parent
+    // (ratios should match); recompute only when percentages are missing.
+    if (!(Number(parent.societyOwnershipPct) >= 0) || !(Number(parent.investorOwnershipPct) >= 0)) {
+      parent.societyOwnershipPct = moneyAmount((Number(parent.societyAmount || 0) / total) * 100);
+      parent.investorOwnershipPct = moneyAmount(100 - Number(parent.societyOwnershipPct || 0));
+    } else {
+      // Keep ownership % stable; amounts already updated above.
+      parent.societyOwnershipPct = moneyAmount(parent.societyOwnershipPct);
+      parent.investorOwnershipPct = moneyAmount(parent.investorOwnershipPct);
+    }
   }
   if (!Array.isArray(parent.capitalExpansionHistory)) {
     parent.capitalExpansionHistory = [];
@@ -689,6 +735,7 @@ async function proposeCapitalExpansion({
   investorOwnershipPct = null,
   societyAmount = null,
   externalAmount = null,
+  externalInvestors = null,
 } = {}) {
   if (!parentInvestmentId) {
     const error = new Error('Select a running project to expand.');
@@ -746,6 +793,17 @@ async function proposeCapitalExpansion({
     notes?.trim() || '',
   ].filter(Boolean).join(' · ');
 
+  const parentExternalInvestors = Array.isArray(externalInvestors) && externalInvestors.length
+    ? externalInvestors
+    : (Array.isArray(parent.externalInvestors) ? parent.externalInvestors : []);
+  const expansionExternalInvestors = parentExternalInvestors
+    .filter((row) => Number(row.ownershipPct) > 0)
+    .map((row) => ({
+      investorId: row.investor?._id || row.investor || row.investorId || null,
+      investorName: row.investorName || row.investor?.name || '',
+      ownershipPct: Number(row.ownershipPct),
+    }));
+
   const result = await createSocietyInvestment({
     amount: addAmount,
     investorId: parent.investor?._id || parent.investor || null,
@@ -766,6 +824,7 @@ async function proposeCapitalExpansion({
     investorOwnershipPct: investorOwnershipPct != null ? investorOwnershipPct : parent.investorOwnershipPct,
     societyAmount,
     externalAmount,
+    externalInvestors: expansionExternalInvestors,
     fundingKind: 'capital_expansion',
     parentInvestment: parent._id,
   });
@@ -805,13 +864,47 @@ async function createSocietyInvestment({
   investorOwnershipPct = null,
   societyAmount = null,
   externalAmount = null,
+  externalInvestors = null,
   fundingKind = 'initial',
   parentInvestment = null,
 }) {
+  const rawExternalInvestors = Array.isArray(externalInvestors)
+    ? externalInvestors.filter((row) => Number(row?.ownershipPct) > 0)
+    : [];
+
+  const resolvedExternalInvestors = [];
+  for (const row of rawExternalInvestors) {
+    const rowInvestorId = row.investorId || row.investor || null;
+    if (!rowInvestorId) {
+      const error = new Error('Each external investor must be selected from registered investors.');
+      error.status = 400;
+      throw error;
+    }
+    const user = await User.findOne({
+      _id: rowInvestorId,
+      role: 'investor',
+      status: { $ne: 'deleted' },
+    });
+    if (!user) {
+      const error = new Error('One or more selected investors were not found. Register them in Investor Management first.');
+      error.status = 404;
+      throw error;
+    }
+    resolvedExternalInvestors.push({
+      investor: user._id,
+      investorId: user._id,
+      investorName: String(row.investorName || user.name || '').trim(),
+      ownershipPct: Number(row.ownershipPct),
+    });
+  }
+
   let investorUser = null;
-  if (investorId) {
+  const primaryInvestorId = investorId
+    || resolvedExternalInvestors[0]?.investor
+    || null;
+  if (primaryInvestorId) {
     investorUser = await User.findOne({
-      _id: investorId,
+      _id: primaryInvestorId,
       role: 'investor',
       status: { $ne: 'deleted' },
     });
@@ -836,15 +929,52 @@ async function createSocietyInvestment({
     }
   }
 
+  const { normalizeOwnership } = require('./projectFinanceService');
+  const ownership = normalizeOwnership({
+    amount,
+    societyOwnershipPct: societyOwnershipPct != null ? societyOwnershipPct : (resolvedExternalInvestors.length ? null : 100),
+    investorOwnershipPct: resolvedExternalInvestors.length
+      ? null
+      : (investorOwnershipPct != null ? investorOwnershipPct : (societyOwnershipPct != null ? null : 0)),
+    societyAmount,
+    externalAmount,
+    externalInvestors: resolvedExternalInvestors.length ? resolvedExternalInvestors : null,
+  });
+
+  // Legacy single-investor path: synthesize one stake when only aggregate % was provided.
+  if (!ownership.externalInvestors.length && ownership.investorOwnershipPct > 0) {
+    if (!investorUser && !investorName?.trim() && !partner?.trim()) {
+      const error = new Error('An external investor is required when investor ownership is greater than 0%.');
+      error.status = 400;
+      throw error;
+    }
+    ownership.externalInvestors = [{
+      investor: investorUser?._id || null,
+      investorName: investorUser?.name || investorName?.trim() || partner?.trim() || '',
+      ownershipPct: ownership.investorOwnershipPct,
+      amount: ownership.externalAmount,
+      capitalReceived: 0,
+      capitalReceivedAt: null,
+      profitBalance: 0,
+    }];
+  }
+
+  const externalNames = ownership.externalInvestors
+    .map((row) => row.investorName)
+    .filter(Boolean);
   const normalizedType = investmentType?.trim() || 'Fixed Investment';
-  const normalizedName = investorUser?.name
-    || investorName?.trim()
-    || partner?.trim();
+  const normalizedName = ownership.investorOwnershipPct <= 0
+    ? (investorName?.trim() || partner?.trim() || 'Society')
+    : (externalNames.join(', ')
+      || investorUser?.name
+      || investorName?.trim()
+      || partner?.trim()
+      || 'Investor');
   const normalizedLocation = location?.trim()
     || investorUser?.address?.trim()
     || 'Not specified';
   const normalizedSector = sector?.trim() || normalizedType || normalizedLocation || 'General';
-  const normalizedPartner = partner?.trim() || normalizedName || 'Investor';
+  const normalizedPartner = partner?.trim() || normalizedName || 'Society';
 
   if (!normalizedName) {
     const error = new Error('Select an investor or provide an investor name.');
@@ -858,16 +988,7 @@ async function createSocietyInvestment({
     throw error;
   }
 
-  const { normalizeOwnership } = require('./projectFinanceService');
-  const ownership = normalizeOwnership({
-    amount,
-    societyOwnershipPct,
-    investorOwnershipPct,
-    societyAmount,
-    externalAmount,
-  });
-
-  if (ownership.investorOwnershipPct > 0 && !investorId && !investorName?.trim() && !partner?.trim()) {
+  if (ownership.investorOwnershipPct > 0 && !ownership.externalInvestors.length) {
     const error = new Error('An external investor is required when investor ownership is greater than 0%.');
     error.status = 400;
     throw error;
@@ -902,10 +1023,11 @@ async function createSocietyInvestment({
     : 'initial';
   const parentId = parentInvestment || null;
 
+  const primaryExternal = ownership.externalInvestors[0] || null;
   const investment = await Investment.create({
     investmentCode,
     investmentType: normalizedType,
-    investor: investorUser?._id || null,
+    investor: primaryExternal?.investor || investorUser?._id || null,
     projectManager: projectManagerUser?._id || null,
     investorName: normalizedName,
     dateOfBirth: parsedDateOfBirth && !Number.isNaN(parsedDateOfBirth.getTime()) ? parsedDateOfBirth : null,
@@ -918,6 +1040,15 @@ async function createSocietyInvestment({
     investorOwnershipPct: ownership.investorOwnershipPct,
     societyAmount: ownership.societyAmount,
     externalAmount: ownership.externalAmount,
+    externalInvestors: ownership.externalInvestors.map((row) => ({
+      investor: row.investor || null,
+      investorName: row.investorName || '',
+      ownershipPct: row.ownershipPct,
+      amount: row.amount,
+      capitalReceived: 0,
+      capitalReceivedAt: null,
+      profitBalance: 0,
+    })),
     sector: normalizedSector,
     partner: normalizedPartner,
     allocation: normalizedSector,
@@ -934,19 +1065,23 @@ async function createSocietyInvestment({
 
   await investment.populate([
     { path: 'investor', select: 'name email role phone address dateOfBirth' },
+    { path: 'externalInvestors.investor', select: 'name email role phone' },
     { path: 'projectManager', select: 'name email role' },
     { path: 'parentInvestment', select: 'investmentCode amount status' },
   ]);
 
   const isExpansion = normalizedFundingKind === 'capital_expansion';
   const parentCode = investment.parentInvestment?.investmentCode || '';
+  const ownershipLabel = ownership.externalInvestors.length
+    ? `Society ${ownership.societyOwnershipPct}% / ${ownership.externalInvestors.map((s) => `${s.investorName || 'Investor'} ${s.ownershipPct}%`).join(' · ')}`
+    : `Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}%`;
   const notifyTitle = isExpansion
     ? `Capital expansion request ${investment.investmentCode}`
     : `New investment request ${investment.investmentCode}`;
   const notifyMessage = isExpansion
     ? `Expand capital on running project ${parentCode || 'project'} by ${formatMoney(ownership.amount, 2)} `
-      + `(Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}%). Please review and approve.`
-    : `${normalizedName} · ${normalizedType} · ${formatMoney(ownership.amount, 2)} · Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}% (${normalizedReturnMode === 'monthly' ? 'Monthly return' : 'Fixed/term'}). Please review and approve.`;
+      + `(${ownershipLabel}). Please review and approve.`
+    : `${normalizedName} · ${normalizedType} · ${formatMoney(ownership.amount, 2)} · ${ownershipLabel} (${normalizedReturnMode === 'monthly' ? 'Monthly return' : 'Fixed/term'}). Please review and approve.`;
 
   await Promise.all(eligibleMembers.map((member) => createMemberNotification({
     memberId: member._id,

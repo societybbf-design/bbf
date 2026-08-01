@@ -420,6 +420,7 @@ router.post('/', requirePermission('can_manage_investments'), requirePasswordCon
       investorOwnershipPct,
       societyAmount,
       externalAmount,
+      externalInvestors,
     } = req.body;
 
     const savedDocuments = saveUploadedFiles(documents || [], 'investments');
@@ -444,6 +445,7 @@ router.post('/', requirePermission('can_manage_investments'), requirePasswordCon
       investorOwnershipPct,
       societyAmount,
       externalAmount,
+      externalInvestors,
     });
 
     return res.status(201).json(result);
@@ -464,6 +466,7 @@ router.post('/:id/expand-capital', requirePermission('can_manage_investments'), 
       investorOwnershipPct: req.body?.investorOwnershipPct,
       societyAmount: req.body?.societyAmount,
       externalAmount: req.body?.externalAmount,
+      externalInvestors: req.body?.externalInvestors,
     });
     return res.status(201).json(result);
   } catch (error) {
