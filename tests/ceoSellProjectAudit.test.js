@@ -110,7 +110,9 @@ test('liquidateProject is transactional with hard ledger ops and Sale creation',
   assert.match(financeService, /withMongoTransaction\(async \(session\) =>/);
   assert.match(financeService, /createWithSession\(Sale/);
   assert.match(financeService, /creditInbound\(\{[\s\S]*session,/);
-  assert.match(financeService, /debit\(\{[\s\S]*investor_payout[\s\S]*session,/);
+  // External investor settlements use isolated sub-ledger (not society bank debit).
+  assert.match(financeService, /debitExternalProfitPayout|debitExternalCapitalOut/);
+  assert.doesNotMatch(financeService, /type:\s*'investor_payout'/);
   assert.match(financeService, /applyLossToMembers/);
   assert.match(financeService, /ledgerLockedAt: lockAt/);
   assert.doesNotMatch(financeService, /tryDebit/);

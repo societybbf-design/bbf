@@ -356,24 +356,25 @@ async function recordExternalInvestment({
     throw httpError('External capital has already been recorded for this project.', 409);
   }
 
-  const { creditInbound } = require('./bankLedgerService');
-  const bankLedger = await creditInbound({
-    type: 'external_investment',
-    amount: received,
-    referenceType: 'Investment',
-    referenceId: investment._id,
+  // Absolute isolation: external capital never credits the Society Bank Ledger.
+  const { creditExternalCapital } = require('./externalInvestorLedgerService');
+  const externalLedger = await creditExternalCapital(investment, received, {
     note: note?.trim()
       || `External investor capital for ${investment.investmentCode} (${investment.investorName || 'investor'})`,
     createdBy: recordedBy,
-    paymentChannel: paymentChannel || '',
-    paymentReference: paymentReference || '',
+    referenceType: 'Investment',
+    referenceId: investment._id,
+    investorName: investment.investorName || '',
+    paymentChannel: paymentChannel || undefined,
+    paymentReference: paymentReference || undefined,
   });
 
   const now = new Date();
   investment.externalCapitalReceived = received;
   investment.externalCapitalReceivedAt = now;
   investment.externalCapitalRecordedBy = String(recordedBy || 'Cashier').trim();
-  investment.externalCapitalLedgerEntryId = bankLedger?.entry?._id || null;
+  // Legacy field retained for audit pointers — now references external sub-ledger entry.
+  investment.externalCapitalLedgerEntryId = externalLedger?.entry?._id || null;
 
   if (Array.isArray(investment.externalInvestors) && investment.externalInvestors.length) {
     for (const stake of investment.externalInvestors) {
@@ -391,7 +392,7 @@ async function recordExternalInvestment({
   await createAdminNotification({
     type: 'general',
     title: `External capital recorded: ${investment.investmentCode}`,
-    message: `${formatMoney(received, 2)} received from ${stakeholderNames} (${investment.investorOwnershipPct}% external ownership).`,
+    message: `${formatMoney(received, 2)} received from ${stakeholderNames} on isolated external sub-ledger (society bank unchanged).`,
     relatedId: investment._id,
     relatedModel: 'Investment',
     targetRoles: ['ceo', 'cashier'],
@@ -399,8 +400,10 @@ async function recordExternalInvestment({
 
   return {
     investment,
-    bankLedger,
-    message: `External investment of ${formatMoney(received, 2)} recorded for ${investment.investmentCode}.`,
+    externalLedger,
+    bankLedger: null,
+    societyBankImpact: false,
+    message: `External investment of ${formatMoney(received, 2)} recorded on project external sub-ledger for ${investment.investmentCode}. Society bank ledger was not affected.`,
   };
 }
 
@@ -520,16 +523,32 @@ async function recordMonthlyProjectReturn({
       recordedBy: String(recordedBy || 'Cashier').trim(),
     }, session);
 
-    const { creditInbound } = require('./bankLedgerService');
-    const bankLedger = await creditInbound({
-      type: 'monthly_profit',
-      amount: profit,
-      referenceType: 'InvestmentProfit',
-      referenceId: record._id,
-      note: `Monthly return ${investment.investmentCode} (${periodYearMonth})`,
-      createdBy: recordedBy,
-      session,
-    });
+    // Society share only → society bank. External share → isolated sub-ledger.
+    let bankLedger = null;
+    if (split.societyShare > 0.001) {
+      const { creditInbound } = require('./bankLedgerService');
+      bankLedger = await creditInbound({
+        type: 'monthly_profit',
+        amount: split.societyShare,
+        referenceType: 'InvestmentProfit',
+        referenceId: record._id,
+        note: `Monthly return society share ${investment.investmentCode} (${periodYearMonth})`,
+        createdBy: recordedBy,
+        session,
+      });
+    }
+
+    let externalLedger = null;
+    if (split.investorShare > 0.001) {
+      const { creditExternalProfitAccrual } = require('./externalInvestorLedgerService');
+      externalLedger = await creditExternalProfitAccrual(investment, split.investorShare, {
+        note: `Monthly return external share ${investment.investmentCode} (${periodYearMonth})`,
+        createdBy: recordedBy,
+        referenceType: 'InvestmentProfit',
+        referenceId: record._id,
+        session,
+      });
+    }
 
     const investorLabel = (split.investorShares || [])
       .map((row) => `${row.investorName || 'Investor'} ${formatMoney(row.share, 2)}`)
@@ -542,7 +561,8 @@ async function recordMonthlyProjectReturn({
       distribution,
       yearMonth: periodYearMonth,
       bankLedger,
-      message: `Monthly return ${formatMoney(profit, 2)} for ${periodYearMonth} split — society ${formatMoney(split.societyShare, 2)} equally among ${distribution.memberCount} eligible member(s), external ${investorLabel}.`,
+      externalLedger,
+      message: `Monthly return ${formatMoney(profit, 2)} for ${periodYearMonth} split — society ${formatMoney(split.societyShare, 2)} equally among ${distribution.memberCount} eligible member(s) (society bank), external ${investorLabel} (isolated sub-ledger).`,
     };
   });
 
@@ -812,16 +832,20 @@ async function liquidateProject({
       investorPayouts,
     } = settlementPlan;
 
-    // Credit net proceeds into society bank (hard fail).
+    // Society portion only hits the Society Bank Ledger.
+    // External investor capital/profit settlements use the isolated sub-ledger.
+    const societyBankCredit = money(
+      Number(societySavingsRefund || 0) + Number(profitSplit.societyShare || 0)
+    );
     let bankLedger = null;
-    if (netProceeds > 0) {
+    if (societyBankCredit > 0.001) {
       const { creditInbound } = require('./bankLedgerService');
       bankLedger = await creditInbound({
         type: 'project_sale',
-        amount: netProceeds,
+        amount: societyBankCredit,
         referenceType: 'Investment',
         referenceId: investment._id,
-        note: `Project sale/liquidation ${investment.investmentCode}`,
+        note: `Project sale society share ${investment.investmentCode} (external settled off society ledger)`,
         createdBy: recordedBy,
         session,
       });
@@ -845,7 +869,11 @@ async function liquidateProject({
       });
     }
 
-    const { debit } = require('./bankLedgerService');
+    const {
+      debitExternalCapitalOut,
+      debitExternalProfitPayout,
+      creditExternalProfitAccrual,
+    } = require('./externalInvestorLedgerService');
     const investorLedgers = [];
     const payoutRows = Array.isArray(investorPayouts) && investorPayouts.length
       ? investorPayouts.filter((row) => Number(row.payout) > 0.001)
@@ -857,16 +885,50 @@ async function liquidateProject({
         }]
         : []);
     for (const row of payoutRows) {
-      const ledger = await debit({
-        type: 'investor_payout',
-        amount: money(row.payout),
-        referenceType: 'Investment',
-        referenceId: investment._id,
-        note: `Investor settlement ${investment.investmentCode} → ${row.investorName || 'investor'} (${row.ownershipPct != null ? `${row.ownershipPct}%` : 'share'})`,
-        createdBy: recordedBy,
-        session,
-      });
-      investorLedgers.push({ ...row, ledger });
+      const payoutAmt = money(row.payout);
+      // Ensure sub-ledger has balance to settle (accrue shortfall as profit credit if needed).
+      const { ensureExternalLedger } = require('./externalInvestorLedgerService');
+      const extLedger = await ensureExternalLedger(investment);
+      if (money(extLedger.bookBalance) + 0.001 < payoutAmt) {
+        const gap = money(payoutAmt - money(extLedger.bookBalance));
+        await creditExternalProfitAccrual(investment, gap, {
+          note: `External settlement top-up ${investment.investmentCode}`,
+          createdBy: recordedBy,
+          referenceType: 'Investment',
+          referenceId: investment._id,
+          session,
+          investor: row.investor || null,
+          investorName: row.investorName || '',
+        });
+      }
+      const capitalPart = money(Math.min(payoutAmt, Number(row.capitalShare || capitalSplit?.investorShare || 0)));
+      let remaining = payoutAmt;
+      if (capitalPart > 0.001) {
+        const capitalOut = await debitExternalCapitalOut(investment, Math.min(capitalPart, remaining), {
+          note: `External capital return ${investment.investmentCode} → ${row.investorName || 'investor'}`,
+          createdBy: recordedBy,
+          referenceType: 'Investment',
+          referenceId: investment._id,
+          session,
+          investor: row.investor || null,
+          investorName: row.investorName || '',
+        });
+        investorLedgers.push({ ...row, ledger: capitalOut, channel: 'external_sub_ledger' });
+        remaining = money(remaining - Math.min(capitalPart, remaining));
+      }
+      if (remaining > 0.001) {
+        const profitOut = await debitExternalProfitPayout(investment, remaining, {
+          note: `External profit settlement ${investment.investmentCode} → ${row.investorName || 'investor'}`,
+          createdBy: recordedBy,
+          referenceType: 'Investment',
+          referenceId: investment._id,
+          session,
+          investor: row.investor || null,
+          investorName: row.investorName || '',
+          payoutStatus: 'paid',
+        });
+        investorLedgers.push({ ...row, ledger: profitOut, channel: 'external_sub_ledger' });
+      }
     }
     const investorLedger = investorLedgers[0] || null;
 

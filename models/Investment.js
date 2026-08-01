@@ -263,6 +263,8 @@ const InvestmentSchema = new mongoose.Schema({
     type: String,
     enum: [
       'pending_member_approval',
+      /** After unanimous member approval — CEO must authorize before cashier queue. */
+      'pending_ceo_authorization',
       'pending_cashier_payment',
       'active',
       'sold',
@@ -271,6 +273,20 @@ const InvestmentSchema = new mongoose.Schema({
     ],
     default: 'pending_member_approval',
     index: true,
+  },
+  ceoAuthorizedAt: {
+    type: Date,
+    default: null,
+  },
+  ceoAuthorizedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  ceoAuthorizationNote: {
+    type: String,
+    trim: true,
+    default: '',
   },
   documents: {
     type: [InvestmentDocumentSchema],

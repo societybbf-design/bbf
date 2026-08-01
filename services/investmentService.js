@@ -296,7 +296,12 @@ async function enrichInvestmentsWithSaleData(investments, { syncSaleStatus = fal
   for (const investment of investments) {
     const plain = investment.toObject ? investment.toObject() : { ...investment };
     const record = latestByInvestment.get(String(plain._id));
-    const workflowPending = ['pending_member_approval', 'pending_cashier_payment', 'rejected'].includes(plain.status);
+    const workflowPending = [
+      'pending_member_approval',
+      'pending_ceo_authorization',
+      'pending_cashier_payment',
+      'rejected',
+    ].includes(plain.status);
 
     if (workflowPending) {
       enriched.push({
@@ -366,9 +371,12 @@ async function enrichInvestmentsWithSaleData(investments, { syncSaleStatus = fal
     active: enriched.filter((item) => item.status === 'active'),
     sold: enriched.filter((item) => item.status === 'sold' || item.status === 'closed'),
     pendingMemberApproval: enriched.filter((item) => item.status === 'pending_member_approval'),
+    pendingCeoAuthorization: enriched.filter((item) => item.status === 'pending_ceo_authorization'),
     pendingCashierPayment: enriched.filter((item) => item.status === 'pending_cashier_payment'),
     pending: enriched.filter((item) => (
-      item.status === 'pending_member_approval' || item.status === 'pending_cashier_payment'
+      item.status === 'pending_member_approval'
+      || item.status === 'pending_ceo_authorization'
+      || item.status === 'pending_cashier_payment'
     )),
     all: enriched,
   };
@@ -378,6 +386,8 @@ function getInvestmentDisplayStatus(status) {
   switch (status) {
     case 'pending_member_approval':
       return 'Pending Member Approval';
+    case 'pending_ceo_authorization':
+      return 'Pending CEO Authorization';
     case 'pending_cashier_payment':
       return 'Pending Cashier Payment';
     case 'active':
@@ -550,7 +560,13 @@ async function getProjectManagerPortfolio(managerId) {
     return sum + (value < 0 ? Math.abs(value) : 0);
   }, 0);
   const capitalDeployed = grouped.all
-    .filter((item) => ['active', 'sold', 'pending_member_approval', 'pending_cashier_payment'].includes(item.status))
+    .filter((item) => [
+      'active',
+      'sold',
+      'pending_member_approval',
+      'pending_ceo_authorization',
+      'pending_cashier_payment',
+    ].includes(item.status))
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const activeCapital = grouped.active.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const expensesManaged = grouped.all.reduce((sum, item) => sum + Number(item.withdrawals || 0), 0) + lossesManaged;
@@ -791,12 +807,18 @@ async function proposeCapitalExpansion({
   const pendingExpansion = await Investment.findOne({
     parentInvestment: parent._id,
     fundingKind: 'capital_expansion',
-    status: { $in: ['pending_member_approval', 'pending_cashier_payment'] },
+    status: {
+      $in: ['pending_member_approval', 'pending_ceo_authorization', 'pending_cashier_payment'],
+    },
   }).select('_id investmentCode status').lean();
   if (pendingExpansion) {
+    const stage = pendingExpansion.status === 'pending_member_approval'
+      ? 'member approval'
+      : pendingExpansion.status === 'pending_ceo_authorization'
+        ? 'CEO authorization'
+        : 'cashier payment';
     const error = new Error(
-      `A capital expansion (${pendingExpansion.investmentCode || pendingExpansion._id}) is already awaiting `
-      + `${pendingExpansion.status === 'pending_member_approval' ? 'member approval' : 'cashier payment'}.`
+      `A capital expansion (${pendingExpansion.investmentCode || pendingExpansion._id}) is already awaiting ${stage}.`
     );
     error.status = 409;
     throw error;
@@ -854,7 +876,7 @@ async function proposeCapitalExpansion({
       status: parent.status,
     },
     message: `Capital expansion of ${formatMoney(addAmount, 2)} for ${parent.investmentCode} submitted for member approval. `
-      + 'After all members approve, the Cashier will process payment using the existing payment queue. '
+      + 'Flow: member vote → CEO authorization → Cashier payment queue. '
       + 'Parent project capital updates only after successful cashier payment.',
   };
 }
@@ -1309,14 +1331,15 @@ async function approveInvestmentByMember(investmentId, memberId, { proxy = null 
 
   const trackingBeforeSave = await buildApprovalTracking(investment);
   if (trackingBeforeSave.allApproved) {
-    investment.status = 'pending_cashier_payment';
+    // Maker-checker: members approve → CEO authorizes → cashier pays.
+    investment.status = 'pending_ceo_authorization';
     await createAdminNotification({
       type: 'general',
-      title: `Investment ready for cashier: ${investment.investmentCode}`,
-      message: `All ${trackingBeforeSave.totalMembers} members approved. Awaiting cashier payment.`,
+      title: `CEO authorization required: ${investment.investmentCode}`,
+      message: `All ${trackingBeforeSave.totalMembers} members approved. Awaiting CEO final authorization before cashier payment.`,
       relatedId: investment._id,
       relatedModel: 'Investment',
-      targetRoles: ['cashier'],
+      targetRoles: ['ceo'],
     });
   }
 
@@ -1326,8 +1349,67 @@ async function approveInvestmentByMember(investmentId, memberId, { proxy = null 
     investment,
     approvalTracking: await buildApprovalTracking(investment),
     message: trackingBeforeSave.allApproved
-      ? 'Approved. Investment moved to cashier payment queue.'
+      ? 'Approved. Investment moved to CEO authorization queue.'
       : 'Approval recorded successfully.',
+  };
+}
+
+/**
+ * CEO final authorization after unanimous member approval.
+ * Moves project / capital expansion into the existing cashier payment queue
+ * without altering cashier funding validation rules.
+ */
+async function authorizeInvestmentByCeo(investmentId, {
+  approved = true,
+  note = '',
+  authorizedBy = 'CEO',
+} = {}) {
+  const investment = await Investment.findById(investmentId)
+    .populate('parentInvestment', 'investmentCode amount status');
+  if (!investment) {
+    const error = new Error('Investment not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (investment.status !== 'pending_ceo_authorization') {
+    const error = new Error('This investment is not awaiting CEO authorization.');
+    error.status = 400;
+    throw error;
+  }
+
+  investment.ceoAuthorizedAt = new Date();
+  investment.ceoAuthorizedBy = String(authorizedBy || 'CEO').trim();
+  investment.ceoAuthorizationNote = String(note || '').trim();
+
+  if (!approved) {
+    investment.status = 'rejected';
+    await investment.save();
+    return {
+      investment,
+      message: 'Investment / capital expansion rejected by CEO.',
+    };
+  }
+
+  investment.status = 'pending_cashier_payment';
+  await investment.save();
+
+  const isExpansion = investment.fundingKind === 'capital_expansion';
+  await createAdminNotification({
+    type: 'general',
+    title: isExpansion
+      ? `Capital expansion ready for cashier: ${investment.investmentCode}`
+      : `Investment ready for cashier: ${investment.investmentCode}`,
+    message: `CEO authorized. Awaiting cashier payment (existing funding validation unchanged).`,
+    relatedId: investment._id,
+    relatedModel: 'Investment',
+    targetRoles: ['cashier'],
+  });
+
+  return {
+    investment,
+    message: isExpansion
+      ? 'CEO authorized capital expansion. Moved to cashier payment queue.'
+      : 'CEO authorized. Investment moved to cashier payment queue.',
   };
 }
 
@@ -2446,6 +2528,7 @@ function buildInvestmentSummaryFromGrouped(grouped, totalSavings = 0) {
 
 module.exports = {
   approveInvestmentByMember,
+  authorizeInvestmentByCeo,
   buildApprovalTracking,
   buildApprovalTrackingBatch,
   completeCashierPayment,

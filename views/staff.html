@@ -1404,10 +1404,153 @@
         <div class="panel-card hidden" data-staff-view="investments" id="moduleInvestments">
           <div class="panel-card-header">
             <h2>Investments</h2>
-            <p class="text-secondary">Use Payment Queue for payouts. Summary of recent investments:</p>
+            <p class="text-secondary" data-cashier-investments-only>Use Payment Queue for payouts. Summary of recent investments:</p>
+            <p class="text-secondary hidden" data-pm-only>Assigned projects workspace — log expenses, file monthly P/L, request capital expansion, and track status.</p>
           </div>
-          <div id="cashierInvestmentsList"><p class="text-secondary" data-i18n="common.loading">Loading…</p></div>
-          <button type="button" class="secondary-btn u-mt-1" data-staff-nav="queue">Open Payment Queue</button>
+
+          <!-- Cashier: payment-queue summary (unchanged path) -->
+          <div data-cashier-investments-only>
+            <div id="cashierInvestmentsList"><p class="text-secondary" data-i18n="common.loading">Loading…</p></div>
+            <button type="button" class="secondary-btn u-mt-1" data-staff-nav="queue">Open Payment Queue</button>
+          </div>
+
+          <!-- Project Manager maker workspace -->
+          <div class="hidden" data-pm-only id="pmInvestmentsWorkspace">
+            <div class="metrics-grid u-mb-1" id="pmInvestmentsMetrics"></div>
+
+            <div class="cashier-directory-tabs u-mb-1" role="tablist" aria-label="Project manager investments">
+              <button type="button" class="secondary-btn active" data-pm-investments-tab="projects">Projects</button>
+              <button type="button" class="secondary-btn" data-pm-investments-tab="ops">Expenses &amp; P/L</button>
+              <button type="button" class="secondary-btn" data-pm-investments-tab="activity">Activity</button>
+            </div>
+
+            <div data-pm-investments-panel="projects" id="pmProjectsPanel">
+              <div id="pmProjectsList"><p class="text-secondary" data-i18n="common.loading">Loading…</p></div>
+            </div>
+
+            <div class="hidden" data-pm-investments-panel="ops" id="pmOpsPanel">
+              <section class="panel-card u-mt-1">
+                <h3>Log project expense</h3>
+                <p class="table-subtitle">Submit expenses on running projects for CEO review. Optional receipt/document attaches as base64.</p>
+                <form id="pmExpenseForm" class="add-member-form">
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>Project
+                        <select name="investmentId" id="pmExpenseProjectSelect" required>
+                          <option value="">Select project…</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>Category
+                        <select name="category" id="pmExpenseCategory">
+                          <option value="operational">Operational</option>
+                          <option value="materials">Materials</option>
+                          <option value="labor">Labor</option>
+                          <option value="transport">Transport</option>
+                          <option value="miscellaneous">Miscellaneous</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>Description
+                        <input type="text" name="description" required maxlength="300" placeholder="What was spent?" />
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>Amount
+                        <input type="number" name="amount" min="0.01" step="0.01" required placeholder="0.00" />
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>Expense date
+                        <input type="date" name="expenseDate" id="pmExpenseDate" required />
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>Document (optional)
+                        <input type="file" name="document" id="pmExpenseDocument" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" />
+                      </label>
+                    </div>
+                  </div>
+                  <button type="submit" class="primary-btn">Submit for CEO</button>
+                  <p id="pmExpenseMessage" class="message"></p>
+                </form>
+              </section>
+
+              <section class="panel-card u-mt-1">
+                <h3>Monthly P/L report</h3>
+                <p class="table-subtitle">Enter gross revenue for the month. <strong>Net = Gross − expenses</strong> for that project/month (computed on submit).</p>
+                <form id="pmMonthlyReportForm" class="add-member-form">
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>Project
+                        <select name="investmentId" id="pmMonthlyProjectSelect" required>
+                          <option value="">Select project…</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>Month (YYYY-MM)
+                        <input type="month" name="yearMonth" id="pmMonthlyYearMonth" required />
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>Gross revenue
+                        <input type="number" name="grossRevenue" min="0" step="0.01" required placeholder="0.00" />
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>Notes (optional)
+                        <input type="text" name="notes" maxlength="500" placeholder="Context for CEO" />
+                      </label>
+                    </div>
+                  </div>
+                  <p class="text-secondary" id="pmMonthlyNetHint">Net profit/loss = Gross revenue − project expenses for the selected month.</p>
+                  <button type="submit" class="primary-btn">Submit P/L for CEO</button>
+                  <p id="pmMonthlyReportMessage" class="message"></p>
+                </form>
+              </section>
+
+              <section class="panel-card u-mt-1">
+                <h3>Capital expansion request</h3>
+                <p class="table-subtitle">Propose additional capital on an active running project. Goes through member approval, then cashier payment.</p>
+                <form id="pmCapitalExpandForm" class="add-member-form">
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label>Active project
+                        <select name="investmentId" id="pmExpandProjectSelect" required>
+                          <option value="">Select active project…</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label>Expansion amount
+                        <input type="number" name="expansionAmount" min="0.01" step="0.01" required placeholder="0.00" />
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label>Notes (optional)
+                      <input type="text" name="notes" maxlength="500" placeholder="Why more capital is needed" />
+                    </label>
+                  </div>
+                  <button type="submit" class="primary-btn">Request capital expansion</button>
+                  <p id="pmCapitalExpandMessage" class="message"></p>
+                </form>
+              </section>
+            </div>
+
+            <div class="hidden" data-pm-investments-panel="activity" id="pmActivityPanel">
+              <div id="pmActivityList"><p class="text-secondary" data-i18n="common.loading">Loading…</p></div>
+            </div>
+          </div>
         </div>
       </section>
     </main>

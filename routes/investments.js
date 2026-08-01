@@ -2,6 +2,7 @@ const router = require('express').Router();
 const Investment = require('../models/Investment');
 const {
   approveInvestmentByMember,
+  authorizeInvestmentByCeo,
   completeCashierPayment,
   previewCashierPayment,
   coverCashierPaymentShortfallFromAdvance,
@@ -26,6 +27,18 @@ const {
   updateInvestment,
 } = require('../services/investmentService');
 const {
+  getAssignedProjectsWorkspace,
+  createProjectExpense,
+  submitProjectExpense,
+  ceoReviewProjectExpense,
+  listProjectExpenses,
+  createOrSubmitMonthlyReport,
+  ceoReviewMonthlyReport,
+  listPendingCeoProjectOps,
+} = require('../services/projectOpsService');
+const { getExternalLedgerForInvestment } = require('../services/externalInvestorLedgerService');
+const { requireAuth, requirePermission, requirePasswordConfirmation, requireCeo } = require('../middleware/auth');
+const {
   listInvestmentTypes,
   createInvestmentType,
   ensureDefaultInvestmentTypes,
@@ -39,7 +52,6 @@ const {
 } = require('../services/projectFinanceService');
 const { generateInvestmentReceiptPdf, generatePayoutVoucherPdf } = require('../services/notificationService');
 const { saveUploadedFiles } = require('../middleware/upload');
-const { requireAuth, requirePermission, requirePasswordConfirmation } = require('../middleware/auth');
 
 router.use(requireAuth);
 
@@ -114,10 +126,165 @@ router.get('/project-managers', requirePermission('can_manage_investments'), asy
 
 router.get('/project-managers/:managerId/portfolio', requirePermission('can_manage_investments'), async (req, res) => {
   try {
+    const actor = req.session.user;
+    // Project Managers may only load their own assigned portfolio.
+    if (
+      actor.role === 'project_manager'
+      && String(req.params.managerId) !== String(actor.id || actor._id)
+    ) {
+      return res.status(403).json({ error: 'Project Managers can only view their own assigned projects.' });
+    }
     const portfolio = await getProjectManagerPortfolio(req.params.managerId);
     return res.json(portfolio);
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || 'Unable to load project manager portfolio.' });
+  }
+});
+
+/** Project Manager workspace — assigned projects, stakeholders, expenses, P&L, activity. */
+router.get('/pm/workspace', requirePermission('can_manage_investments'), async (req, res) => {
+  try {
+    if (req.session.user.role !== 'project_manager'
+      && req.session.user.role !== 'ceo'
+      && req.session.user.role !== 'admin'
+      && req.session.user.role !== 'developer') {
+      return res.status(403).json({ error: 'Project Manager workspace only.' });
+    }
+    const user = req.session.user.role === 'project_manager'
+      ? req.session.user
+      : {
+        ...req.session.user,
+        id: req.query.managerId || req.session.user.id,
+        role: 'project_manager',
+      };
+    // CEO preview requires explicit managerId; PM always uses self.
+    if (req.session.user.role === 'project_manager') {
+      const workspace = await getAssignedProjectsWorkspace(req.session.user);
+      return res.json(workspace);
+    }
+    if (!req.query.managerId) {
+      return res.status(400).json({ error: 'managerId is required for CEO preview.' });
+    }
+    const workspace = await getAssignedProjectsWorkspace({
+      id: req.query.managerId,
+      role: 'project_manager',
+      name: req.session.user.name,
+    });
+    return res.json(workspace);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load PM workspace.' });
+  }
+});
+
+router.get('/:id/external-ledger', requirePermission('can_manage_investments', 'can_manage_deposits'), async (req, res) => {
+  try {
+    const payload = await getExternalLedgerForInvestment(req.params.id);
+    return res.json(payload);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load external ledger.' });
+  }
+});
+
+router.get('/:id/expenses', requirePermission('can_manage_investments'), async (req, res) => {
+  try {
+    const result = await listProjectExpenses(req.params.id, req.session.user);
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to load expenses.' });
+  }
+});
+
+router.post('/:id/expenses', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await createProjectExpense({
+      investmentId: req.params.id,
+      user: req.session.user,
+      description: req.body?.description,
+      amount: req.body?.amount,
+      expenseDate: req.body?.expenseDate,
+      category: req.body?.category,
+      documents: req.body?.documents || [],
+      submit: Boolean(req.body?.submit),
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to save expense.' });
+  }
+});
+
+router.post('/expenses/:expenseId/submit', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await submitProjectExpense(req.params.expenseId, req.session.user);
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to submit expense.' });
+  }
+});
+
+router.post('/expenses/:expenseId/ceo-review', requireCeo, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await ceoReviewProjectExpense(req.params.expenseId, {
+      approve: req.body?.approve !== false && req.body?.approved !== false,
+      note: req.body?.note || '',
+      reviewedBy: req.session.user.name || 'CEO',
+      executeSocietyDebit: Boolean(req.body?.executeSocietyDebit),
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to review expense.' });
+  }
+});
+
+router.post('/:id/monthly-report', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await createOrSubmitMonthlyReport({
+      investmentId: req.params.id,
+      user: req.session.user,
+      yearMonth: req.body?.yearMonth,
+      grossRevenue: req.body?.grossRevenue ?? req.body?.revenue,
+      notes: req.body?.notes || '',
+      submit: req.body?.submit !== false,
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to save monthly report.' });
+  }
+});
+
+router.post('/monthly-reports/:reportId/ceo-review', requireCeo, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await ceoReviewMonthlyReport(req.params.reportId, {
+      approve: req.body?.approve !== false && req.body?.approved !== false,
+      note: req.body?.note || '',
+      reviewedBy: req.session.user.name || 'CEO',
+      markExternalPaid: Boolean(req.body?.markExternalPaid),
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to review monthly report.' });
+  }
+});
+
+router.get('/ceo/pending-ops', requireCeo, async (req, res) => {
+  try {
+    const result = await listPendingCeoProjectOps();
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to load pending project operations.' });
+  }
+});
+
+/** CEO final authorization after member approvals (projects + capital expansions). */
+router.post('/:id/ceo-authorize', requireCeo, requirePasswordConfirmation, async (req, res) => {
+  try {
+    const result = await authorizeInvestmentByCeo(req.params.id, {
+      approved: req.body?.approve !== false && req.body?.approved !== false,
+      note: req.body?.note || '',
+      authorizedBy: req.session.user.name || 'CEO',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Unable to authorize investment.' });
   }
 });
 
@@ -381,6 +548,25 @@ router.get('/summary', requirePermission('can_manage_investments'), async (req, 
 router.get('/', requirePermission('can_manage_investments'), async (req, res) => {
   try {
     await ensureDefaultInvestmentTypes();
+
+    // Project Managers only see projects assigned to them.
+    if (req.session.user.role === 'project_manager') {
+      const workspace = await getAssignedProjectsWorkspace(req.session.user);
+      return res.json({
+        investments: workspace.investments || [],
+        activeInvestments: workspace.activeInvestments || [],
+        soldInvestments: workspace.soldInvestments || [],
+        pendingInvestments: workspace.pendingInvestments || [],
+        pendingMemberApproval: (workspace.pendingInvestments || []).filter((i) => i.status === 'pending_member_approval'),
+        pendingCeoAuthorization: (workspace.pendingInvestments || []).filter((i) => i.status === 'pending_ceo_authorization'),
+        pendingCashierPayment: (workspace.pendingInvestments || []).filter((i) => i.status === 'pending_cashier_payment'),
+        summary: workspace.summary,
+        projects: workspace.projects,
+        activity: workspace.activity,
+        scopedToProjectManager: true,
+      });
+    }
+
     const grouped = await getGroupedSocietyInvestments();
     const { totalSavings } = await getSavingsPool();
     const summary = buildInvestmentSummaryFromGrouped(grouped, totalSavings);
@@ -393,6 +579,7 @@ router.get('/', requirePermission('can_manage_investments'), async (req, res) =>
       soldInvestments: grouped.sold,
       pendingInvestments: pendingWithTracking,
       pendingMemberApproval: grouped.pendingMemberApproval,
+      pendingCeoAuthorization: grouped.pendingCeoAuthorization || [],
       pendingCashierPayment: grouped.pendingCashierPayment,
       summary,
     });
