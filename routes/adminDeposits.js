@@ -75,7 +75,7 @@ router.get('/', viewDeposits, async (req, res) => {
   }
 });
 
-/** Members with unpaid dues and insufficient Advance Balance (excludes paid / advance-covered). */
+/** Members with outstanding monthly dues not already covered by Advance Balance. */
 router.get('/eligible-members', recordDeposits, requireCashierRole, async (req, res) => {
   try {
     const payload = await listCashierDepositEligibleMembers({

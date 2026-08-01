@@ -1025,7 +1025,7 @@ async function ensureMembersOptions(selectIds = []) {
   });
 }
 
-/** Deposit dropdown: only members who still owe / are not advance-covered this month. */
+/** Deposit dropdown: only members with outstanding monthly dues not covered by advance. */
 async function ensureDepositEligibleMemberOptions() {
   const select = document.getElementById('cashierDepositMember');
   if (!select) return null;
