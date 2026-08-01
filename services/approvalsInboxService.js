@@ -63,11 +63,16 @@ async function collectMemberItems(user) {
 
   for (const inv of investments || []) {
     if (inv.alreadyApproved) continue;
+    const isExpansion = inv.fundingKind === 'capital_expansion' || inv.isCapitalExpansion;
     items.push(item({
       id: `investment_vote:${inv._id}`,
       type: 'investment_vote',
-      title: `Approve project ${inv.investmentCode || ''}`.trim(),
-      subtitle: [inv.investmentType, inv.investor?.name || inv.investorName].filter(Boolean).join(' · '),
+      title: isExpansion
+        ? `Approve capital expansion ${inv.investmentCode || ''}`.trim()
+        : `Approve project ${inv.investmentCode || ''}`.trim(),
+      subtitle: isExpansion
+        ? `Expand ${inv.parentInvestment?.investmentCode || 'running project'} by additional capital`
+        : [inv.investmentType, inv.investor?.name || inv.investorName].filter(Boolean).join(' · '),
       amount: inv.amount,
       status: inv.status,
       priority: 'high',
@@ -81,6 +86,8 @@ async function collectMemberItems(user) {
         approvalCount: inv.approvalCount,
         requiredApprovals: inv.requiredApprovals,
         displayStatus: inv.displayStatus,
+        fundingKind: inv.fundingKind || 'initial',
+        parentInvestmentCode: inv.parentInvestment?.investmentCode || '',
       },
       deepLink: { dashboard: 'member', hash: '#investment-requests' },
     }));
@@ -304,13 +311,16 @@ async function collectStaffItems(user) {
       .limit(50)
       .lean();
     for (const inv of pendingInvestments) {
+      const isExpansion = inv.fundingKind === 'capital_expansion';
       items.push(item({
         id: `investment_monitor:${inv._id}`,
         type: 'investment_monitor',
-        title: `Project workflow — ${inv.investmentCode || 'Investment'}`,
+        title: isExpansion
+          ? `Capital expansion — ${inv.investmentCode || 'Investment'}`
+          : `Project workflow — ${inv.investmentCode || 'Investment'}`,
         subtitle: inv.status === 'pending_member_approval'
-          ? 'Awaiting member approvals'
-          : 'Awaiting Cashier payment',
+          ? (isExpansion ? 'Awaiting member approvals for capital expansion' : 'Awaiting member approvals')
+          : (isExpansion ? 'Awaiting Cashier payment for capital expansion' : 'Awaiting Cashier payment'),
         amount: inv.amount,
         status: inv.status,
         priority: 'normal',
@@ -325,6 +335,7 @@ async function collectStaffItems(user) {
           investor: inv.investor?.name || inv.investorName || '',
           location: inv.location || '',
           returnMode: inv.returnMode === 'monthly' ? 'Monthly return' : (inv.returnMode || 'Fixed/term'),
+          fundingKind: inv.fundingKind || 'initial',
         },
         deepLink: { dashboard: 'admin', hash: '#projects' },
       }));
@@ -341,11 +352,16 @@ async function collectStaffItems(user) {
       .limit(50)
       .lean();
     for (const inv of cashierQueue) {
+      const isExpansion = inv.fundingKind === 'capital_expansion' || inv.isCapitalExpansion;
       items.push(item({
         id: `investment_cashier_payment:${inv._id}`,
         type: 'investment_cashier_payment',
-        title: `Pay project — ${inv.investmentCode || 'Investment'}`,
-        subtitle: inv.investor?.name || inv.investorName || 'Society project',
+        title: isExpansion
+          ? `Pay capital expansion — ${inv.investmentCode || 'Investment'}`
+          : `Pay project — ${inv.investmentCode || 'Investment'}`,
+        subtitle: isExpansion
+          ? (inv.queueLabel || `Expand ${inv.parentInvestment?.investmentCode || 'running project'}`)
+          : (inv.investor?.name || inv.investorName || 'Society project'),
         amount: inv.amount,
         status: inv.status,
         priority: 'high',
@@ -367,6 +383,8 @@ async function collectStaffItems(user) {
           investmentType: inv.investmentType || '',
           investor: inv.investor?.name || inv.investorName || '',
           societyAmount: inv.societyAmount != null ? formatMoney(inv.societyAmount, 2) : '',
+          fundingKind: inv.fundingKind || 'initial',
+          parentInvestmentCode: inv.parentInvestment?.investmentCode || '',
         },
         deepLink: { dashboard: 'staff', hash: '#queue' },
       }));

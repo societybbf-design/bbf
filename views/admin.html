@@ -997,6 +997,43 @@
           </div>
         </section>
 
+        <section class="panel-card card-form-wide" id="projectExpandCapitalPanel">
+          <h2>Expand Project Capital</h2>
+          <p class="table-subtitle">
+            Increase capital on a running project without changing its project ID or core terms.
+            Members approve first; then the Cashier processes payment with the existing payment queue and balance checks.
+            Parent capital updates only after successful cashier payment.
+          </p>
+          <form id="projectExpandCapitalForm" class="add-member-form">
+            <input type="hidden" id="projectExpandParentId" value="" />
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>
+                  Running project
+                  <select id="projectExpandParentSelect" required>
+                    <option value="">Choose running project…</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  Additional capital (৳)
+                  <input type="number" id="projectExpandAmount" name="expansionAmount" min="0.01" step="0.01" required placeholder="50000.00" />
+                </label>
+              </div>
+            </div>
+            <p class="table-subtitle" id="projectExpandSummary">Select a running project to expand.</p>
+            <div class="form-group">
+              <label>
+                Notes (optional)
+                <input type="text" id="projectExpandNotes" maxlength="240" placeholder="Reason for capital expansion" />
+              </label>
+            </div>
+            <button type="submit" class="primary-btn">Submit for member approval</button>
+            <p id="projectExpandMessage" class="message"></p>
+          </form>
+        </section>
+
         <section class="panel-card card-form-wide" id="projectLiquidatePanel">
           <h2 data-i18n="admin.sections.liquidateProject">Sell / Liquidate Project</h2>
           <p class="table-subtitle" data-i18n="admin.projects.liquidateHelp">

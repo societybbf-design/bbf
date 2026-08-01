@@ -580,6 +580,211 @@ async function getProjectManagerPortfolio(managerId) {
   };
 }
 
+function moneyAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Number(n.toFixed(2));
+}
+
+/**
+ * After cashier payment succeeds on a capital_expansion investment, fold the
+ * new capital into the parent running project (same project ID / core terms)
+ * and close the expansion funding round for audit.
+ */
+async function applyCompletedCapitalExpansion(expansionInvestment, {
+  appliedBy = 'Cashier',
+} = {}) {
+  if (!expansionInvestment || expansionInvestment.fundingKind !== 'capital_expansion') {
+    return null;
+  }
+  if (expansionInvestment.expansionAppliedAt) {
+    return {
+      alreadyApplied: true,
+      parent: null,
+      expansion: expansionInvestment,
+    };
+  }
+  if (!expansionInvestment.parentInvestment) {
+    const error = new Error('Capital expansion is missing its parent project.');
+    error.status = 409;
+    throw error;
+  }
+
+  const parent = await Investment.findById(expansionInvestment.parentInvestment);
+  if (!parent) {
+    const error = new Error('Parent project for capital expansion was not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (parent.status !== 'active') {
+    const error = new Error('Parent project must still be running (active) to receive expanded capital.');
+    error.status = 409;
+    throw error;
+  }
+  if (parent.ledgerLockedAt) {
+    const error = new Error('Parent project ledger is locked; cannot apply capital expansion.');
+    error.status = 409;
+    throw error;
+  }
+
+  const addAmount = moneyAmount(expansionInvestment.amount);
+  const addSociety = moneyAmount(expansionInvestment.societyAmount);
+  const addExternal = moneyAmount(expansionInvestment.externalAmount);
+
+  parent.amount = moneyAmount(Number(parent.amount || 0) + addAmount);
+  parent.societyAmount = moneyAmount(Number(parent.societyAmount || 0) + addSociety);
+  parent.externalAmount = moneyAmount(Number(parent.externalAmount || 0) + addExternal);
+  const total = moneyAmount(parent.amount);
+  if (total > 0) {
+    parent.societyOwnershipPct = moneyAmount((Number(parent.societyAmount || 0) / total) * 100);
+    parent.investorOwnershipPct = moneyAmount(100 - Number(parent.societyOwnershipPct || 0));
+  }
+  if (!Array.isArray(parent.capitalExpansionHistory)) {
+    parent.capitalExpansionHistory = [];
+  }
+  parent.capitalExpansionHistory.push({
+    expansionInvestment: expansionInvestment._id,
+    expansionCode: expansionInvestment.investmentCode || '',
+    amount: addAmount,
+    societyAmount: addSociety,
+    externalAmount: addExternal,
+    appliedAt: new Date(),
+    appliedBy: String(appliedBy || 'Cashier').trim(),
+  });
+  await parent.save();
+
+  expansionInvestment.expansionAppliedAt = new Date();
+  expansionInvestment.expansionAppliedBy = String(appliedBy || 'Cashier').trim();
+  expansionInvestment.status = 'closed';
+  const applyNote = `Applied to parent ${parent.investmentCode || parent._id} (+${formatMoney(addAmount, 2)} capital).`;
+  expansionInvestment.notes = expansionInvestment.notes
+    ? `${expansionInvestment.notes} · ${applyNote}`
+    : applyNote;
+  await expansionInvestment.save();
+
+  await createAdminNotification({
+    type: 'general',
+    title: `Capital expanded: ${parent.investmentCode}`,
+    message: `Cashier funding round ${expansionInvestment.investmentCode} added ${formatMoney(addAmount, 2)} to running project capital (now ${formatMoney(parent.amount, 2)}).`,
+    relatedId: parent._id,
+    relatedModel: 'Investment',
+    targetRoles: ['ceo'],
+  }).catch(() => null);
+
+  return { parent, expansion: expansionInvestment, alreadyApplied: false };
+}
+
+/**
+ * CEO proposes expanding capital on an existing running project.
+ * Creates a linked funding-round investment that uses the unchanged
+ * member-approval → cashier-payment workflow; parent capital updates only
+ * after cashier payment succeeds.
+ */
+async function proposeCapitalExpansion({
+  parentInvestmentId,
+  expansionAmount,
+  notes = '',
+  createdBy = 'CEO',
+  societyOwnershipPct = null,
+  investorOwnershipPct = null,
+  societyAmount = null,
+  externalAmount = null,
+} = {}) {
+  if (!parentInvestmentId) {
+    const error = new Error('Select a running project to expand.');
+    error.status = 400;
+    throw error;
+  }
+  const addAmount = moneyAmount(expansionAmount);
+  if (!(addAmount > 0)) {
+    const error = new Error('Expansion amount must be greater than zero.');
+    error.status = 400;
+    throw error;
+  }
+
+  const parent = await Investment.findById(parentInvestmentId)
+    .populate('investor', 'name email role phone address dateOfBirth')
+    .populate('projectManager', 'name email role');
+  if (!parent || parent.member) {
+    const error = new Error('Running society project not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (parent.status !== 'active') {
+    const error = new Error('Only running (Successful) projects can receive a capital expansion.');
+    error.status = 400;
+    throw error;
+  }
+  if (parent.ledgerLockedAt) {
+    const error = new Error('This project ledger is locked and cannot be expanded.');
+    error.status = 409;
+    throw error;
+  }
+  if (parent.fundingKind === 'capital_expansion') {
+    const error = new Error('Cannot expand a capital-expansion funding round. Choose the parent running project.');
+    error.status = 400;
+    throw error;
+  }
+
+  const pendingExpansion = await Investment.findOne({
+    parentInvestment: parent._id,
+    fundingKind: 'capital_expansion',
+    status: { $in: ['pending_member_approval', 'pending_cashier_payment'] },
+  }).select('_id investmentCode status').lean();
+  if (pendingExpansion) {
+    const error = new Error(
+      `A capital expansion (${pendingExpansion.investmentCode || pendingExpansion._id}) is already awaiting `
+      + `${pendingExpansion.status === 'pending_member_approval' ? 'member approval' : 'cashier payment'}.`
+    );
+    error.status = 409;
+    throw error;
+  }
+
+  const expansionNotes = [
+    `Capital expansion for running project ${parent.investmentCode || parent._id}`,
+    `Current capital ${formatMoney(Number(parent.amount || 0), 2)} → proposed +${formatMoney(addAmount, 2)}`,
+    notes?.trim() || '',
+  ].filter(Boolean).join(' · ');
+
+  const result = await createSocietyInvestment({
+    amount: addAmount,
+    investorId: parent.investor?._id || parent.investor || null,
+    investmentType: parent.investmentType || 'Fixed Investment',
+    projectManagerId: parent.projectManager?._id || parent.projectManager || null,
+    investorName: parent.investorName || parent.partner || parent.investor?.name || 'Society',
+    dateOfBirth: parent.dateOfBirth,
+    location: parent.location || 'Not specified',
+    sector: parent.sector || parent.investmentType || 'General',
+    partner: parent.partner || parent.investorName || parent.investor?.name || 'Society',
+    notes: expansionNotes,
+    documents: [],
+    createdBy,
+    returnMode: parent.returnMode,
+    termMonths: parent.termMonths,
+    maturityDate: parent.maturityDate,
+    societyOwnershipPct: societyOwnershipPct != null ? societyOwnershipPct : parent.societyOwnershipPct,
+    investorOwnershipPct: investorOwnershipPct != null ? investorOwnershipPct : parent.investorOwnershipPct,
+    societyAmount,
+    externalAmount,
+    fundingKind: 'capital_expansion',
+    parentInvestment: parent._id,
+  });
+
+  return {
+    ...result,
+    parentInvestment: {
+      id: parent._id,
+      investmentCode: parent.investmentCode,
+      amount: moneyAmount(parent.amount),
+      societyAmount: moneyAmount(parent.societyAmount),
+      status: parent.status,
+    },
+    message: `Capital expansion of ${formatMoney(addAmount, 2)} for ${parent.investmentCode} submitted for member approval. `
+      + 'After all members approve, the Cashier will process payment using the existing payment queue. '
+      + 'Parent project capital updates only after successful cashier payment.',
+  };
+}
+
 async function createSocietyInvestment({
   amount,
   investorId,
@@ -600,6 +805,8 @@ async function createSocietyInvestment({
   investorOwnershipPct = null,
   societyAmount = null,
   externalAmount = null,
+  fundingKind = 'initial',
+  parentInvestment = null,
 }) {
   let investorUser = null;
   if (investorId) {
@@ -690,6 +897,11 @@ async function createSocietyInvestment({
     ? new Date(dateOfBirth)
     : (investorUser?.dateOfBirth ? new Date(investorUser.dateOfBirth) : null);
 
+  const normalizedFundingKind = fundingKind === 'capital_expansion'
+    ? 'capital_expansion'
+    : 'initial';
+  const parentId = parentInvestment || null;
+
   const investment = await Investment.create({
     investmentCode,
     investmentType: normalizedType,
@@ -714,6 +926,8 @@ async function createSocietyInvestment({
     eligibleMembers: eligibleMembers.map((member) => member._id),
     approvals: [],
     status: 'pending_member_approval',
+    fundingKind: normalizedFundingKind,
+    parentInvestment: parentId,
     createdBy: createdBy?.trim() || 'Admin',
     member: null,
   });
@@ -721,10 +935,18 @@ async function createSocietyInvestment({
   await investment.populate([
     { path: 'investor', select: 'name email role phone address dateOfBirth' },
     { path: 'projectManager', select: 'name email role' },
+    { path: 'parentInvestment', select: 'investmentCode amount status' },
   ]);
 
-  const notifyTitle = `New investment request ${investment.investmentCode}`;
-  const notifyMessage = `${normalizedName} · ${normalizedType} · ${formatMoney(ownership.amount, 2)} · Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}% (${normalizedReturnMode === 'monthly' ? 'Monthly return' : 'Fixed/term'}). Please review and approve.`;
+  const isExpansion = normalizedFundingKind === 'capital_expansion';
+  const parentCode = investment.parentInvestment?.investmentCode || '';
+  const notifyTitle = isExpansion
+    ? `Capital expansion request ${investment.investmentCode}`
+    : `New investment request ${investment.investmentCode}`;
+  const notifyMessage = isExpansion
+    ? `Expand capital on running project ${parentCode || 'project'} by ${formatMoney(ownership.amount, 2)} `
+      + `(Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}%). Please review and approve.`
+    : `${normalizedName} · ${normalizedType} · ${formatMoney(ownership.amount, 2)} · Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}% (${normalizedReturnMode === 'monthly' ? 'Monthly return' : 'Fixed/term'}). Please review and approve.`;
 
   await Promise.all(eligibleMembers.map((member) => createMemberNotification({
     memberId: member._id,
@@ -737,7 +959,9 @@ async function createSocietyInvestment({
 
   await createAdminNotification({
     type: 'general',
-    title: `Investment proposed: ${investment.investmentCode}`,
+    title: isExpansion
+      ? `Capital expansion proposed: ${investment.investmentCode}`
+      : `Investment proposed: ${investment.investmentCode}`,
     message: `Awaiting approval from ${eligibleMembers.length} members.`,
     relatedId: investment._id,
     relatedModel: 'Investment',
@@ -748,7 +972,9 @@ async function createSocietyInvestment({
     investment,
     approvalTracking: await buildApprovalTracking(investment),
     savingsUpdate: null,
-    message: 'Investment submitted for member approval. Funds will be deducted after cashier payment.',
+    message: isExpansion
+      ? 'Capital expansion submitted for member approval. Cashier payment uses the existing queue after approval.'
+      : 'Investment submitted for member approval. Funds will be deducted after cashier payment.',
   };
 }
 
@@ -843,17 +1069,23 @@ async function listPendingMemberInvestmentRequests(memberId) {
   })
     .populate('investor', 'name email')
     .populate('projectManager', 'name email')
+    .populate('parentInvestment', 'investmentCode amount status')
     .sort({ createdAt: -1 });
 
   return investments.map((investment) => {
     const plain = investment.toObject();
     const alreadyApproved = (plain.approvals || []).some((item) => String(item.member) === String(memberId));
+    const isExpansion = plain.fundingKind === 'capital_expansion';
     return {
       ...plain,
       alreadyApproved,
+      isCapitalExpansion: isExpansion,
       displayStatus: getInvestmentDisplayStatus(plain.status),
       approvalCount: (plain.approvals || []).length,
       requiredApprovals: (plain.eligibleMembers || []).length,
+      requestTitle: isExpansion
+        ? `Capital expansion · ${plain.parentInvestment?.investmentCode || plain.investmentCode || 'Project'}`
+        : `${plain.investmentCode || 'Investment'} · ${plain.investmentType || ''}`,
     };
   });
 }
@@ -944,16 +1176,22 @@ async function listCashierPaymentQueue() {
     .populate('investor', 'name email role bankAccountName bankAccountNumber bankName phone')
     .populate('projectManager', 'name email role bankAccountName bankAccountNumber bankName phone')
     .populate('member', 'name email role bankAccountName bankAccountNumber bankName phone')
+    .populate('parentInvestment', 'investmentCode amount status societyAmount')
     .sort({ createdAt: -1 });
 
   const rows = [];
   for (const investment of investments) {
     const receiver = resolvePayoutReceiver(investment);
+    const plain = investment.toObject();
     rows.push({
-      ...investment.toObject(),
+      ...plain,
       displayStatus: getInvestmentDisplayStatus(investment.status),
       approvalTracking: await buildApprovalTracking(investment),
       payoutReceiver: receiver,
+      isCapitalExpansion: plain.fundingKind === 'capital_expansion',
+      queueLabel: plain.fundingKind === 'capital_expansion'
+        ? `Capital expansion → ${plain.parentInvestment?.investmentCode || 'parent project'}`
+        : (plain.investmentCode || 'Project payment'),
     });
   }
   return rows;
@@ -1691,11 +1929,45 @@ async function completeCashierPayment(investmentId, {
 
   await investment.save();
 
+  let capitalExpansion = null;
+  if (investment.fundingKind === 'capital_expansion') {
+    try {
+      capitalExpansion = await applyCompletedCapitalExpansion(investment, {
+        appliedBy: cashierName,
+      });
+      if (capitalExpansion?.expansion) {
+        investment.status = capitalExpansion.expansion.status;
+        investment.expansionAppliedAt = capitalExpansion.expansion.expansionAppliedAt;
+        investment.expansionAppliedBy = capitalExpansion.expansion.expansionAppliedBy;
+        investment.notes = capitalExpansion.expansion.notes;
+      }
+    } catch (applyError) {
+      console.error('[completeCashierPayment] capital expansion apply failed:', applyError.message);
+      await createAdminNotification({
+        type: 'general',
+        title: `Capital expansion payment OK — apply failed: ${investment.investmentCode}`,
+        message: applyError.message
+          || 'Cashier payment completed but parent capital could not be updated automatically. Reconcile manually.',
+        relatedId: investment._id,
+        relatedModel: 'Investment',
+        targetRoles: ['ceo'],
+      }).catch(() => null);
+    }
+  }
+
+  const parentCode = capitalExpansion?.parent?.investmentCode
+    || investment.parentInvestment?.investmentCode
+    || '';
   await createAdminNotification({
     type: 'general',
-    title: `Investment successful: ${investment.investmentCode}`,
-    message: `Cashier completed society payout of ${formatMoney(societyFundingAmount, 2)} to ${receiver.name}.${investment.externalAmount > 0 ? ` External share ${formatMoney(Number(investment.externalAmount), 2)} still needs recording if not already received.` : ''}`,
-    relatedId: investment._id,
+    title: capitalExpansion?.parent
+      ? `Capital expanded: ${parentCode || investment.investmentCode}`
+      : `Investment successful: ${investment.investmentCode}`,
+    message: capitalExpansion?.parent
+      ? `Cashier completed expansion payout of ${formatMoney(societyFundingAmount, 2)}. `
+        + `Parent ${parentCode} capital is now ${formatMoney(Number(capitalExpansion.parent.amount || 0), 2)}.`
+      : `Cashier completed society payout of ${formatMoney(societyFundingAmount, 2)} to ${receiver.name}.${investment.externalAmount > 0 ? ` External share ${formatMoney(Number(investment.externalAmount), 2)} still needs recording if not already received.` : ''}`,
+    relatedId: capitalExpansion?.parent?._id || investment._id,
     relatedModel: 'Investment',
     targetRoles: ['ceo'],
   });
@@ -1708,13 +1980,17 @@ async function completeCashierPayment(investmentId, {
     payoutReceiver: receiver,
     bankLedger,
     societyFundingAmount,
+    capitalExpansion,
+    parentInvestment: capitalExpansion?.parent || null,
     voucherUrl: bankLedger?.entry?._id
       ? `/api/admin/bank-ledger/entries/${bankLedger.entry._id}/voucher.pdf`
       : `/api/admin/investments/${investment._id}/payout-voucher.pdf`,
     approvalTracking: await buildApprovalTracking(investment),
-    message: savingsUpdate.unpaidCount
-      ? `Payment completed with ${savingsUpdate.unpaidCount} unpaid member share(s). Project is Successful — cover unpaid shares via internal borrowing when needed.`
-      : 'Payment completed. Investment is now Successful.',
+    message: capitalExpansion?.parent
+      ? `Payment completed. Capital expansion applied to ${parentCode}; parent capital is now ${formatMoney(Number(capitalExpansion.parent.amount || 0), 2)}.`
+      : (savingsUpdate.unpaidCount
+        ? `Payment completed with ${savingsUpdate.unpaidCount} unpaid member share(s). Project is Successful — cover unpaid shares via internal borrowing when needed.`
+        : 'Payment completed. Investment is now Successful.'),
   };
 }
 
@@ -2023,6 +2299,8 @@ module.exports = {
   listPendingMemberInvestmentRequests,
   calculateInvestmentPerformance,
   createSocietyInvestment,
+  proposeCapitalExpansion,
+  applyCompletedCapitalExpansion,
   deductFromTotalSavings,
   fundInvestmentFromMembers,
   deleteInvestment,

@@ -2367,10 +2367,16 @@ async function loadCashierQueue() {
       `).join('') || '<li>No documents</li>';
       const tracking = item.approvalTracking || {};
       const receiver = item.payoutReceiver || {};
+      const isExpansion = item.fundingKind === 'capital_expansion' || item.isCapitalExpansion;
+      const heading = item.queueLabel
+        || (isExpansion
+          ? `Capital expansion → ${item.parentInvestment?.investmentCode || 'parent'}`
+          : (item.investmentCode || 'Investment'));
       return `
         <article class="feature-card payout-queue-card" style="margin-bottom: 0.85rem;">
-          <h3>${escapeHtml(item.investmentCode || 'Investment')}</h3>
-          <p>${escapeHtml(item.investmentType || '')} · <strong>${money(item.amount)}</strong></p>
+          <h3>${escapeHtml(heading)}</h3>
+          <p>${escapeHtml(item.investmentCode || '')}${item.investmentType ? ` · ${escapeHtml(item.investmentType)}` : ''} · <strong>${money(item.amount)}</strong></p>
+          ${isExpansion ? `<p class="table-subtitle">Uses existing cashier balance checks. Parent project capital updates after this payment.</p>` : ''}
           <p>Approved ${tracking.approvedCount || 0}/${tracking.totalMembers || 0}</p>
           <div class="payout-receiver-box">
             <strong>Payee</strong>
