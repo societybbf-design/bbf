@@ -14,6 +14,7 @@ const {
   sanitizePermissions,
   UM_EXCLUSIVE_PERMISSIONS,
   CASHIER_EXCLUSIVE_PERMISSIONS,
+  PROJECT_MANAGER_BLOCKED_PERMISSIONS,
 } = require('./rbac');
 
 const MAX_FAILED_ATTEMPTS = Number(process.env.MAX_FAILED_LOGIN_ATTEMPTS) || 5;
@@ -85,6 +86,12 @@ function sanitizeManagedPermissions(role, permissions, actor) {
   if (role === 'member') return [];
   if (role !== 'cashier') {
     finalPermissions = finalPermissions.filter((key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key));
+  }
+  // Strict PM isolation: never persist cashier money or CEO payout-review controls on PM accounts.
+  if (role === 'project_manager') {
+    finalPermissions = finalPermissions.filter(
+      (key) => !PROJECT_MANAGER_BLOCKED_PERMISSIONS.includes(key)
+    );
   }
   // UM-exclusive grants require Platform Developer actor — CEOs cannot escalate.
   if (!isDeveloperRole(actor?.role)) {

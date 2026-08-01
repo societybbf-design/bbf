@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 const User = require('../models/User');
-const { PERMISSION_KEYS, getDefaultPermissions, CASHIER_EXCLUSIVE_PERMISSIONS } = require('./rbac');
+const {
+  PERMISSION_KEYS,
+  getDefaultPermissions,
+  CASHIER_EXCLUSIVE_PERMISSIONS,
+  PROJECT_MANAGER_BLOCKED_PERMISSIONS,
+} = require('./rbac');
 
 function randomTempPassword() {
   return `Tmp-${crypto.randomBytes(9).toString('base64url')}`;
@@ -168,6 +173,19 @@ async function seedDefaultUsers() {
       { role: 'project_manager', permissions: 'can_manage_loans' },
       { $pull: { permissions: 'can_manage_loans' } }
     );
+
+    // Strip finance payout / review controls that must never sit on PM accounts
+    const pmsWithBlocked = await User.find({
+      role: 'project_manager',
+      status: { $ne: 'deleted' },
+      permissions: { $in: [...PROJECT_MANAGER_BLOCKED_PERMISSIONS] },
+    });
+    for (const user of pmsWithBlocked) {
+      user.permissions = (user.permissions || []).filter(
+        (key) => !PROJECT_MANAGER_BLOCKED_PERMISSIONS.includes(key)
+      );
+      await user.save();
+    }
   } catch (error) {
     console.error('Failed to seed default users:', error);
   }

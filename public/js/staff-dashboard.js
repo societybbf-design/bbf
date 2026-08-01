@@ -1,10 +1,101 @@
 /**
- * staff-dashboard.js — Cashier / staff workspace
+ * staff-dashboard.js — Role-aware staff workspace (Cashier, Project Manager, etc.)
  * All sidebar modules stay on /dashboard/* — never redirect to /admin (CEO panel).
  */
 
 function t(key, fallback) {
   return window.I18n?.t?.(key, fallback) ?? fallback;
+}
+
+/** Cashier money / ledger panels — never shown to Project Manager (or other non-cashier staff). */
+const CASHIER_ONLY_VIEWS = new Set([
+  'deposits',
+  'withdrawals',
+  'refunds',
+  'queue',
+  'ledger',
+  'funding',
+  'reserve',
+  'profit',
+  'audit',
+]);
+
+function isCashierRole(user = staffSessionUser) {
+  return (user?.role || '') === 'cashier';
+}
+
+function staffPortalKey(role) {
+  if (role === 'cashier') return 'cashier';
+  if (role === 'project_manager') return 'project_manager';
+  if (role === 'employee') return 'employee';
+  if (role === 'investor' || role === 'external_investor') return role;
+  return 'staff';
+}
+
+function staffWorkspaceCopy(role) {
+  if (role === 'cashier') {
+    return {
+      title: t('page.staff.workspaceTitle', 'Your cashier workspace'),
+      note: t('page.staff.workspaceNote', 'Track this month\'s collections, open member portfolios, and use the sidebar for all modules.'),
+    };
+  }
+  if (role === 'project_manager') {
+    return {
+      title: 'Your project manager workspace',
+      note: 'Oversee members, project approvals, and investment summaries. Cashier deposits, ledgers, and payouts stay with the Cashier role.',
+    };
+  }
+  if (role === 'employee') {
+    return {
+      title: 'Your employee workspace',
+      note: 'Support member records, KYC, and reporting. Finance payout modules are not available here.',
+    };
+  }
+  return {
+    title: 'Your staff workspace',
+    note: 'Use the sidebar for modules available to your role.',
+  };
+}
+
+function applyStaffRoleChrome(user) {
+  const role = user?.role || 'staff';
+  const portal = staffPortalKey(role);
+  const body = document.getElementById('staffDashboardBody') || document.body;
+  body.dataset.staffRole = role;
+  body.classList.toggle('cashier-shell', role === 'cashier');
+  body.classList.toggle('pm-shell', role === 'project_manager');
+
+  const tagline = document.getElementById('roleTagline');
+  if (tagline) {
+    tagline.dataset.brandPortal = portal;
+    tagline.textContent = window.OrganizationBranding?.portalLabel?.(portal)
+      || window.I18n?.portalLabel?.(portal)
+      || role.replace(/_/g, ' ');
+  }
+
+  const brandShort = window.OrganizationBranding?.branding?.shortMark
+    || window.BBF_BRANDING?.shortName
+    || 'BBF';
+  const portalTitle = window.OrganizationBranding?.portalLabel?.(portal)
+    || window.I18n?.portalLabel?.(portal)
+    || 'Staff Dashboard';
+  document.title = `${brandShort} ${portalTitle}`;
+
+  const copy = staffWorkspaceCopy(role);
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('cashierHeroTitle', copy.title);
+  setText('cashierHeroNote', copy.note);
+
+  const showCashierHome = role === 'cashier';
+  document.querySelectorAll('[data-cashier-home-only]').forEach((el) => {
+    el.classList.toggle('hidden', !showCashierHome);
+  });
+  document.querySelectorAll('[data-non-cashier-home]').forEach((el) => {
+    el.classList.toggle('hidden', showCashierHome);
+  });
 }
 
 function translateStatus(value) {
@@ -62,7 +153,7 @@ const FEATURE_CATALOG = [
   { key: 'can_disburse_withdrawals', title: 'Withdrawals', detail: 'Pay CEO-approved withdrawals from Advance Balance.', icon: '🏦', panel: 'withdrawals' },
   { key: 'can_disburse_loans', title: 'Loans', detail: 'Disburse approved loans and record repayments.', icon: '📄', panel: 'loans' },
   { key: 'can_manage_loans', title: 'Loan Review', detail: 'View pending loan applications (CEO approves).', icon: '📄', panel: 'loans', catalogKey: 'loan_review' },
-  { key: 'can_manage_investments', title: 'Investments', detail: 'Investment summary and payment queue.', icon: '📈', panel: 'investments' },
+  { key: 'can_manage_investments', title: 'Investments', detail: 'Project / investment overview for your role.', icon: '📈', panel: 'investments' },
   { key: 'can_manage_ious', title: 'IOUs', detail: 'Investment-related tracking.', icon: '📝', panel: 'investments' },
   { key: 'can_manage_profit', title: 'Profit & Loss', detail: 'Record investment P&L, distribute profits, and automatic dividends.', icon: '💹', panel: 'profit' },
   { key: 'can_disburse_refunds', title: 'Refunds', detail: 'Pay CEO-approved member refunds from the bank ledger.', icon: '↩️', panel: 'refunds' },
@@ -505,7 +596,15 @@ function enhanceTableCards(root = document) {
 }
 
 function showStaffView(viewId, { forceReload = false } = {}) {
-  const next = viewId || 'home';
+  let next = viewId || 'home';
+  // Hard isolation: non-cashiers cannot open cashier finance panels via hash/nav.
+  if (!isCashierRole() && CASHIER_ONLY_VIEWS.has(next)) {
+    next = 'home';
+  }
+  // Project Managers never open deposit tracking (even via deep link).
+  if ((staffSessionUser?.role || '') === 'project_manager' && next === 'tracking') {
+    next = 'home';
+  }
   const prev = staffCurrentView;
   const sameView = prev === next;
   const cacheFresh = isStaffViewCacheFresh(next);
@@ -561,7 +660,11 @@ function showStaffView(viewId, { forceReload = false } = {}) {
 async function loadViewData(viewId) {
   switch (viewId) {
     case 'home':
-      await loadCashierHomeKpis();
+      if (isCashierRole()) {
+        await loadCashierHomeKpis();
+      } else {
+        renderNonCashierHome();
+      }
       await refreshStaffApprovalsBadge();
       return undefined;
     case 'ledger':
@@ -5296,17 +5399,66 @@ function bindCashierLoansUi() {
   });
 }
 
+function renderNonCashierHome() {
+  const titleEl = document.getElementById('staffRoleHomeTitle');
+  const noteEl = document.getElementById('staffRoleHomeNote');
+  const modulesEl = document.getElementById('staffRoleHomeModules');
+  const role = staffSessionUser?.role || 'staff';
+  const meta = ROLE_META[role] || { title: 'Staff Dashboard', subtitle: '' };
+  if (titleEl) titleEl.textContent = meta.title.replace(/Dashboard$/i, 'workspace').trim();
+  if (noteEl) noteEl.textContent = staffWorkspaceCopy(role).note;
+  if (!modulesEl) return;
+  const permissions = new Set(staffSessionUser?.permissions || []);
+  const cards = FEATURE_CATALOG
+    .filter((item) => permissions.has(item.key) && !CASHIER_ONLY_VIEWS.has(item.panel) && item.panel !== 'home')
+    .filter((item, index, arr) => arr.findIndex((row) => row.panel === item.panel) === index)
+    .map((item) => `
+      <button type="button" class="metric-card" data-staff-nav="${escapeHtml(item.panel)}" style="text-align:left;cursor:pointer">
+        <div class="metric-content">
+          <span class="metric-label">${escapeHtml(item.icon || '')} ${escapeHtml(item.title)}</span>
+          <strong class="metric-value" style="font-size:0.95rem">${escapeHtml(item.detail)}</strong>
+        </div>
+      </button>
+    `);
+  modulesEl.innerHTML = cards.join('')
+    || '<p class="text-secondary">No operational modules are assigned to this role beyond Approvals.</p>';
+  modulesEl.querySelectorAll('[data-staff-nav]').forEach((btn) => {
+    btn.addEventListener('click', () => showStaffView(btn.dataset.staffNav));
+  });
+}
+
 async function loadInvestmentsModule() {
   const el = document.getElementById('cashierInvestmentsList');
   try {
-    const response = await fetch('/api/admin/investments/cashier-queue');
+    // Cashier sees payment queue; Project Manager sees project overview only.
+    if (isCashierRole()) {
+      const response = await fetch('/api/admin/investments/cashier-queue');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to load investments.');
+      const queue = data.queue || [];
+      if (el) {
+        el.innerHTML = queue.length
+          ? `<p>${queue.length} investment(s) awaiting cashier payment.</p>`
+          : '<p class="text-secondary">No investments awaiting payment. Open Payment Queue for details when items arrive.</p>';
+      }
+      return;
+    }
+
+    const response = await fetch('/api/admin/investments');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to load investments.');
-    const queue = data.queue || [];
+    const active = data.activeInvestments || [];
+    const pending = data.pendingInvestments || [];
+    const sold = data.soldInvestments || [];
     if (el) {
-      el.innerHTML = queue.length
-        ? `<p>${queue.length} investment(s) awaiting cashier payment.</p>`
-        : '<p class="text-secondary">No investments awaiting payment. Open Payment Queue for details when items arrive.</p>';
+      el.innerHTML = `
+        <div class="metrics-grid">
+          <div class="metric-card"><div class="metric-content"><span class="metric-label">Running projects</span><strong class="metric-value">${active.length}</strong></div></div>
+          <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting approval / payment</span><strong class="metric-value">${pending.length}</strong></div></div>
+          <div class="metric-card"><div class="metric-content"><span class="metric-label">Closed / sold</span><strong class="metric-value">${sold.length}</strong></div></div>
+        </div>
+        <p class="table-subtitle u-mt-1">Project Manager view is read-focused. Cashier payment queue and disbursements are only available to the Cashier role.</p>
+      `;
     }
   } catch (error) {
     if (el) el.innerHTML = `<p class="text-secondary">${escapeHtml(error.message)}</p>`;
@@ -6143,44 +6295,51 @@ async function init() {
       subtitle: `Signed in as ${user.name}`,
     };
     const roleLabel = (user.role || 'staff').replace(/_/g, ' ');
+    const cashierRole = isCashierRole(user);
 
     document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${user.role}`, meta.title);
     document.getElementById('dashboardSubtitle').textContent = meta.subtitle;
-    document.getElementById('roleTagline').textContent = window.OrganizationBranding?.portalLabel(
-      user.role === 'cashier' ? 'cashier' : 'staff'
-    ) || roleLabel;
+    applyStaffRoleChrome(user);
 
     const initials = initialsFromName(user.name);
     const setText = (id, value) => {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
     };
-    setText('cashierSidebarName', user.name || 'Cashier');
+    setText('cashierSidebarName', user.name || roleLabel);
     setText('cashierSidebarRole', roleLabel);
     setText('cashierSidebarAvatar', initials);
     setText('cashierTopName', user.name || '—');
     setText('cashierTopRole', roleLabel);
     setText('cashierTopAvatar', initials);
     setText('cashierGreeting', `${window.I18n?.t('page.staff.welcomeBack', 'Welcome back')}, ${String(user.name || 'there').split(' ')[0]}!`);
-    setText('cashierHeroTitle', window.I18n?.t('page.staff.workspaceTitle', 'Your cashier workspace'));
-    setText('cashierHeroNote', window.I18n?.t('page.staff.workspaceNote', 'Track this month\'s collections, open member portfolios, and use the sidebar for all modules.'));
 
     const permissions = new Set(user.permissions || []);
     const seenPanels = new Set();
     const features = FEATURE_CATALOG.filter((item) => {
       if (!permissions.has(item.key)) return false;
+      // Hard isolation: never surface cashier money modules to Project Manager / other staff.
+      if (!cashierRole && CASHIER_ONLY_VIEWS.has(item.panel)) return false;
       if (seenPanels.has(item.panel)) return false;
       seenPanels.add(item.panel);
       return true;
     });
-    const showQueue = user.role === 'cashier' || permissions.has('can_manage_deposits');
-    const canManageLedger = showQueue;
+    // Ledger / queue / funding / reserve / audit: cashier role only.
+    const showQueue = cashierRole && (
+      permissions.has('can_manage_deposits')
+      || permissions.has('can_disburse_withdrawals')
+      || permissions.has('can_disburse_refunds')
+    );
+    const canManageLedger = cashierRole && permissions.has('can_manage_deposits');
     staffCanManageLedger = canManageLedger;
-    const showLedger = canManageLedger || permissions.has('can_view_reports');
-    const showTracking = showLedger && !canManageLedger;
-    const showProfit = permissions.has('can_manage_profit');
+    // Deposit tracking is not a Project Manager module (API + nav).
+    const showTracking = !cashierRole
+      && user.role !== 'project_manager'
+      && permissions.has('can_view_reports')
+      && !permissions.has('can_manage_deposits');
+    const showProfit = cashierRole && permissions.has('can_manage_profit');
     const showMembers = permissions.has('can_manage_members')
-      || permissions.has('can_manage_deposits')
+      || (cashierRole && permissions.has('can_manage_deposits'))
       || permissions.has('can_view_reports');
 
     const moduleCount = features.length
@@ -6212,25 +6371,38 @@ async function init() {
     pushNav({ icon: '✅', panel: 'approvals', titleKey: 'nav.approvals' });
     pushNav({ icon: '📡', panel: 'approval-tracking', titleKey: 'nav.approvalTracking' });
 
-    navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
-    if (canManageLedger) pushNav({ icon: '🏛️', panel: 'ledger' });
-    if (canManageLedger) pushNav({ icon: '📋', panel: 'audit' });
-    if (showTracking) pushNav({ icon: '🔍', panel: 'tracking' });
-    if (showQueue) pushNav({ icon: '⏳', panel: 'queue' });
-    if (showQueue) pushNav({ icon: '🔄', panel: 'funding' });
-    if (canManageLedger) pushNav({ icon: '🛡️', panel: 'reserve', titleKey: 'nav.emergencyReserve' });
-    if (showProfit) pushNav({ icon: '💹', panel: 'profit' });
+    const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding', 'reserve', 'ledger', 'audit', 'tracking', 'queue']);
+    const financeNavItems = [];
+    const pushFinance = (opts) => {
+      if (addedPanels.has(opts.panel)) return;
+      if (!cashierRole && CASHIER_ONLY_VIEWS.has(opts.panel)) return;
+      addedPanels.add(opts.panel);
+      const titleKey = opts.titleKey || PANEL_I18N_KEYS[opts.panel] || 'nav.dashboard';
+      financeNavItems.push(navItemHtml({ ...opts, titleKey }));
+    };
 
-    const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding', 'reserve']);
+    if (canManageLedger) pushFinance({ icon: '🏛️', panel: 'ledger' });
+    if (canManageLedger) pushFinance({ icon: '📋', panel: 'audit' });
+    if (showTracking) pushFinance({ icon: '🔍', panel: 'tracking' });
+    if (showQueue) pushFinance({ icon: '⏳', panel: 'queue' });
+    if (showQueue) pushFinance({ icon: '🔄', panel: 'funding' });
+    if (canManageLedger) pushFinance({ icon: '🛡️', panel: 'reserve', titleKey: 'nav.emergencyReserve' });
+    if (showProfit) pushFinance({ icon: '💹', panel: 'profit' });
+
     features.forEach((feature) => {
       if (!financePanels.has(feature.panel)) return;
       const copy = HOME_MODULE_COPY[feature.panel] || {};
-      pushNav({
+      pushFinance({
         titleKey: PANEL_I18N_KEYS[feature.panel],
         icon: copy.icon || feature.icon || '•',
         panel: feature.panel,
       });
     });
+
+    if (financeNavItems.length) {
+      navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
+      navParts.push(...financeNavItems);
+    }
 
     navParts.push(`<p class="nav-section-label" data-i18n="nav.section.management">${window.I18n?.t('nav.section.management', 'Management')}</p>`);
     if (showMembers) pushNav({ icon: '👥', panel: 'members' });
@@ -6249,7 +6421,7 @@ async function init() {
 
     const membersLaunch = document.getElementById('cashierOpenMembers');
     if (membersLaunch) {
-      membersLaunch.classList.toggle('hidden', !showMembers);
+      membersLaunch.classList.toggle('hidden', !showMembers || !cashierRole);
     }
 
     document.getElementById('cashierRefreshKpis')?.addEventListener('click', () => {
@@ -6258,18 +6430,11 @@ async function init() {
     });
 
     document.addEventListener('bbbf:languagechange', () => {
-      const tagline = document.getElementById('roleTagline');
-      if (tagline && staffSessionUser) {
-        tagline.textContent = window.OrganizationBranding?.portalLabel(
-          staffSessionUser.role === 'cashier' ? 'cashier' : 'staff'
-        ) || (staffSessionUser.role || 'staff').replace(/_/g, ' ');
-      }
       if (staffSessionUser) {
-        const meta = ROLE_META[staffSessionUser.role] || { title: 'Staff Dashboard', subtitle: '' };
-        document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${staffSessionUser.role}`, meta.title);
-        setText('cashierHeroTitle', window.I18n?.t('page.staff.workspaceTitle', 'Your cashier workspace'));
-        setText('cashierHeroNote', window.I18n?.t('page.staff.workspaceNote', ''));
+        const nextMeta = ROLE_META[staffSessionUser.role] || { title: 'Staff Dashboard', subtitle: '' };
+        document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${staffSessionUser.role}`, nextMeta.title);
         setText('cashierGreeting', `${window.I18n?.t('page.staff.welcomeBack', 'Welcome back')}, ${String(staffSessionUser.name || 'there').split(' ')[0]}!`);
+        applyStaffRoleChrome(staffSessionUser);
       }
       window.I18n?.applyI18n?.();
     });

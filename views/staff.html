@@ -18,13 +18,13 @@
   <link rel="stylesheet" href="/static/css/mobile-compact.css" />
   <link rel="stylesheet" href="/static/css/pdf-language.css" />
 </head>
-<body class="dashboard-layout staff-dashboard cashier-shell">
+<body class="dashboard-layout staff-dashboard" id="staffDashboardBody" data-staff-role="">
   <aside class="sidebar" id="appSidebar">
     <div class="sidebar-brand">
       <div class="brand-mark" aria-hidden="true" data-brand-mark>বব</div>
       <div class="brand-copy">
         <h2 data-brand-name>বন্ধুত্বের বন্ধন ফাউন্ডেশন</h2>
-        <p class="brand-tagline" data-brand-tagline data-brand-portal="cashier" id="roleTagline">Staff Dashboard</p>
+        <p class="brand-tagline" data-brand-tagline data-brand-portal="staff" id="roleTagline">Staff Dashboard</p>
       </div>
     </div>
     <nav class="sidebar-nav" id="featureNav" aria-label="Staff modules"></nav>
@@ -93,13 +93,23 @@
               <div class="cashier-hero-banner">
                 <div>
                   <p class="cashier-eyebrow" id="cashierGreeting" data-i18n="page.staff.welcomeBack">Welcome back</p>
-                  <h2 id="cashierHeroTitle" data-i18n="staffUi.cashierWorkspace">Cashier workspace</h2>
-                  <p class="text-secondary" id="cashierHeroNote">Track this month’s collections, open member portfolios, and use the sidebar for all modules.</p>
+                  <h2 id="cashierHeroTitle">Your workspace</h2>
+                  <p class="text-secondary" id="cashierHeroNote">Use the sidebar for modules available to your role.</p>
                 </div>
                 <div class="cashier-hero-pills" id="permissionStats"></div>
               </div>
 
-              <section class="cashier-summary-grid" aria-label="Monthly payment status">
+              <section class="panel-card hidden" id="staffRoleHomeCard" data-non-cashier-home aria-label="Role workspace overview">
+                <div class="panel-card-header">
+                  <h3 id="staffRoleHomeTitle">Project Manager workspace</h3>
+                  <p class="text-secondary" id="staffRoleHomeNote">
+                    Oversee members, project approvals, and investment summaries. Cashier deposits, ledgers, and payouts are not available in this role.
+                  </p>
+                </div>
+                <div class="metrics-grid" id="staffRoleHomeModules"></div>
+              </section>
+
+              <section class="cashier-summary-grid" data-cashier-home-only aria-label="Monthly payment status">
                 <article class="cashier-summary-card cashier-summary-paid">
                   <div class="cashier-summary-head">
                     <div>
@@ -135,7 +145,7 @@
                 </article>
               </section>
 
-              <section class="cashier-analytics-card" aria-label="Monthly collection analytics">
+              <section class="cashier-analytics-card" data-cashier-home-only aria-label="Monthly collection analytics">
                 <div class="cashier-section-head">
                   <h3 data-i18n="common.collectionAnalytics">Collection analytics</h3>
                   <p class="text-secondary" id="cashierAnalyticsNote" data-i18n="common.paidVsUnpaid">Paid vs unpaid for the current month</p>
@@ -180,7 +190,7 @@
                 </div>
               </section>
 
-              <section class="cashier-analytics-card" aria-label="Financial trend analytics">
+              <section class="cashier-analytics-card" data-cashier-home-only aria-label="Financial trend analytics">
                 <div class="cashier-section-head">
                   <h3 data-i18n="common.revenueProfitTrends">Revenue &amp; profit trends</h3>
                   <p class="text-secondary" data-i18n="common.trendsHelp">12-month cash-in, payouts, and profit pool movement</p>
@@ -228,7 +238,7 @@
               </section>
             </div>
 
-            <aside class="cashier-home-rail" aria-label="Society KPIs">
+            <aside class="cashier-home-rail" data-cashier-home-only aria-label="Society KPIs">
               <section class="cashier-kpi-card">
                 <div class="cashier-kpi-head">
                   <h3 data-i18n="common.societyPulse">Society pulse</h3>

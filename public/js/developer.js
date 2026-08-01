@@ -249,19 +249,35 @@ function closeProxyApprovalModal() {
   document.getElementById('umProxyApprovalModal')?.classList.add('hidden');
 }
 
+function umBlockedPermissionsForRole(role) {
+  if (role === 'cashier') return new Set();
+  if (role === 'project_manager') {
+    return new Set(umMeta.projectManagerBlockedPermissions || umMeta.cashierExclusivePermissions || []);
+  }
+  if (role === 'member') {
+    return new Set((umMeta.permissions || []).map((p) => p.key));
+  }
+  return new Set(umMeta.cashierExclusivePermissions || []);
+}
+
 function renderUmPermissions(selectedKeys = []) {
   const grid = document.getElementById('devPermissionsGrid');
   if (!grid) return;
-  const selected = new Set(selectedKeys);
-  grid.innerHTML = (umMeta.permissions || []).map((perm) => `
-    <label class="permission-chip">
-      <input type="checkbox" value="${escapeHtml(perm.key)}" ${selected.has(perm.key) ? 'checked' : ''} />
+  const role = document.getElementById('devRoleSelect')?.value || '';
+  const blocked = umBlockedPermissionsForRole(role);
+  const selected = new Set((selectedKeys || []).filter((key) => !blocked.has(key)));
+  grid.innerHTML = (umMeta.permissions || []).map((perm) => {
+    const isBlocked = blocked.has(perm.key);
+    return `
+    <label class="permission-chip${isBlocked ? ' is-disabled' : ''}" title="${isBlocked ? 'Not available for this role' : ''}">
+      <input type="checkbox" value="${escapeHtml(perm.key)}" ${selected.has(perm.key) ? 'checked' : ''} ${isBlocked ? 'disabled' : ''} />
       <span>
         <strong>${escapeHtml(perm.label)}</strong>
-        <small>${escapeHtml(perm.description || '')}</small>
+        <small>${escapeHtml(isBlocked ? `${perm.description || ''} (blocked for ${role.replace(/_/g, ' ')})` : (perm.description || ''))}</small>
       </span>
     </label>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function applyUmRoleDefaults() {
@@ -271,7 +287,7 @@ function applyUmRoleDefaults() {
 }
 
 function getUmSelectedPermissions() {
-  return Array.from(document.querySelectorAll('#devPermissionsGrid input[type="checkbox"]:checked'))
+  return Array.from(document.querySelectorAll('#devPermissionsGrid input[type="checkbox"]:checked:not(:disabled)'))
     .map((el) => el.value);
 }
 
@@ -289,7 +305,11 @@ async function ensureCreateForm() {
     applyUmRoleDefaults();
     roleSelect.addEventListener('change', applyUmRoleDefaults);
     document.getElementById('devSelectAllPerms')?.addEventListener('click', () => {
-      renderUmPermissions((umMeta.permissions || []).map((p) => p.key));
+      const role = document.getElementById('devRoleSelect')?.value || '';
+      const blocked = umBlockedPermissionsForRole(role);
+      renderUmPermissions(
+        (umMeta.permissions || []).map((p) => p.key).filter((key) => !blocked.has(key))
+      );
     });
     document.getElementById('devClearPerms')?.addEventListener('click', () => {
       renderUmPermissions([]);

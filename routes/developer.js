@@ -19,6 +19,8 @@ const {
   PERMISSIONS,
   DEFAULT_PERMISSIONS_BY_ROLE,
   UM_EXCLUSIVE_PERMISSIONS,
+  CASHIER_EXCLUSIVE_PERMISSIONS,
+  PROJECT_MANAGER_BLOCKED_PERMISSIONS,
   isDeveloperRole,
 } = require('../services/rbac');
 const User = require('../models/User');
@@ -53,6 +55,11 @@ router.get('/meta', (req, res) => {
       )),
     })),
     permissions,
+    cashierExclusivePermissions: [...CASHIER_EXCLUSIVE_PERMISSIONS],
+    projectManagerBlockedPermissions: [
+      ...CASHIER_EXCLUSIVE_PERMISSIONS,
+      ...PROJECT_MANAGER_BLOCKED_PERMISSIONS,
+    ],
     accountStatuses: ['active', 'inactive', 'blocked'],
     softDeleteEnabled: false,
   });

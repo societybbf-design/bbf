@@ -6,10 +6,10 @@ const {
   userHasPermission,
 } = require('../services/rbac');
 
+/** Read-only cashier deposit transparency — Project Manager intentionally excluded. */
 const STAFF_TRANSPARENCY_ROLES = new Set([
   'investor',
   'employee',
-  'project_manager',
   'cashier',
 ]);
 

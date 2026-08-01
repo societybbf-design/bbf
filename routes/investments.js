@@ -43,6 +43,19 @@ const { requireAuth, requirePermission, requirePasswordConfirmation } = require(
 
 router.use(requireAuth);
 
+/** Hard role gate for cashier payout / funding actions (never Project Manager). */
+function requireCashierRole(req, res, next) {
+  if (req.session?.user?.role === 'cashier') {
+    return next();
+  }
+  return res.status(403).json({
+    error: 'Only the Cashier can process investment payouts and cashier funding actions.',
+  });
+}
+
+const cashierDepositPerm = requirePermission('can_manage_deposits');
+const cashierMoney = [cashierDepositPerm, requireCashierRole];
+
 router.get('/preview-code', requirePermission('can_manage_investments'), async (req, res) => {
   try {
     const { generateInvestmentCode } = require('../services/investmentService');
@@ -126,7 +139,7 @@ router.get('/portfolio/:investorId', requirePermission('can_manage_investments')
   }
 });
 
-router.get('/cashier-queue', requirePermission('can_manage_deposits', 'can_manage_investments'), async (req, res) => {
+router.get('/cashier-queue', ...cashierMoney, async (req, res) => {
   try {
     const queue = await listCashierPaymentQueue();
     return res.json({ queue });
@@ -135,7 +148,7 @@ router.get('/cashier-queue', requirePermission('can_manage_deposits', 'can_manag
   }
 });
 
-router.get('/external-capital-queue', requirePermission('can_manage_deposits', 'can_manage_investments'), async (req, res) => {
+router.get('/external-capital-queue', ...cashierMoney, async (req, res) => {
   try {
     const queue = await listExternalCapitalQueue();
     return res.json({ queue });
@@ -144,7 +157,7 @@ router.get('/external-capital-queue', requirePermission('can_manage_deposits', '
   }
 });
 
-router.get('/monthly-projects', requirePermission('can_manage_deposits', 'can_manage_investments', 'can_manage_profit'), async (req, res) => {
+router.get('/monthly-projects', requirePermission('can_manage_deposits', 'can_manage_profit'), async (req, res) => {
   try {
     const projects = await listActiveMonthlyProjects();
     return res.json({ projects });
@@ -169,7 +182,7 @@ router.post('/:id/external-capital', requirePermission('can_manage_deposits'), r
   }
 });
 
-router.post('/:id/monthly-return', requirePermission('can_manage_deposits', 'can_manage_profit', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.post('/:id/monthly-return', requirePermission('can_manage_deposits', 'can_manage_profit'), requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await recordMonthlyProjectReturn({
       investmentId: req.params.id,
@@ -236,7 +249,7 @@ router.post('/:id/liquidate', requirePermission('can_manage_profit'), requirePas
   }
 });
 
-router.get('/:id/cashier-payment-check', requirePermission('can_manage_deposits', 'can_manage_investments'), async (req, res) => {
+router.get('/:id/cashier-payment-check', ...cashierMoney, async (req, res) => {
   try {
     const result = await previewCashierPayment(req.params.id);
     return res.json(result);
@@ -245,7 +258,7 @@ router.get('/:id/cashier-payment-check', requirePermission('can_manage_deposits'
   }
 });
 
-router.post('/:id/cashier-cover-advance', requirePermission('can_manage_deposits', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.post('/:id/cashier-cover-advance', ...cashierMoney, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await coverCashierPaymentShortfallFromAdvance({
       investmentId: req.params.id,
@@ -265,7 +278,7 @@ router.post('/:id/cashier-cover-advance', requirePermission('can_manage_deposits
   }
 });
 
-router.post('/:id/cashier-cover-reserve', requirePermission('can_manage_deposits', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.post('/:id/cashier-cover-reserve', ...cashierMoney, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await coverCashierPaymentShortfallFromReserve({
       investmentId: req.params.id,
@@ -284,7 +297,7 @@ router.post('/:id/cashier-cover-reserve', requirePermission('can_manage_deposits
   }
 });
 
-router.post('/:id/cashier-complete', requirePermission('can_manage_deposits', 'can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.post('/:id/cashier-complete', ...cashierMoney, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await completeCashierPayment(req.params.id, {
       cashierName: req.session?.user?.name || 'Cashier',
@@ -306,7 +319,7 @@ router.post('/:id/cashier-complete', requirePermission('can_manage_deposits', 'c
   }
 });
 
-router.get('/:id/payout-voucher.pdf', requirePermission('can_manage_deposits', 'can_manage_investments'), async (req, res) => {
+router.get('/:id/payout-voucher.pdf', ...cashierMoney, async (req, res) => {
   try {
     const investment = await Investment.findById(req.params.id);
     if (!investment || !investment.cashierProcessedAt) {
