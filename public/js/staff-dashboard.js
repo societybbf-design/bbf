@@ -42,7 +42,7 @@ function staffWorkspaceCopy(role) {
   if (role === 'project_manager') {
     return {
       title: 'Your project manager workspace',
-      note: 'Oversee members, project approvals, and investment summaries. Cashier deposits, ledgers, and payouts stay with the Cashier role.',
+      note: 'Manage assigned projects — expenses, monthly P/L, capital expansion, and approval tracking. Cashier deposits, ledgers, and payouts stay with the Cashier role.',
     };
   }
   if (role === 'employee') {
@@ -64,6 +64,15 @@ function applyStaffRoleChrome(user) {
   body.dataset.staffRole = role;
   body.classList.toggle('cashier-shell', role === 'cashier');
   body.classList.toggle('pm-shell', role === 'project_manager');
+
+  const isPm = role === 'project_manager';
+  const isCashier = role === 'cashier';
+  document.querySelectorAll('[data-pm-only]').forEach((el) => {
+    el.classList.toggle('hidden', !isPm);
+  });
+  document.querySelectorAll('[data-cashier-investments-only]').forEach((el) => {
+    el.classList.toggle('hidden', !isCashier);
+  });
 
   const tagline = document.getElementById('roleTagline');
   if (tagline) {
@@ -129,7 +138,7 @@ function translateStatus(value) {
 const ROLE_META = {
   project_manager: {
     title: 'Project Manager Dashboard',
-    subtitle: 'Oversee members, investments, loans, and KYC workflows.',
+    subtitle: 'Assigned projects, expenses, monthly P/L, capital expansion, and member workflows.',
   },
   cashier: {
     title: 'Cashier Dashboard',
@@ -153,7 +162,7 @@ const FEATURE_CATALOG = [
   { key: 'can_disburse_withdrawals', title: 'Withdrawals', detail: 'Pay CEO-approved withdrawals from Advance Balance.', icon: '🏦', panel: 'withdrawals' },
   { key: 'can_disburse_loans', title: 'Loans', detail: 'Disburse approved loans and record repayments.', icon: '📄', panel: 'loans' },
   { key: 'can_manage_loans', title: 'Loan Review', detail: 'View pending loan applications (CEO approves).', icon: '📄', panel: 'loans', catalogKey: 'loan_review' },
-  { key: 'can_manage_investments', title: 'Investments', detail: 'Project / investment overview for your role.', icon: '📈', panel: 'investments' },
+  { key: 'can_manage_investments', title: 'Investments', detail: 'Assigned projects, expenses, monthly P/L, capital expansion, and activity tracking.', icon: '📈', panel: 'investments' },
   { key: 'can_manage_ious', title: 'IOUs', detail: 'Investment-related tracking.', icon: '📝', panel: 'investments' },
   { key: 'can_manage_profit', title: 'Profit & Loss', detail: 'Record investment P&L, distribute profits, and automatic dividends.', icon: '💹', panel: 'profit' },
   { key: 'can_disburse_refunds', title: 'Refunds', detail: 'Pay CEO-approved member refunds from the bank ledger.', icon: '↩️', panel: 'refunds' },
@@ -378,7 +387,7 @@ const HOME_MODULE_COPY = {
   queue: { title: 'Payment Queue', detail: 'Investment payment queue', icon: '⏳' },
   members: { title: 'Members', detail: 'View society members', icon: '👥' },
   loans: { title: 'Loans', detail: 'Review loan applications', icon: '📄' },
-  investments: { title: 'Investments', detail: 'Investment summary', icon: '📈' },
+  investments: { title: 'Investments', detail: 'Projects, expenses, P/L & activity', icon: '📈' },
 };
 
 function featureCardHtml(feature, index = 0) {
@@ -5427,10 +5436,339 @@ function renderNonCashierHome() {
   });
 }
 
+async function readStaffFilesAsBase64(fileList) {
+  const files = Array.from(fileList || []);
+  const encoded = [];
+  for (const file of files) {
+    if (!file) continue;
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    if (data) encoded.push({ name: file.name, data });
+  }
+  return encoded;
+}
+
+function pmInvestmentId(project) {
+  return String(project?.id || project?._id || '');
+}
+
+function pmStatusBadge(status) {
+  const raw = String(status || '—');
+  const key = raw.toLowerCase();
+  let cls = 'status-pending';
+  if (['active', 'running', 'ceo_approved', 'executed', 'completed', 'paid'].includes(key)) cls = 'status-completed';
+  else if (['sold', 'closed'].includes(key)) cls = 'status-running';
+  else if (['rejected', 'ceo_rejected', 'failed', 'cancelled', 'canceled'].includes(key)) cls = 'status-fail';
+  else if (['submitted', 'pending_member_approval', 'pending_ceo_authorization', 'pending_cashier_payment', 'draft'].includes(key)) {
+    cls = 'status-pending';
+  }
+  return `<span class="status-badge ${cls}">${escapeHtml(translateStatus(raw.replace(/_/g, ' ')))}</span>`;
+}
+
+function pmFormatWhen(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString();
+}
+
+function renderPmStakeholders(stakeholders = {}) {
+  const pm = stakeholders.projectManager;
+  const externals = stakeholders.externalInvestors || [];
+  const societyPct = Number(stakeholders.societyOwnershipPct || 0);
+  const rows = [];
+  if (pm) {
+    rows.push(`<li><strong>Project manager:</strong> ${escapeHtml(pm.name || '—')}${pm.email ? ` <span class="text-secondary">(${escapeHtml(pm.email)})</span>` : ''}</li>`);
+  }
+  rows.push(`<li><strong>Society ownership:</strong> ${societyPct.toFixed(2)}%</li>`);
+  if (externals.length) {
+    rows.push('<li><strong>External co-investors:</strong><ul style="margin:0.25rem 0 0;padding-left:1.1rem;">');
+    for (const row of externals) {
+      rows.push(`<li>${escapeHtml(row.name || 'Investor')} — ${Number(row.ownershipPct || 0).toFixed(2)}%${row.amount ? ` · ${money(row.amount)}` : ''}</li>`);
+    }
+    rows.push('</ul></li>');
+  } else {
+    rows.push('<li><strong>External co-investors:</strong> None</li>');
+  }
+  return `<ul class="table-subtitle" style="margin:0.35rem 0 0;padding-left:1.1rem;">${rows.join('')}</ul>`;
+}
+
+function renderPmProjectsList(projects = []) {
+  if (!projects.length) {
+    return '<p class="text-secondary">No projects assigned to you yet.</p>';
+  }
+  return `
+    <div class="table-wrapper">
+      <table class="data-table table-cards">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Type / title</th>
+            <th>Capital</th>
+            <th>Status</th>
+            <th>Stakeholders</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${projects.map((p) => {
+            const code = p.investmentCode || pmInvestmentId(p).slice(-6) || '—';
+            const type = p.investmentType || p.title || p.name || 'Project';
+            const funding = p.fundingKind === 'capital_expansion' ? ' · Expansion' : '';
+            return `
+              <tr>
+                <td><strong>${escapeHtml(code)}</strong></td>
+                <td>${escapeHtml(type)}${escapeHtml(funding)}</td>
+                <td>${money(p.amount)}</td>
+                <td>${pmStatusBadge(p.status)}</td>
+                <td>${renderPmStakeholders(p.stakeholders || {})}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPmActivityList(activity = []) {
+  if (!activity.length) {
+    return '<p class="text-secondary">No recent project activity.</p>';
+  }
+  return `
+    <div class="table-wrapper">
+      <table class="data-table table-cards">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Kind</th>
+            <th>Item</th>
+            <th>Code</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${activity.map((item) => `
+            <tr>
+              <td>${escapeHtml(pmFormatWhen(item.at))}</td>
+              <td>${escapeHtml(String(item.kind || '—').replace(/_/g, ' '))}</td>
+              <td>${escapeHtml(item.title || '—')}</td>
+              <td>${escapeHtml(item.investmentCode || '—')}</td>
+              <td>${item.amount != null ? money(item.amount) : '—'}</td>
+              <td>${pmStatusBadge(item.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPmInvestmentsMetrics(summary = {}, projects = []) {
+  const active = Number(summary.activeProjects ?? projects.filter((p) => p.status === 'active').length);
+  const pending = Number(summary.pendingProjects ?? projects.filter((p) => String(p.status || '').startsWith('pending')).length);
+  const sold = Number(summary.soldProjects ?? projects.filter((p) => p.status === 'sold' || p.status === 'closed').length);
+  return `
+    <div class="metric-card"><div class="metric-content"><span class="metric-label">Running</span><strong class="metric-value">${active}</strong></div></div>
+    <div class="metric-card"><div class="metric-content"><span class="metric-label">In approval / payment</span><strong class="metric-value">${pending}</strong></div></div>
+    <div class="metric-card"><div class="metric-content"><span class="metric-label">Closed / sold</span><strong class="metric-value">${sold}</strong></div></div>
+    <div class="metric-card"><div class="metric-content"><span class="metric-label">Active capital</span><strong class="metric-value">${money(summary.activeCapital || 0)}</strong></div></div>
+  `;
+}
+
+function populatePmProjectSelects(projects = []) {
+  const allActive = projects.filter((p) => p.status === 'active' && p.fundingKind !== 'capital_expansion');
+  const expenseable = allActive;
+  const fill = (selectId, list, emptyLabel) => {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+    const current = el.value;
+    el.innerHTML = `<option value="">${escapeHtml(emptyLabel)}</option>${list.map((p) => {
+      const id = pmInvestmentId(p);
+      const label = `${p.investmentCode || id} — ${p.investmentType || 'Project'} (${money(p.amount)})`;
+      return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+    }).join('')}`;
+    if (current && [...el.options].some((o) => o.value === current)) el.value = current;
+  };
+  fill('pmExpenseProjectSelect', expenseable, 'Select project…');
+  fill('pmMonthlyProjectSelect', expenseable, 'Select project…');
+  fill('pmExpandProjectSelect', allActive, 'Select active project…');
+}
+
+function setPmDefaultFormDates() {
+  const today = new Date();
+  const isoDate = today.toISOString().slice(0, 10);
+  const yearMonth = isoDate.slice(0, 7);
+  const expenseDate = document.getElementById('pmExpenseDate');
+  const monthInput = document.getElementById('pmMonthlyYearMonth');
+  if (expenseDate && !expenseDate.value) expenseDate.value = isoDate;
+  if (monthInput && !monthInput.value) monthInput.value = yearMonth;
+}
+
+let pmProjectsCache = [];
+let pmOpsFormsBound = false;
+
+function activatePmInvestmentsTab(tab) {
+  const next = ['projects', 'ops', 'activity'].includes(tab) ? tab : 'projects';
+  document.querySelectorAll('[data-pm-investments-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-pm-investments-tab') === next);
+  });
+  document.querySelectorAll('[data-pm-investments-panel]').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.getAttribute('data-pm-investments-panel') !== next);
+  });
+}
+
+function bindPmProjectOpsForms() {
+  if (pmOpsFormsBound) return;
+  if ((staffSessionUser?.role || '') !== 'project_manager') return;
+  pmOpsFormsBound = true;
+
+  document.querySelectorAll('[data-pm-investments-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activatePmInvestmentsTab(btn.getAttribute('data-pm-investments-tab'));
+    });
+  });
+
+  setPmDefaultFormDates();
+
+  document.getElementById('pmExpenseForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const msg = document.getElementById('pmExpenseMessage');
+    const formData = new FormData(form);
+    const investmentId = String(formData.get('investmentId') || '');
+    if (!investmentId) return;
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = 'Submitting expense…';
+    }
+    try {
+      const documents = await readStaffFilesAsBase64(form.querySelector('#pmExpenseDocument')?.files);
+      const response = await fetch(`/api/admin/investments/${encodeURIComponent(investmentId)}/expenses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: formData.get('description'),
+          amount: formData.get('amount'),
+          expenseDate: formData.get('expenseDate'),
+          category: formData.get('category') || 'operational',
+          documents,
+          submit: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to submit expense.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Expense submitted for CEO review.';
+      }
+      form.reset();
+      setPmDefaultFormDates();
+      populatePmProjectSelects(pmProjectsCache);
+      invalidateStaffViewCache(['investments', 'approvals']);
+      await loadInvestmentsModule();
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.getElementById('pmMonthlyReportForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const msg = document.getElementById('pmMonthlyReportMessage');
+    const formData = new FormData(form);
+    const investmentId = String(formData.get('investmentId') || '');
+    if (!investmentId) return;
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = 'Submitting monthly P/L…';
+    }
+    try {
+      const response = await fetch(`/api/admin/investments/${encodeURIComponent(investmentId)}/monthly-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          yearMonth: formData.get('yearMonth'),
+          grossRevenue: formData.get('grossRevenue'),
+          notes: formData.get('notes') || '',
+          submit: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to submit monthly report.');
+      const report = data.report || {};
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message
+          || `P/L submitted. Gross ${money(report.grossRevenue)} − expenses ${money(report.totalExpenses)} = net ${money(report.netProfit)}.`;
+      }
+      form.reset();
+      setPmDefaultFormDates();
+      populatePmProjectSelects(pmProjectsCache);
+      invalidateStaffViewCache(['investments', 'approvals']);
+      await loadInvestmentsModule();
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.getElementById('pmCapitalExpandForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const msg = document.getElementById('pmCapitalExpandMessage');
+    const formData = new FormData(form);
+    const investmentId = String(formData.get('investmentId') || '');
+    if (!investmentId) return;
+    if (msg) {
+      msg.classList.remove('success', 'error');
+      msg.textContent = 'Submitting capital expansion…';
+    }
+    try {
+      const response = await fetch(`/api/admin/investments/${encodeURIComponent(investmentId)}/expand-capital`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expansionAmount: formData.get('expansionAmount'),
+          notes: formData.get('notes') || '',
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to request capital expansion.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message
+          || `Capital expansion ${data.investment?.investmentCode || ''} submitted for member approval.`;
+      }
+      form.reset();
+      populatePmProjectSelects(pmProjectsCache);
+      invalidateStaffViewCache(['investments', 'approvals', 'approval-tracking']);
+      await loadInvestmentsModule();
+    } catch (error) {
+      if (msg) {
+        msg.classList.remove('success');
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+}
+
 async function loadInvestmentsModule() {
   const el = document.getElementById('cashierInvestmentsList');
   try {
-    // Cashier sees payment queue; Project Manager sees project overview only.
+    // Cashier sees payment queue; Project Manager sees full maker workspace.
     if (isCashierRole()) {
       const response = await fetch('/api/admin/investments/cashier-queue');
       const data = await response.json();
@@ -5444,6 +5782,34 @@ async function loadInvestmentsModule() {
       return;
     }
 
+    if ((staffSessionUser?.role || '') === 'project_manager') {
+      const response = await fetch('/api/admin/investments');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to load investments.');
+
+      const projects = Array.isArray(data.projects) && data.projects.length
+        ? data.projects
+        : (data.investments || data.activeInvestments || []).map((row) => ({
+          ...row,
+          id: row.id || row._id,
+          stakeholders: row.stakeholders || {},
+        }));
+      const activity = data.activity || [];
+      const summary = data.summary || {};
+      pmProjectsCache = projects;
+
+      const metricsEl = document.getElementById('pmInvestmentsMetrics');
+      const listEl = document.getElementById('pmProjectsList');
+      const activityEl = document.getElementById('pmActivityList');
+      if (metricsEl) metricsEl.innerHTML = renderPmInvestmentsMetrics(summary, projects);
+      if (listEl) listEl.innerHTML = renderPmProjectsList(projects);
+      if (activityEl) activityEl.innerHTML = renderPmActivityList(activity);
+      populatePmProjectSelects(projects);
+      setPmDefaultFormDates();
+      return;
+    }
+
+    // Other staff with investments permission: compact counts only.
     const response = await fetch('/api/admin/investments');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to load investments.');
@@ -5457,11 +5823,14 @@ async function loadInvestmentsModule() {
           <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting approval / payment</span><strong class="metric-value">${pending.length}</strong></div></div>
           <div class="metric-card"><div class="metric-content"><span class="metric-label">Closed / sold</span><strong class="metric-value">${sold.length}</strong></div></div>
         </div>
-        <p class="table-subtitle u-mt-1">Project Manager view is read-focused. Cashier payment queue and disbursements are only available to the Cashier role.</p>
       `;
     }
   } catch (error) {
     if (el) el.innerHTML = `<p class="text-secondary">${escapeHtml(error.message)}</p>`;
+    const listEl = document.getElementById('pmProjectsList');
+    if (listEl && (staffSessionUser?.role || '') === 'project_manager') {
+      listEl.innerHTML = `<p class="text-secondary">${escapeHtml(error.message)}</p>`;
+    }
   }
 }
 
@@ -6440,6 +6809,9 @@ async function init() {
     });
     bindStaffNavigation();
     bindLedgerForms();
+    if (user.role === 'project_manager') {
+      bindPmProjectOpsForms();
+    }
     applyLedgerAdminVisibility(canManageLedger);
     bindProfitPoolForms();
     bindEmergencyReserveForms();
