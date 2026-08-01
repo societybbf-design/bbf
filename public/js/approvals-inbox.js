@@ -29,17 +29,20 @@
         padding: 0.35rem 0.75rem; border-radius: 999px;
         background: color-mix(in srgb, var(--primary, #0f766e) 12%, transparent);
         border: 1px solid color-mix(in srgb, var(--primary, #0f766e) 28%, transparent);
+        color: var(--text-primary, #0f172a);
         font-size: 0.85rem; font-weight: 600;
       }
       .approvals-inbox-list { display: grid; gap: 0.85rem; }
       .approvals-inbox-item {
-        border: 1px solid var(--border-color, #cbd5e1);
+        border: 1px solid var(--border, var(--border-color, #cbd5e1));
         border-radius: 12px;
         padding: 0.95rem 1rem;
-        background: var(--card-bg, #fff);
+        background: var(--bg-card, var(--card-bg, #ffffff));
+        color: var(--text-primary, #0f172a);
+        box-shadow: 0 8px 20px var(--shadow-color, rgba(15, 23, 42, 0.06));
       }
       .approvals-inbox-item.is-high {
-        border-color: color-mix(in srgb, #d97706 45%, var(--border-color, #cbd5e1));
+        border-color: color-mix(in srgb, #d97706 45%, var(--border, var(--border-color, #cbd5e1)));
         box-shadow: inset 3px 0 0 #d97706;
       }
       .approvals-inbox-item-head {
@@ -49,12 +52,14 @@
       }
       .approvals-inbox-item-head h3 {
         margin: 0; font-size: 1.02rem; line-height: 1.3;
+        color: var(--text-primary, #0f172a);
       }
       .approvals-inbox-meta {
         margin: 0; color: var(--text-secondary, #64748b); font-size: 0.9rem;
       }
       .approvals-inbox-amount {
         font-weight: 700; white-space: nowrap;
+        color: var(--text-primary, #0f172a);
       }
       .approvals-inbox-actions {
         display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem;
@@ -66,14 +71,14 @@
       }
       .approvals-inbox-details {
         margin-top: 0.75rem; padding-top: 0.75rem;
-        border-top: 1px dashed var(--border-color, #cbd5e1);
+        border-top: 1px dashed var(--border, var(--border-color, #cbd5e1));
         font-size: 0.9rem; color: var(--text-secondary, #64748b);
       }
       .approvals-inbox-details dl {
         display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; margin: 0;
       }
       .approvals-inbox-details dt { font-weight: 600; color: var(--text-primary, #0f172a); }
-      .approvals-inbox-details dd { margin: 0; }
+      .approvals-inbox-details dd { margin: 0; color: var(--text-secondary, #64748b); }
       .approvals-inbox-empty {
         padding: 1.25rem 0.25rem; color: var(--text-secondary, #64748b);
       }
@@ -86,6 +91,52 @@
         display: inline-flex; align-items: center; justify-content: center;
       }
       .nav-item .approvals-nav-badge.is-empty { display: none; }
+
+      /* Dark mode: force slate cards + bright text (never fall back to white cards). */
+      html[data-theme="dark"] .approvals-inbox-item {
+        background: var(--bg-card, #1e293b);
+        border-color: var(--border-light, var(--border, rgba(148, 163, 184, 0.24)));
+        color: var(--text-primary, #f8fafc);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+      }
+      html[data-theme="dark"] .approvals-inbox-item.is-high {
+        background: color-mix(in srgb, #1e293b 88%, #78350f 12%);
+        border-color: color-mix(in srgb, #f59e0b 40%, var(--border, rgba(148, 163, 184, 0.24)));
+        box-shadow: inset 3px 0 0 #f59e0b;
+      }
+      html[data-theme="dark"] .approvals-inbox-item-head h3,
+      html[data-theme="dark"] .approvals-inbox-amount,
+      html[data-theme="dark"] .approvals-inbox-details dt,
+      html[data-theme="dark"] .approvals-inbox-pill {
+        color: var(--text-primary, #f8fafc);
+      }
+      html[data-theme="dark"] .approvals-inbox-meta,
+      html[data-theme="dark"] .approvals-inbox-details,
+      html[data-theme="dark"] .approvals-inbox-details dd,
+      html[data-theme="dark"] .approvals-inbox-empty {
+        color: var(--text-secondary, #cbd5e1);
+      }
+      html[data-theme="dark"] .approvals-inbox-actions .secondary-btn,
+      html[data-theme="dark"] .approvals-inbox-actions .ghost-btn {
+        color: var(--text-primary, #f8fafc);
+        border-color: var(--border-light, rgba(148, 163, 184, 0.35));
+        background: rgba(15, 23, 42, 0.55);
+      }
+      html[data-theme="dark"] .approvals-inbox-actions .secondary-btn:hover,
+      html[data-theme="dark"] .approvals-inbox-actions .ghost-btn:hover {
+        background: var(--bg-hover, #334155);
+        color: #ffffff;
+      }
+      html[data-theme="dark"] .approvals-inbox-item .status-badge.status-pending {
+        background: rgba(245, 158, 11, 0.22);
+        color: #fde68a;
+        border-color: rgba(251, 191, 36, 0.45);
+      }
+      html[data-theme="dark"] .approvals-inbox-item .status-badge.status-completed {
+        background: rgba(34, 197, 94, 0.22);
+        color: #bbf7d0;
+        border-color: rgba(74, 222, 128, 0.4);
+      }
     `;
     document.head.appendChild(style);
   }
