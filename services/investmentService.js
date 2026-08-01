@@ -2345,6 +2345,169 @@ async function listInvestorPortfolios() {
   return portfolios;
 }
 
+/**
+ * CEO External Investor Management portfolio:
+ * project ownership shares, capital deposits, profit/returns, and isolated ledger activity.
+ */
+async function getExternalInvestorPortfolio(investorId) {
+  if (!investorId) {
+    const error = new Error('External investor ID is required.');
+    error.status = 400;
+    throw error;
+  }
+
+  const investor = await User.findOne({
+    _id: investorId,
+    role: 'external_investor',
+    status: { $ne: 'deleted' },
+  }).select('name email phone address dateOfBirth status createdAt');
+
+  if (!investor) {
+    const error = new Error('External investor not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  const investments = await Investment.find({
+    'externalInvestors.investor': investor._id,
+  })
+    .populate('projectManager', 'name email role phone')
+    .populate('investor', 'name email role')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const ExternalInvestorLedger = require('../models/ExternalInvestorLedger');
+  const ExternalInvestorLedgerEntry = require('../models/ExternalInvestorLedgerEntry');
+  const ExternalPayoutRequest = require('../models/ExternalPayoutRequest');
+
+  const investmentIds = investments.map((row) => row._id);
+  const [ledgers, ledgerEntries, payoutRequests] = await Promise.all([
+    ExternalInvestorLedger.find({ investment: { $in: investmentIds } }).lean(),
+    ExternalInvestorLedgerEntry.find({
+      investment: { $in: investmentIds },
+      $or: [
+        { investor: investor._id },
+        { investor: null },
+        { investor: { $exists: false } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(150)
+      .lean(),
+    ExternalPayoutRequest.find({ investor: investor._id })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean(),
+  ]);
+
+  const ledgerByInvestment = new Map(ledgers.map((row) => [String(row.investment), row]));
+  const money2 = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Number(n.toFixed(2));
+  };
+
+  const projects = investments.map((inv) => {
+    const stake = (inv.externalInvestors || []).find(
+      (row) => String(row.investor?._id || row.investor || '') === String(investor._id)
+    ) || null;
+    const ledger = ledgerByInvestment.get(String(inv._id));
+    return {
+      id: inv._id,
+      investmentCode: inv.investmentCode,
+      investmentType: inv.investmentType,
+      projectAsset: inv.projectAsset || '',
+      projectAssetCategory: inv.projectAssetCategory || '',
+      location: inv.location || '',
+      status: inv.status,
+      returnMode: inv.returnMode,
+      ownershipPct: money2(stake?.ownershipPct || 0),
+      capitalCommitted: money2(stake?.amount || 0),
+      capitalReceived: money2(stake?.capitalReceived || 0),
+      profitBalance: money2(stake?.profitBalance || 0),
+      ledgerBalance: money2(ledger?.bookBalance || 0),
+      projectManager: inv.projectManager
+        ? {
+          id: inv.projectManager._id,
+          name: inv.projectManager.name,
+          email: inv.projectManager.email || '',
+        }
+        : null,
+      operatorName: inv.investor?.name || inv.investorName || '',
+      createdAt: inv.createdAt,
+      closedAt: inv.closedAt || inv.soldAt || null,
+    };
+  });
+
+  const deposits = ledgerEntries.filter((row) => row.type === 'external_capital_in');
+  const returns = ledgerEntries.filter((row) => (
+    row.type === 'external_profit_payout'
+    || row.type === 'external_capital_out'
+    || row.type === 'external_profit_accrual'
+  ));
+
+  return {
+    investor,
+    summary: {
+      projectCount: projects.length,
+      capitalCommitted: money2(projects.reduce((sum, row) => sum + row.capitalCommitted, 0)),
+      capitalReceived: money2(projects.reduce((sum, row) => sum + row.capitalReceived, 0)),
+      profitBalance: money2(projects.reduce((sum, row) => sum + row.profitBalance, 0)),
+      ledgerBalance: money2(projects.reduce((sum, row) => sum + row.ledgerBalance, 0)),
+      pendingPayouts: payoutRequests.filter((row) => row.status === 'pending_external_approval').length,
+      depositCount: deposits.length,
+    },
+    projects,
+    deposits: deposits.map((row) => ({
+      id: row._id,
+      investmentId: row.investment,
+      type: row.type,
+      direction: row.direction,
+      amount: money2(row.amount),
+      note: row.note || '',
+      createdAt: row.createdAt,
+      createdBy: row.createdBy || '',
+    })),
+    returns: returns.map((row) => ({
+      id: row._id,
+      investmentId: row.investment,
+      type: row.type,
+      direction: row.direction,
+      amount: money2(row.amount),
+      payoutStatus: row.payoutStatus || '',
+      note: row.note || '',
+      createdAt: row.createdAt,
+      createdBy: row.createdBy || '',
+    })),
+    ledgerEntries: ledgerEntries.map((row) => ({
+      id: row._id,
+      investmentId: row.investment,
+      type: row.type,
+      direction: row.direction,
+      amount: money2(row.amount),
+      balanceAfter: money2(row.balanceAfter),
+      note: row.note || '',
+      payoutStatus: row.payoutStatus || '',
+      createdAt: row.createdAt,
+      createdBy: row.createdBy || '',
+    })),
+    payoutRequests: payoutRequests.map((row) => ({
+      id: row._id,
+      investmentCode: row.investmentCode,
+      kind: row.kind,
+      capitalAmount: money2(row.capitalAmount),
+      profitAmount: money2(row.profitAmount),
+      externalExtraExpenses: money2(row.externalExtraExpenses),
+      amount: money2(row.amount),
+      status: row.status,
+      source: row.source,
+      note: row.note || '',
+      createdAt: row.createdAt,
+      decidedAt: row.decidedAt,
+    })),
+  };
+}
+
 async function getInvestmentById(investmentId) {
   const investment = await Investment.findById(investmentId);
   if (!investment) {
@@ -2571,6 +2734,7 @@ module.exports = {
   getInvestmentSummary,
   buildInvestmentSummaryFromGrouped,
   getInvestorPortfolio,
+  getExternalInvestorPortfolio,
   getMemberInvestments,
   getProjectManagerPortfolio,
   getSavingsPool,

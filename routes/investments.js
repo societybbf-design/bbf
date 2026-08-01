@@ -18,6 +18,7 @@ const {
   buildApprovalTrackingBatch,
   getSavingsPool,
   getInvestorPortfolio,
+  getExternalInvestorPortfolio,
   getProjectManagerPortfolio,
   listCashierPaymentQueue,
   listInvestorPortfolios,
@@ -105,13 +106,25 @@ router.get('/investors', requirePermission('can_manage_investments'), async (req
   }
 });
 
-/** External co-funders only — used by Create Project ownership dropdown. */
+/** External co-funders only — used by Create Project ownership dropdown + CEO module. */
 router.get('/external-investors', requirePermission('can_manage_investments'), async (req, res) => {
   try {
     const investors = await listExternalInvestorUsers();
     return res.json({ investors });
   } catch (error) {
     return res.status(500).json({ error: 'Unable to load external investors.' });
+  }
+});
+
+/** CEO External Investor Management — ledgers, deposits, returns, project shares. */
+router.get('/external-investors/:investorId/portfolio', requirePermission('can_manage_investments'), async (req, res) => {
+  try {
+    const portfolio = await getExternalInvestorPortfolio(req.params.investorId);
+    return res.json(portfolio);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load external investor portfolio.',
+    });
   }
 });
 
