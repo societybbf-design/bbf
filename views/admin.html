@@ -978,24 +978,24 @@
           </form>
         </section>
 
-        <section class="panel-card table-card-wide">
+        <section class="panel-card table-card-wide pm-admin-table-card">
           <h2 data-i18n="admin.sections.openProjects">Open Projects</h2>
           <p class="table-subtitle" data-i18n="admin.projects.openHelp">
             Active and in-progress projects with ownership ratios, return mode, and external capital status. Cashier records external investments and monthly returns from the Payment Queue.
           </p>
-          <div class="table-wrapper">
-            <table class="data-table">
+          <div class="table-wrapper pm-admin-table-wrap">
+            <table class="data-table pm-admin-table pm-open-table">
               <thead>
                 <tr>
-                  <th data-i18n="table.projectId">Project ID</th>
-                  <th data-i18n="table.investor">Investor</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.returnMode">Return</th>
-                  <th data-i18n="table.ownership">Ownership</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th data-i18n="table.externalCapital">External Capital</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.actions">Actions</th>
+                  <th class="pm-col-id" data-i18n="table.projectId">Project ID</th>
+                  <th class="pm-col-investor" data-i18n="table.investor">Investor</th>
+                  <th class="pm-col-type" data-i18n="table.type">Type</th>
+                  <th class="pm-col-return" data-i18n="table.returnMode">Return</th>
+                  <th class="pm-col-ownership" data-i18n="table.ownership">Ownership</th>
+                  <th class="pm-col-money" data-i18n="table.amount">Amount</th>
+                  <th class="pm-col-external" data-i18n="table.externalCapital">External Capital</th>
+                  <th class="pm-col-status" data-i18n="table.status">Status</th>
+                  <th class="pm-col-actions" data-i18n="table.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="projectsOpenList">
@@ -1132,24 +1132,24 @@
           </form>
         </section>
 
-        <section class="panel-card table-card-wide">
+        <section class="panel-card table-card-wide pm-admin-table-card">
           <h2 data-i18n="admin.sections.closedProjects">Sold / Closed Projects</h2>
           <p class="table-subtitle" data-i18n="admin.projects.closedHelp">
             Settled projects with locked ledgers. Ownership split and net profit/loss are preserved here.
           </p>
-          <div class="table-wrapper">
-            <table class="data-table">
+          <div class="table-wrapper pm-admin-table-wrap">
+            <table class="data-table pm-admin-table pm-closed-table">
               <thead>
                 <tr>
-                  <th data-i18n="table.projectId">Project ID</th>
-                  <th data-i18n="table.investor">Investor</th>
-                  <th data-i18n="table.type">Type</th>
-                  <th data-i18n="table.ownership">Ownership</th>
-                  <th data-i18n="table.invested">Invested</th>
-                  <th data-i18n="table.saleAmount">Sale Amount</th>
-                  <th data-i18n="table.profitLoss">Profit / Loss</th>
-                  <th data-i18n="table.status">Status</th>
-                  <th data-i18n="table.soldDate">Closed Date</th>
+                  <th class="pm-col-id" data-i18n="table.projectId">Project ID</th>
+                  <th class="pm-col-investor" data-i18n="table.investor">Investor</th>
+                  <th class="pm-col-type" data-i18n="table.type">Type</th>
+                  <th class="pm-col-ownership" data-i18n="table.ownership">Ownership</th>
+                  <th class="pm-col-money" data-i18n="table.invested">Invested</th>
+                  <th class="pm-col-money" data-i18n="table.saleAmount">Sale Amount</th>
+                  <th class="pm-col-money" data-i18n="table.profitLoss">Profit / Loss</th>
+                  <th class="pm-col-status" data-i18n="table.status">Status</th>
+                  <th class="pm-col-date" data-i18n="table.soldDate">Closed Date</th>
                 </tr>
               </thead>
               <tbody id="projectsClosedList">

@@ -1940,10 +1940,17 @@ let projectsModuleCache = { open: [], closed: [], monthly: [] };
 let projectLiquidateState = null;
 let projectsModuleBound = false;
 
-function projectReturnModeLabel(mode) {
-  return mode === 'monthly'
-    ? (window.I18n?.t('admin.forms.returnMonthly', 'Monthly Return') || 'Monthly Return')
-    : (window.I18n?.t('admin.forms.returnFixedTerm', 'Fixed / Term') || 'Fixed / Term');
+function projectReturnModeLabel(mode, { compact = false } = {}) {
+  if (mode === 'monthly') {
+    return compact
+      ? 'Monthly'
+      : (window.I18n?.t('admin.forms.returnMonthly', 'Monthly Return') || 'Monthly Return');
+  }
+  // Full i18n string is long ("Fixed / Term (locked until maturity)"); tables use a short label.
+  return compact
+    ? 'Fixed / Term'
+    : (window.I18n?.t('admin.forms.returnFixedTerm', 'Fixed / Term (locked until maturity)')
+      || 'Fixed / Term (locked until maturity)');
 }
 
 function projectOwnershipLabel(item) {
@@ -1962,7 +1969,7 @@ function projectOwnershipLabel(item) {
 function projectExternalCapitalLabel(item) {
   const needed = Number(item.externalAmount || 0);
   const received = Number(item.externalCapitalReceived || 0);
-  if (!(needed > 0)) return '— (society only)';
+  if (!(needed > 0)) return 'Society only';
   if (received >= needed - 0.02) return `Received ${formatMoney(received, 2)}`;
   if (received > 0) return `Partial ${formatMoney(received, 2)} / ${formatMoney(needed, 2)}`;
   return `Awaiting ${formatMoney(needed, 2)}`;
@@ -2273,33 +2280,45 @@ async function loadProjectsModule() {
 
     if (openBody) {
       openBody.innerHTML = open.length
-        ? open.map((item) => `
+        ? open.map((item) => {
+          const investorLabel = (
+            (Array.isArray(item.externalInvestors) && item.externalInvestors.length
+              ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
+              : '')
+            || item.investor?.name
+            || item.investorName
+            || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
+          );
+          const returnFull = projectReturnModeLabel(item.returnMode);
+          const returnLabel = projectReturnModeLabel(item.returnMode, { compact: true });
+          const ownershipLabel = projectOwnershipLabel(item);
+          const externalLabel = projectExternalCapitalLabel(item);
+          const statusLabel = item.displayStatus || item.status || '-';
+          const amountLabel = formatMoney(Number(item.amount || 0), 2);
+          const typeLabel = item.investmentType || '-';
+          return `
           <tr>
-            <td><strong>${escapeHtml(item.investmentCode || '-')}</strong></td>
-            <td>${escapeHtml(
-              (Array.isArray(item.externalInvestors) && item.externalInvestors.length
-                ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
-                : '')
-              || item.investor?.name
-              || item.investorName
-              || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
-            )}</td>
-            <td>${escapeHtml(item.investmentType || '-')}</td>
-            <td>${escapeHtml(projectReturnModeLabel(item.returnMode))}</td>
-            <td>${escapeHtml(projectOwnershipLabel(item))}</td>
-            <td>${formatMoney(Number(item.amount || 0), 2)}</td>
-            <td>${escapeHtml(projectExternalCapitalLabel(item))}</td>
-            <td>${escapeHtml(item.displayStatus || item.status || '-')}</td>
-            <td>
+            <td class="pm-col-id" title="${escapeHtml(item.investmentCode || '-')}"><strong class="pm-cell-main">${escapeHtml(item.investmentCode || '-')}</strong></td>
+            <td class="pm-col-investor" title="${escapeHtml(investorLabel)}"><span class="pm-cell-main">${escapeHtml(investorLabel)}</span></td>
+            <td class="pm-col-type" title="${escapeHtml(typeLabel)}"><span class="pm-cell-main">${escapeHtml(typeLabel)}</span></td>
+            <td class="pm-col-return" title="${escapeHtml(returnFull)}"><span class="pm-cell-main">${escapeHtml(returnLabel)}</span></td>
+            <td class="pm-col-ownership" title="${escapeHtml(ownershipLabel)}"><span class="pm-cell-main">${escapeHtml(ownershipLabel)}</span></td>
+            <td class="pm-col-money" title="${escapeHtml(amountLabel)}"><span class="pm-cell-main">${amountLabel}</span></td>
+            <td class="pm-col-external" title="${escapeHtml(externalLabel)}"><span class="pm-cell-main">${escapeHtml(externalLabel)}</span></td>
+            <td class="pm-col-status" title="${escapeHtml(statusLabel)}"><span class="pm-status-badge">${escapeHtml(statusLabel)}</span></td>
+            <td class="pm-col-actions">
+              <div class="pm-action-stack">
               ${item.status === 'active' && !item.ledgerLockedAt && item.fundingKind !== 'capital_expansion'
-                ? `<button type="button" class="secondary-btn" data-expand-project="${item._id}">Expand capital</button>
-                   <button type="button" class="secondary-btn" data-liquidate-project="${item._id}">Liquidate</button>`
+                ? `<button type="button" class="secondary-btn pm-action-btn" data-expand-project="${item._id}">Expand capital</button>
+                   <button type="button" class="secondary-btn pm-action-btn" data-liquidate-project="${item._id}">Liquidate</button>`
                 : (item.fundingKind === 'capital_expansion'
-                  ? '<span class="kpi-footnote">Expansion round</span>'
-                  : '<span class="kpi-footnote">—</span>')}
+                  ? '<span class="pm-action-note">Expansion round</span>'
+                  : '<span class="pm-action-note">—</span>')}
+              </div>
             </td>
           </tr>
-        `).join('')
+        `;
+        }).join('')
         : '<tr><td colspan="9">No open projects yet. Create one above.</td></tr>';
 
       openBody.querySelectorAll('[data-liquidate-project]').forEach((btn) => {
@@ -2321,24 +2340,32 @@ async function loadProjectsModule() {
       closedBody.innerHTML = closed.length
         ? closed.map((item) => {
           const net = Number(item.netProfitLoss != null ? item.netProfitLoss : (Number(item.saleAmount || 0) - Number(item.amount || 0)));
+          const investorLabel = (
+            (Array.isArray(item.externalInvestors) && item.externalInvestors.length
+              ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
+              : '')
+            || item.investor?.name
+            || item.investorName
+            || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
+          );
+          const ownershipLabel = projectOwnershipLabel(item);
+          const investedLabel = formatMoney(Number(item.amount || 0), 2);
+          const saleLabel = formatMoney(Number(item.saleAmount || 0), 2);
+          const netLabel = `${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)}`;
+          const statusLabel = item.displayStatus || item.status || 'closed';
+          const dateLabel = formatInvestmentDate(item.closedAt || item.soldAt || item.updatedAt);
+          const typeLabel = item.investmentType || '-';
           return `
             <tr>
-              <td><strong>${escapeHtml(item.investmentCode || '-')}</strong></td>
-              <td>${escapeHtml(
-              (Array.isArray(item.externalInvestors) && item.externalInvestors.length
-                ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
-                : '')
-              || item.investor?.name
-              || item.investorName
-              || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
-            )}</td>
-              <td>${escapeHtml(item.investmentType || '-')}</td>
-              <td>${escapeHtml(projectOwnershipLabel(item))}</td>
-              <td>${formatMoney(Number(item.amount || 0), 2)}</td>
-              <td>${formatMoney(Number(item.saleAmount || 0), 2)}</td>
-              <td>${net >= 0 ? '+' : '-'}${formatMoney(Math.abs(net), 2)}</td>
-              <td>${escapeHtml(item.displayStatus || item.status || 'closed')}</td>
-              <td>${escapeHtml(formatInvestmentDate(item.closedAt || item.soldAt || item.updatedAt))}</td>
+              <td class="pm-col-id" title="${escapeHtml(item.investmentCode || '-')}"><strong class="pm-cell-main">${escapeHtml(item.investmentCode || '-')}</strong></td>
+              <td class="pm-col-investor" title="${escapeHtml(investorLabel)}"><span class="pm-cell-main">${escapeHtml(investorLabel)}</span></td>
+              <td class="pm-col-type" title="${escapeHtml(typeLabel)}"><span class="pm-cell-main">${escapeHtml(typeLabel)}</span></td>
+              <td class="pm-col-ownership" title="${escapeHtml(ownershipLabel)}"><span class="pm-cell-main">${escapeHtml(ownershipLabel)}</span></td>
+              <td class="pm-col-money" title="${escapeHtml(investedLabel)}"><span class="pm-cell-main">${investedLabel}</span></td>
+              <td class="pm-col-money" title="${escapeHtml(saleLabel)}"><span class="pm-cell-main">${saleLabel}</span></td>
+              <td class="pm-col-money ${net >= 0 ? 'pm-net-positive' : 'pm-net-negative'}" title="${escapeHtml(netLabel)}"><span class="pm-cell-main">${netLabel}</span></td>
+              <td class="pm-col-status" title="${escapeHtml(statusLabel)}"><span class="pm-status-badge">${escapeHtml(statusLabel)}</span></td>
+              <td class="pm-col-date" title="${escapeHtml(dateLabel)}"><span class="pm-cell-main">${escapeHtml(dateLabel)}</span></td>
             </tr>
           `;
         }).join('')
