@@ -14,7 +14,7 @@ const adminDepositsJs = fs.readFileSync(path.join(__dirname, '../routes/adminDep
 const staffJs = fs.readFileSync(path.join(__dirname, '../public/js/staff-dashboard.js'), 'utf8');
 const staffHtml = fs.readFileSync(path.join(__dirname, '../views/staff.html'), 'utf8');
 
-test('evaluateCashierDepositEligibility excludes fully paid current month without arrears', () => {
+test('evaluateCashierDepositEligibility excludes zero remaining dues', () => {
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 0,
     previousUnpaidCount: 0,
@@ -23,10 +23,22 @@ test('evaluateCashierDepositEligibility excludes fully paid current month withou
     requiredAmount: 50000,
   });
   assert.equal(result.eligible, false);
-  assert.equal(result.reason, 'current_month_paid');
+  assert.equal(result.reason, 'no_outstanding_dues');
 });
 
-test('evaluateCashierDepositEligibility excludes advance-covered members without arrears', () => {
+test('stale prior count with zero prior total is hidden', () => {
+  const result = evaluateCashierDepositEligibility({
+    currentUnpaid: 0,
+    previousUnpaidCount: 1,
+    previousUnpaidTotal: 0,
+    advanceBalance: 80750,
+    requiredAmount: 54000,
+  });
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'no_outstanding_dues');
+});
+
+test('evaluateCashierDepositEligibility excludes advance-covered remaining dues', () => {
   const covered = evaluateCashierDepositEligibility({
     currentUnpaid: 50000,
     previousUnpaidCount: 0,
@@ -36,6 +48,7 @@ test('evaluateCashierDepositEligibility excludes advance-covered members without
   });
   assert.equal(covered.eligible, false);
   assert.equal(covered.reason, 'advance_covers_target');
+  assert.equal(covered.coverageNeed, 50000);
 
   const overCovered = evaluateCashierDepositEligibility({
     currentUnpaid: 50000,
@@ -57,9 +70,10 @@ test('evaluateCashierDepositEligibility includes unpaid with low advance', () =>
   });
   assert.equal(result.eligible, true);
   assert.equal(result.reason, 'needs_manual_deposit');
+  assert.equal(result.coverageNeed, 50000);
 });
 
-test('strict rule hides when advance covers current target + prior dues', () => {
+test('strict rule hides when advance covers current remaining + prior dues', () => {
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 5000,
     previousUnpaidCount: 1,
@@ -72,19 +86,31 @@ test('strict rule hides when advance covers current target + prior dues', () => 
   assert.equal(result.coverageNeed, 10000);
 });
 
-test('strict rule hides when advance equals exact current target + prior dues', () => {
-  const result = evaluateCashierDepositEligibility({
-    currentUnpaid: 54000,
-    previousUnpaidCount: 1,
-    previousUnpaidTotal: 20000,
-    advanceBalance: 74000,
-    requiredAmount: 54000,
+test('coverage uses remaining dues only, not full configured target', () => {
+  // Partial current unpaid 2000; advance 2000 covers remaining — hide even if target is 5000.
+  const covered = evaluateCashierDepositEligibility({
+    currentUnpaid: 2000,
+    previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
+    advanceBalance: 2000,
+    requiredAmount: 5000,
   });
-  assert.equal(result.eligible, false);
-  assert.ok(['advance_covers_target', 'advance_covers_dues'].includes(result.reason));
+  assert.equal(covered.eligible, false);
+  assert.equal(covered.coverageNeed, 2000);
+
+  // Advance below remaining dues — still show.
+  const needsPay = evaluateCashierDepositEligibility({
+    currentUnpaid: 2000,
+    previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
+    advanceBalance: 1500,
+    requiredAmount: 5000,
+  });
+  assert.equal(needsPay.eligible, true);
+  assert.equal(needsPay.coverageNeed, 2000);
 });
 
-test('evaluateCashierDepositEligibility keeps members when advance cannot cover total obligation', () => {
+test('evaluateCashierDepositEligibility keeps members when advance cannot cover remaining dues', () => {
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 54000,
     previousUnpaidCount: 2,
@@ -94,40 +120,26 @@ test('evaluateCashierDepositEligibility keeps members when advance cannot cover 
   });
   assert.equal(result.eligible, true);
   assert.equal(result.reason, 'prior_arrears');
-  // Obligation uses full current target + prior (154000), not merely remaining.
   assert.equal(result.totalObligation, 154000);
+  assert.equal(result.coverageNeed, 154000);
 });
 
-test('evaluateCashierDepositEligibility hides cleared dues even if prior count is stale', () => {
-  const result = evaluateCashierDepositEligibility({
-    currentUnpaid: 0,
-    previousUnpaidCount: 1,
-    previousUnpaidTotal: 0,
-    advanceBalance: 80750,
-    requiredAmount: 54000,
-  });
-  assert.equal(result.eligible, false);
-});
-
-test('partial current unpaid still hides when advance covers remaining dues', () => {
-  const result = evaluateCashierDepositEligibility({
-    currentUnpaid: 2000,
-    previousUnpaidCount: 0,
-    previousUnpaidTotal: 0,
-    advanceBalance: 5000,
-    requiredAmount: 5000,
-  });
-  // Strict product formula uses full current target (5000); advance 5000 covers it.
-  assert.equal(result.eligible, false);
-});
-
-test('eligible-members list syncs dues and applies advance coverage filter', () => {
+test('dues-only list never falls back to showing all members without a target', () => {
   assert.match(monthlyTargetJs, /async function listCashierDepositEligibleMembers/);
   assert.match(monthlyTargetJs, /function evaluateCashierDepositEligibility/);
+  assert.match(monthlyTargetJs, /function remainingMonthlyDueAmount/);
   assert.match(monthlyTargetJs, /await syncMonthDues\(yearMonth/);
-  assert.match(monthlyTargetJs, /currentTargetComponent/);
-  assert.match(monthlyTargetJs, /coverageNeed/);
-  assert.match(monthlyTargetJs, /Advance Balance is less than current target \+ prior dues/);
+  assert.match(monthlyTargetJs, /remainingDues/);
+  assert.match(monthlyTargetJs, /no_outstanding_dues/);
+  assert.doesNotMatch(
+    monthlyTargetJs,
+    /showing all active members/i
+  );
+  assert.match(
+    monthlyTargetJs,
+    /outstanding monthly dues not already covered by Advance Balance/
+  );
+  assert.match(monthlyTargetJs, /loadPriorUnpaidByMember/);
   assert.match(adminDepositsJs, /\/eligible-members/);
   assert.match(adminDepositsJs, /listCashierDepositEligibleMembers/);
   assert.match(adminDepositsJs, /requireCashierRole/);
@@ -137,5 +149,6 @@ test('eligible-members list syncs dues and applies advance coverage filter', () 
   assert.match(staffJs, /function ensureDepositEligibleMemberOptions/);
   assert.match(staffJs, /\/api\/admin\/deposits\/eligible-members/);
   assert.match(staffJs, /ensureDepositEligibleMemberOptions\(\)/);
-  assert.match(staffHtml, /Members whose advance already covers/);
+  assert.match(staffHtml, /outstanding monthly dues/i);
+  assert.match(staffHtml, /Advances &amp; Borrow/i);
 });
