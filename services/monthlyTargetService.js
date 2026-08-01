@@ -635,9 +635,10 @@ async function bulkUpsertTargets({
 
 /**
  * Pure eligibility check for the cashier deposit dropdown.
- * Show only when the member still has unpaid dues AND Advance Balance is insufficient.
- * Hide when dues are cleared, or Advance Balance covers outstanding dues / the
- * current month target (no manual deposit needed).
+ *
+ * Strict rule: total obligation = (current month target if still unpaid) + prior dues.
+ * Hide the member whenever Advance Balance >= that total (or nothing is owed).
+ * Show only when advance is strictly less than combined dues.
  */
 function evaluateCashierDepositEligibility({
   currentUnpaid = 0,
@@ -655,35 +656,50 @@ function evaluateCashierDepositEligibility({
   );
   const advance = money(advanceBalance);
   const required = money(requiredAmount);
-  const totalDue = money(unpaid + priorTotal);
-  const hasOutstandingDues = totalDue > 0.001 || (priorCount > 0 && priorTotal > 0.001);
 
-  if (!hasOutstandingDues) {
-    return { eligible: false, reason: 'current_month_paid' };
-  }
+  // Current-month component: full configured target while anything remains unpaid.
+  // Ignore stale priorCount when priorTotal is already cleared.
+  const currentTargetComponent = unpaid > 0.001 ? required : 0;
+  const totalObligation = money(currentTargetComponent + priorTotal);
+  // Remaining cash still owed (handles partial current-month payments).
+  const remainingDues = money(unpaid + priorTotal);
+  // Cover against the larger of the product formula and true remaining dues.
+  const coverageNeed = money(Math.max(totalObligation, remainingDues));
 
-  // Advance fully covers everything still owed (current remaining + arrears).
-  if (advance + 0.001 >= totalDue) {
+  if (coverageNeed <= 0.001) {
     return {
       eligible: false,
-      reason: totalDue <= required + 0.001 ? 'advance_covers_target' : 'advance_covers_dues',
+      reason: 'current_month_paid',
+      totalObligation: 0,
+      coverageNeed: 0,
+      advance,
     };
   }
 
-  // Advance covers the active month target and there are no uncovered arrears.
-  if (required > 0 && advance + 0.001 >= required && priorTotal <= 0.001) {
-    return { eligible: false, reason: 'advance_covers_target' };
+  if (advance + 0.001 >= coverageNeed) {
+    return {
+      eligible: false,
+      reason: priorTotal > 0.001 ? 'advance_covers_dues' : 'advance_covers_target',
+      totalObligation,
+      coverageNeed,
+      advance,
+    };
   }
 
   return {
     eligible: true,
-    reason: priorCount > 0 ? 'prior_arrears' : 'needs_manual_deposit',
+    reason: priorTotal > 0.001 || priorCount > 0 ? 'prior_arrears' : 'needs_manual_deposit',
+    totalObligation,
+    coverageNeed,
+    advance,
   };
 }
 
 /**
  * Active members who still need a cashier deposit this cycle.
  * Used by the Cashier Deposit member dropdown.
+ * Strictly excludes anyone whose Advance Balance covers
+ * (current month target + prior-month arrears).
  */
 async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {}) {
   const yearMonth = yearMonthFromDate(asOfDate);
@@ -727,6 +743,9 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
   }
 
   const required = money(target.amount);
+  // Keep current-month due rows in sync so paid months are not treated as full target unpaid.
+  await syncMonthDues(yearMonth, { expectedAmount: required });
+
   const memberIds = members.map((member) => member._id);
   const [currentDues, priorUnpaidDues] = await Promise.all([
     MonthlyContributionDue.find({
@@ -738,7 +757,7 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
       yearMonth: { $lt: yearMonth },
       status: { $in: ['unpaid', 'partial'] },
       unpaidAmount: { $gt: 0 },
-    }).select('member unpaidAmount yearMonth').lean(),
+    }).select('member unpaidAmount yearMonth status paidAmount expectedAmount').lean(),
   ]);
 
   const currentByMember = new Map(
@@ -747,9 +766,15 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
   const priorByMember = new Map();
   for (const due of priorUnpaidDues) {
     const key = String(due.member);
+    const unpaid = money(
+      Math.max(0, money(due.unpaidAmount != null
+        ? due.unpaidAmount
+        : money(due.expectedAmount) - money(due.paidAmount)))
+    );
+    if (!(unpaid > 0.001)) continue;
     const row = priorByMember.get(key) || { count: 0, total: 0 };
     row.count += 1;
-    row.total = money(row.total + money(due.unpaidAmount));
+    row.total = money(row.total + unpaid);
     priorByMember.set(key, row);
   }
 
@@ -759,13 +784,16 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
     const id = String(member._id);
     const currentDue = currentByMember.get(id);
     const prior = priorByMember.get(id) || { count: 0, total: 0 };
-    // Missing due row still means the month is unpaid at the full target.
-    const currentUnpaid = currentDue ? money(currentDue.unpaidAmount) : required;
+    // Authoritative remaining for current month (paid → 0). Missing row → full target.
+    const currentUnpaid = currentDue
+      ? money(Math.max(0, money(currentDue.expectedAmount) - money(currentDue.paidAmount)))
+      : required;
+    const advanceBalance = money(member.advanceBalance);
     const decision = evaluateCashierDepositEligibility({
       currentUnpaid,
       previousUnpaidCount: prior.count,
       previousUnpaidTotal: prior.total,
-      advanceBalance: member.advanceBalance,
+      advanceBalance,
       requiredAmount: required,
     });
     if (!decision.eligible) {
@@ -777,6 +805,8 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
       previousUnpaidCount: prior.count,
       previousUnpaidTotal: prior.total,
       totalDue: money(currentUnpaid + prior.total),
+      totalObligation: decision.totalObligation,
+      coverageNeed: decision.coverageNeed,
       requiredAmount: required,
       eligibilityReason: decision.reason,
     }));
@@ -793,7 +823,7 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
     members: eligible,
     excludedCount,
     totalActive: members.length,
-    reason: `Showing ${eligible.length} of ${members.length} active member(s) with unpaid dues and insufficient Advance Balance.`,
+    reason: `Showing ${eligible.length} of ${members.length} active member(s) whose Advance Balance is less than current target + prior dues.`,
   };
 }
 
