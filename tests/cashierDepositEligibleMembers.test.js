@@ -17,6 +17,7 @@ test('evaluateCashierDepositEligibility excludes fully paid current month withou
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 0,
     previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
     advanceBalance: 0,
     requiredAmount: 50000,
   });
@@ -28,6 +29,7 @@ test('evaluateCashierDepositEligibility excludes advance-covered members without
   const covered = evaluateCashierDepositEligibility({
     currentUnpaid: 50000,
     previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
     advanceBalance: 50000,
     requiredAmount: 50000,
   });
@@ -37,6 +39,7 @@ test('evaluateCashierDepositEligibility excludes advance-covered members without
   const overCovered = evaluateCashierDepositEligibility({
     currentUnpaid: 50000,
     previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
     advanceBalance: 75000,
     requiredAmount: 50000,
   });
@@ -47,6 +50,7 @@ test('evaluateCashierDepositEligibility includes unpaid with low advance', () =>
   const result = evaluateCashierDepositEligibility({
     currentUnpaid: 50000,
     previousUnpaidCount: 0,
+    previousUnpaidTotal: 0,
     advanceBalance: 10000,
     requiredAmount: 50000,
   });
@@ -54,20 +58,46 @@ test('evaluateCashierDepositEligibility includes unpaid with low advance', () =>
   assert.equal(result.reason, 'needs_manual_deposit');
 });
 
-test('evaluateCashierDepositEligibility includes prior arrears even when advance covers target', () => {
+test('evaluateCashierDepositEligibility hides members when advance covers total dues including arrears', () => {
   const result = evaluateCashierDepositEligibility({
-    currentUnpaid: 0,
+    currentUnpaid: 54000,
+    previousUnpaidCount: 1,
+    previousUnpaidTotal: 20000,
+    advanceBalance: 80750,
+    requiredAmount: 54000,
+  });
+  assert.equal(result.eligible, false);
+  assert.ok(['advance_covers_target', 'advance_covers_dues'].includes(result.reason));
+});
+
+test('evaluateCashierDepositEligibility keeps prior arrears when advance cannot cover total dues', () => {
+  const result = evaluateCashierDepositEligibility({
+    currentUnpaid: 54000,
     previousUnpaidCount: 2,
-    advanceBalance: 100000,
-    requiredAmount: 50000,
+    previousUnpaidTotal: 100000,
+    advanceBalance: 60000,
+    requiredAmount: 54000,
   });
   assert.equal(result.eligible, true);
   assert.equal(result.reason, 'prior_arrears');
 });
 
+test('evaluateCashierDepositEligibility hides cleared dues even if prior count is stale', () => {
+  const result = evaluateCashierDepositEligibility({
+    currentUnpaid: 0,
+    previousUnpaidCount: 1,
+    previousUnpaidTotal: 0,
+    advanceBalance: 80750,
+    requiredAmount: 54000,
+  });
+  assert.equal(result.eligible, false);
+});
+
 test('eligible-members route and deposit dropdown wiring exist', () => {
   assert.match(monthlyTargetJs, /async function listCashierDepositEligibleMembers/);
   assert.match(monthlyTargetJs, /function evaluateCashierDepositEligibility/);
+  assert.match(monthlyTargetJs, /previousUnpaidTotal/);
+  assert.match(monthlyTargetJs, /insufficient Advance Balance/);
   assert.match(adminDepositsJs, /\/eligible-members/);
   assert.match(adminDepositsJs, /listCashierDepositEligibleMembers/);
   assert.match(adminDepositsJs, /requireCashierRole/);

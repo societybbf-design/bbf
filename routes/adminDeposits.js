@@ -75,7 +75,7 @@ router.get('/', viewDeposits, async (req, res) => {
   }
 });
 
-/** Members who still need a cashier deposit this month (excludes paid / advance-covered). */
+/** Members with unpaid dues and insufficient Advance Balance (excludes paid / advance-covered). */
 router.get('/eligible-members', recordDeposits, requireCashierRole, async (req, res) => {
   try {
     const payload = await listCashierDepositEligibleMembers({
