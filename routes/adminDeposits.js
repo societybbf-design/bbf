@@ -3,7 +3,12 @@ const router = require('express').Router();
 const Deposit = require('../models/Deposit');
 const { getAllDeposits } = require('../services/depositService');
 const { saveDeposit } = require('../services/memberService');
-const { getActiveMonthTarget, yearMonthFromDate, getMemberArrearsSummary } = require('../services/monthlyTargetService');
+const {
+  getActiveMonthTarget,
+  yearMonthFromDate,
+  getMemberArrearsSummary,
+  listCashierDepositEligibleMembers,
+} = require('../services/monthlyTargetService');
 const {
   previewSmartMemberPayment,
   applySmartMemberPayment,
@@ -67,6 +72,20 @@ router.get('/', viewDeposits, async (req, res) => {
     res.json({ deposits });
   } catch (error) {
     res.status(500).json({ error: 'Unable to load deposit history.' });
+  }
+});
+
+/** Members who still need a cashier deposit this month (excludes paid / advance-covered). */
+router.get('/eligible-members', recordDeposits, requireCashierRole, async (req, res) => {
+  try {
+    const payload = await listCashierDepositEligibleMembers({
+      asOfDate: new Date(),
+    });
+    return res.json(payload);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load deposit-eligible members.',
+    });
   }
 });
 

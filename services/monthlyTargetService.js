@@ -633,6 +633,151 @@ async function bulkUpsertTargets({
   };
 }
 
+/**
+ * Pure eligibility check for the cashier deposit dropdown.
+ * Exclude: current month fully paid (no arrears), or advance covers the month target (no arrears).
+ * Include: prior unpaid months, or current unpaid with advance below the required target.
+ */
+function evaluateCashierDepositEligibility({
+  currentUnpaid = 0,
+  previousUnpaidCount = 0,
+  advanceBalance = 0,
+  requiredAmount = 0,
+} = {}) {
+  const unpaid = money(currentUnpaid);
+  const priorCount = Number(previousUnpaidCount || 0);
+  const advance = money(advanceBalance);
+  const required = money(requiredAmount);
+  const hasArrears = priorCount > 0;
+  const currentPaidInFull = unpaid <= 0;
+  const advanceCoversRequired = required > 0 && advance + 0.001 >= required;
+
+  if (hasArrears) {
+    return { eligible: true, reason: 'prior_arrears' };
+  }
+  if (currentPaidInFull) {
+    return { eligible: false, reason: 'current_month_paid' };
+  }
+  if (advanceCoversRequired) {
+    return { eligible: false, reason: 'advance_covers_target' };
+  }
+  return { eligible: true, reason: 'needs_manual_deposit' };
+}
+
+/**
+ * Active members who still need a cashier deposit this cycle.
+ * Used by the Cashier Deposit member dropdown.
+ */
+async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {}) {
+  const yearMonth = yearMonthFromDate(asOfDate);
+  const target = await getTargetForMonth(yearMonth);
+  const members = await User.find({ role: 'member', status: 'active' })
+    .select('name email phone advanceBalance savings status createdAt')
+    .sort({ name: 1 })
+    .lean();
+
+  const mapMember = (member, extra = {}) => ({
+    _id: member._id,
+    id: member._id,
+    name: member.name || '',
+    email: member.email || '',
+    phone: member.phone || '',
+    advanceBalance: money(member.advanceBalance),
+    savings: money(member.savings),
+    status: member.status || 'active',
+    ...extra,
+  });
+
+  if (target.amount == null || !(Number(target.amount) > 0)) {
+    return {
+      yearMonth,
+      target: {
+        yearMonth,
+        amount: null,
+        monthLabel: target.monthLabel || yearMonth,
+      },
+      filterApplied: false,
+      members: members.map((member) => mapMember(member, {
+        currentUnpaid: null,
+        previousUnpaidCount: 0,
+        previousUnpaidTotal: 0,
+        eligibilityReason: 'no_target',
+      })),
+      excludedCount: 0,
+      totalActive: members.length,
+      reason: 'No active month target configured — showing all active members.',
+    };
+  }
+
+  const required = money(target.amount);
+  const memberIds = members.map((member) => member._id);
+  const [currentDues, priorUnpaidDues] = await Promise.all([
+    MonthlyContributionDue.find({
+      member: { $in: memberIds },
+      yearMonth,
+    }).select('member unpaidAmount paidAmount expectedAmount status').lean(),
+    MonthlyContributionDue.find({
+      member: { $in: memberIds },
+      yearMonth: { $lt: yearMonth },
+      status: { $in: ['unpaid', 'partial'] },
+      unpaidAmount: { $gt: 0 },
+    }).select('member unpaidAmount yearMonth').lean(),
+  ]);
+
+  const currentByMember = new Map(
+    currentDues.map((due) => [String(due.member), due])
+  );
+  const priorByMember = new Map();
+  for (const due of priorUnpaidDues) {
+    const key = String(due.member);
+    const row = priorByMember.get(key) || { count: 0, total: 0 };
+    row.count += 1;
+    row.total = money(row.total + money(due.unpaidAmount));
+    priorByMember.set(key, row);
+  }
+
+  const eligible = [];
+  let excludedCount = 0;
+  for (const member of members) {
+    const id = String(member._id);
+    const currentDue = currentByMember.get(id);
+    const prior = priorByMember.get(id) || { count: 0, total: 0 };
+    // Missing due row still means the month is unpaid at the full target.
+    const currentUnpaid = currentDue ? money(currentDue.unpaidAmount) : required;
+    const decision = evaluateCashierDepositEligibility({
+      currentUnpaid,
+      previousUnpaidCount: prior.count,
+      advanceBalance: member.advanceBalance,
+      requiredAmount: required,
+    });
+    if (!decision.eligible) {
+      excludedCount += 1;
+      continue;
+    }
+    eligible.push(mapMember(member, {
+      currentUnpaid,
+      previousUnpaidCount: prior.count,
+      previousUnpaidTotal: prior.total,
+      requiredAmount: required,
+      eligibilityReason: decision.reason,
+    }));
+  }
+
+  return {
+    yearMonth,
+    target: {
+      yearMonth,
+      amount: required,
+      monthLabel: target.monthLabel || yearMonth,
+    },
+    filterApplied: true,
+    members: eligible,
+    excludedCount,
+    totalActive: members.length,
+    reason: `Showing ${eligible.length} of ${members.length} active member(s) who still need a manual deposit.`,
+  };
+}
+
 module.exports = {
   money,
   yearMonthFromDate,
@@ -650,5 +795,7 @@ module.exports = {
   listUnpaidMonthlyDues,
   listYearMonthsInclusive,
   getMemberArrearsSummary,
+  evaluateCashierDepositEligibility,
+  listCashierDepositEligibleMembers,
   dueStatus,
 };

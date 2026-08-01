@@ -913,6 +913,40 @@ async function ensureMembersOptions(selectIds = []) {
   });
 }
 
+/** Deposit dropdown: only members who still owe / are not advance-covered this month. */
+async function ensureDepositEligibleMemberOptions() {
+  const select = document.getElementById('cashierDepositMember');
+  if (!select) return null;
+  const current = select.value;
+  try {
+    const response = await fetch('/api/admin/deposits/eligible-members');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load eligible members.');
+    const members = data.members || [];
+    const emptyLabel = members.length
+      ? 'Select member…'
+      : 'No members need a deposit right now';
+    select.innerHTML = `<option value="">${emptyLabel}</option>${members.map((m) => {
+      const prior = Number(m.previousUnpaidCount || 0);
+      const hint = prior > 0
+        ? ` · ${prior} prior month${prior === 1 ? '' : 's'} due`
+        : (m.currentUnpaid != null ? ` · due ${money(m.currentUnpaid)}` : '');
+      return `<option value="${m._id || m.id}">${escapeHtml(m.name)} (${escapeHtml(m.email || '')})${escapeHtml(hint)}</option>`;
+    }).join('')}`;
+    if (current && members.some((m) => String(m._id || m.id) === String(current))) {
+      select.value = current;
+    } else {
+      select.value = '';
+    }
+    return data;
+  } catch (error) {
+    // Fallback to full active list so cashier workflow is never blocked.
+    console.warn('Eligible deposit members filter failed:', error.message);
+    await ensureMembersOptions(['cashierDepositMember']);
+    return null;
+  }
+}
+
 function renderLedger(data) {
   const bookEl = document.getElementById('ledgerBookBalance');
   const actualEl = document.getElementById('ledgerActualBalance');
@@ -2740,7 +2774,10 @@ async function loadDepositsModule(options = {}) {
     }
 
     const [, responses] = await Promise.all([
-      ensureMembersOptions(['cashierDepositMember', 'cashierAdvanceMember']),
+      Promise.all([
+        ensureDepositEligibleMemberOptions(),
+        ensureMembersOptions(['cashierAdvanceMember']),
+      ]),
       Promise.all(fetches),
     ]);
     const depRes = responses[0];
