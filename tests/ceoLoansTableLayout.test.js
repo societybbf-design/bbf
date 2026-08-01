@@ -19,18 +19,19 @@ test('CEO loan tables use dedicated layout classes', () => {
   assert.match(adminHtml, /class="loan-col-money"/);
 });
 
-test('Loan table CSS uses fixed layout and forbids horizontal scroll', () => {
-  assert.match(adminCss, /\.admin-dashboard \.loan-admin-table/);
+test('Loan table CSS beats page-section rules and forbids horizontal scroll', () => {
+  // Higher specificity than .admin-dashboard .page-section .table-wrapper / .data-table
+  assert.match(adminCss, /\.admin-dashboard \.page-section \.table-wrapper\.loan-admin-table-wrap/);
+  assert.match(adminCss, /\.admin-dashboard \.page-section \.data-table\.loan-admin-table/);
   assert.match(adminCss, /table-layout:\s*fixed/);
-  assert.match(adminCss, /loan-admin-table-wrap[\s\S]*overflow-x:\s*hidden/);
+  assert.match(adminCss, /table-wrapper\.loan-admin-table-wrap\s*\{[^}]*overflow-x:\s*hidden/s);
   assert.match(adminCss, /text-overflow:\s*ellipsis/);
   assert.match(adminCss, /word-break:\s*keep-all/);
   assert.match(adminCss, /hyphens:\s*none/);
   assert.match(adminCss, /\.loan-action-btn/);
   assert.doesNotMatch(adminCss, /loan-applications-table\s*\{\s*min-width:\s*1120px/);
   assert.doesNotMatch(adminCss, /loan-repayments-table\s*\{\s*min-width:\s*980px/);
-  assert.doesNotMatch(adminCss, /loan-admin-table-wrap[\s\S]{0,120}overflow-x:\s*auto/);
-  assert.doesNotMatch(adminCss, /\.admin-dashboard \.loan-admin-table\s*\{[^}]*width:\s*max-content/);
+  assert.doesNotMatch(adminCss, /width:\s*max-content/);
 });
 
 test('Loan application and repayment rows render compact structured cells', () => {
