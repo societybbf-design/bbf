@@ -51,6 +51,18 @@ function staffWorkspaceCopy(role) {
       note: 'Support member records, KYC, and reporting. Finance payout modules are not available here.',
     };
   }
+  if (role === 'external_investor') {
+    return {
+      title: 'Your external investor workspace',
+      note: 'View only your stakes, deposits, profits, and payout approvals. Society pool and member data stay hidden.',
+    };
+  }
+  if (role === 'investor') {
+    return {
+      title: 'Your investor workspace',
+      note: 'View investment-related summaries available to your role.',
+    };
+  }
   return {
     title: 'Your staff workspace',
     note: 'Use the sidebar for modules available to your role.',
@@ -67,11 +79,15 @@ function applyStaffRoleChrome(user) {
 
   const isPm = role === 'project_manager';
   const isCashier = role === 'cashier';
+  const isExternalInvestor = role === 'external_investor';
   document.querySelectorAll('[data-pm-only]').forEach((el) => {
     el.classList.toggle('hidden', !isPm);
   });
   document.querySelectorAll('[data-cashier-investments-only]').forEach((el) => {
     el.classList.toggle('hidden', !isCashier);
+  });
+  document.querySelectorAll('[data-external-investor-home]').forEach((el) => {
+    el.classList.toggle('hidden', !isExternalInvestor);
   });
 
   const tagline = document.getElementById('roleTagline');
@@ -100,10 +116,10 @@ function applyStaffRoleChrome(user) {
 
   const showCashierHome = role === 'cashier';
   document.querySelectorAll('[data-cashier-home-only]').forEach((el) => {
-    el.classList.toggle('hidden', !showCashierHome);
+    el.classList.toggle('hidden', !showCashierHome || isExternalInvestor);
   });
   document.querySelectorAll('[data-non-cashier-home]').forEach((el) => {
-    el.classList.toggle('hidden', showCashierHome);
+    el.classList.toggle('hidden', showCashierHome || isExternalInvestor);
   });
 }
 
@@ -151,6 +167,10 @@ const ROLE_META = {
   investor: {
     title: 'Investor Dashboard',
     subtitle: 'View society reports and investment-related summaries.',
+  },
+  external_investor: {
+    title: 'External Investor Dashboard',
+    subtitle: 'Your stakes, deposits, profits, payout approvals, PM reviews, and secure chat — isolated from society data.',
   },
 };
 
@@ -614,6 +634,11 @@ function showStaffView(viewId, { forceReload = false } = {}) {
   if ((staffSessionUser?.role || '') === 'project_manager' && next === 'tracking') {
     next = 'home';
   }
+  // External investors only see their isolated portal surfaces.
+  if ((staffSessionUser?.role || '') === 'external_investor') {
+    const allowed = new Set(['home', 'external-portal', 'external-chat']);
+    if (!allowed.has(next)) next = 'home';
+  }
   const prev = staffCurrentView;
   const sameView = prev === next;
   const cacheFresh = isStaffViewCacheFresh(next);
@@ -669,13 +694,19 @@ function showStaffView(viewId, { forceReload = false } = {}) {
 async function loadViewData(viewId) {
   switch (viewId) {
     case 'home':
-      if (isCashierRole()) {
+      if ((staffSessionUser?.role || '') === 'external_investor') {
+        await loadExternalInvestorHome();
+      } else if (isCashierRole()) {
         await loadCashierHomeKpis();
       } else {
         renderNonCashierHome();
       }
       await refreshStaffApprovalsBadge();
       return undefined;
+    case 'external-portal':
+      return loadExternalInvestorPortal();
+    case 'external-chat':
+      return loadExternalInvestorChat();
     case 'ledger':
       return loadBankLedger();
     case 'queue':
@@ -2662,10 +2693,15 @@ async function loadCashierMonthlyProjects() {
               </label>
             </div>
             <div class="form-group">
-              <label>Note
-                <input type="text" name="notes" placeholder="Optional" />
+              <label>External-specific expenses (৳)
+                <input type="number" name="externalExtraExpenses" min="0" step="0.01" value="0" />
               </label>
             </div>
+          </div>
+          <div class="form-group">
+            <label>Note
+              <input type="text" name="notes" placeholder="Optional" />
+            </label>
           </div>
           <button type="submit" class="primary-btn">Record Monthly Return</button>
           <p class="message cashier-monthly-return-msg"></p>
@@ -2685,6 +2721,7 @@ async function loadCashierMonthlyProjects() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               profitAmount: formData.get('profitAmount'),
+              externalExtraExpenses: formData.get('externalExtraExpenses') || 0,
               notes: formData.get('notes'),
             }),
           });
@@ -4240,6 +4277,283 @@ async function loadCashierChatDirectory(silent = false) {
   } catch (error) {
     if (!silent && msg) msg.textContent = error.message;
     if (!silent && list) list.innerHTML = `<p class="table-subtitle">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+let externalPortalCache = null;
+let externalChatPeerId = null;
+
+async function fetchExternalInvestorDashboard() {
+  const response = await fetch('/api/external-investor/dashboard');
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Unable to load external investor dashboard.');
+  externalPortalCache = data;
+  return data;
+}
+
+async function loadExternalInvestorHome() {
+  const metricsEl = document.getElementById('externalInvestorHomeMetrics');
+  try {
+    const data = await fetchExternalInvestorDashboard();
+    const totals = data.totals || {};
+    if (metricsEl) {
+      metricsEl.innerHTML = `
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${Number(totals.projects || 0)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${money(totals.capitalReceived)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit balance</span><strong class="metric-value">${money(totals.profitBalance)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending approvals</span><strong class="metric-value">${Number(totals.pendingApprovals || 0)}</strong></div></div>
+      `;
+    }
+  } catch (error) {
+    if (metricsEl) {
+      metricsEl.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
+    }
+  }
+}
+
+function renderExternalPortal(data) {
+  const totals = data.totals || {};
+  const metricsEl = document.getElementById('externalPortalMetrics');
+  if (metricsEl) {
+    metricsEl.innerHTML = `
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${Number(totals.projects || 0)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital committed</span><strong class="metric-value">${money(totals.capitalCommitted)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${money(totals.capitalReceived)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending approvals</span><strong class="metric-value">${Number(totals.pendingApprovals || 0)}</strong></div></div>
+    `;
+  }
+
+  const projectsEl = document.getElementById('externalPortalProjects');
+  const projects = data.projects || [];
+  if (projectsEl) {
+    projectsEl.innerHTML = projects.length
+      ? projects.map((p) => `
+        <article class="panel-card u-mb-1">
+          <h4>${escapeHtml(p.investmentCode || 'Project')} · ${escapeHtml(p.status || '')}</h4>
+          <p>${escapeHtml(p.investmentType || 'Project')}${p.location ? ` · ${escapeHtml(p.location)}` : ''}</p>
+          <p class="table-subtitle">Your ownership ${Number(p.ownershipPct || 0).toFixed(2)}% · Capital ${money(p.capitalReceived)} / ${money(p.capitalCommitted)} · Profit ${money(p.profitBalance)} · Ledger ${money(p.ledgerBalance)}</p>
+          ${p.projectManager ? `<p><strong>Project Manager:</strong> ${escapeHtml(p.projectManager.name || '—')}${p.projectManager.email ? ` · ${escapeHtml(p.projectManager.email)}` : ''}${p.projectManager.phone ? ` · ${escapeHtml(p.projectManager.phone)}` : ''}</p>` : '<p class="text-secondary">No Project Manager assigned.</p>'}
+        </article>
+      `).join('')
+      : '<p class="text-secondary">No assigned projects yet.</p>';
+  }
+
+  const payoutsEl = document.getElementById('externalPortalPayouts');
+  const pending = (data.payoutRequests || []).filter((r) => r.status === 'pending_external_approval');
+  if (payoutsEl) {
+    payoutsEl.innerHTML = pending.length
+      ? pending.map((r) => `
+        <article class="panel-card u-mb-1">
+          <h4>${escapeHtml(r.investmentCode || 'Project')} · ${money(r.amount)}</h4>
+          <p class="table-subtitle">${escapeHtml(r.kind || 'settlement')} · capital ${money(r.capitalAmount)} · profit ${money(r.profitAmount)}${Number(r.externalExtraExpenses || 0) > 0 ? ` · expense −${money(r.externalExtraExpenses)}` : ''}</p>
+          <div class="inline-actions" style="gap:0.5rem;">
+            <button type="button" class="primary-btn" data-external-payout-approve="${escapeHtml(String(r.id))}">Approve payout</button>
+            <button type="button" class="secondary-btn" data-external-payout-reject="${escapeHtml(String(r.id))}">Reject</button>
+          </div>
+        </article>
+      `).join('')
+      : '<p class="text-secondary">No payouts awaiting your approval.</p>';
+    payoutsEl.querySelectorAll('[data-external-payout-approve]').forEach((btn) => {
+      btn.addEventListener('click', () => void decideExternalPayout(btn.dataset.externalPayoutApprove, true));
+    });
+    payoutsEl.querySelectorAll('[data-external-payout-reject]').forEach((btn) => {
+      btn.addEventListener('click', () => void decideExternalPayout(btn.dataset.externalPayoutReject, false));
+    });
+  }
+
+  const depositsBody = document.getElementById('externalPortalDepositsBody');
+  const deposits = data.deposits || [];
+  if (depositsBody) {
+    depositsBody.innerHTML = deposits.length
+      ? deposits.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.createdAt ? new Date(row.createdAt).toLocaleString() : '—')}</td>
+          <td>${escapeHtml(String(row.type || '').replace(/_/g, ' '))}</td>
+          <td>${row.direction === 'debit' ? '−' : '+'}${money(row.amount)}</td>
+          <td>${escapeHtml(row.note || '—')}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="4">No ledger activity yet.</td></tr>';
+  }
+
+  const reviewSelect = document.getElementById('externalPmReviewProject');
+  if (reviewSelect) {
+    const current = reviewSelect.value;
+    reviewSelect.innerHTML = `<option value="">Choose project…</option>${projects
+      .filter((p) => p.projectManager)
+      .map((p) => `<option value="${escapeHtml(String(p.id))}">${escapeHtml(p.investmentCode || p.id)} · ${escapeHtml(p.projectManager?.name || 'PM')}</option>`)
+      .join('')}`;
+    if (current) reviewSelect.value = current;
+  }
+
+  const reviewsEl = document.getElementById('externalPortalReviews');
+  const reviews = data.reviews || [];
+  if (reviewsEl) {
+    reviewsEl.innerHTML = reviews.length
+      ? `<h4>Recent reviews</h4>${reviews.map((r) => `
+        <p><strong>${escapeHtml(r.investmentCode || '')}</strong> · ${escapeHtml(r.projectManagerName || 'PM')} · ${Number(r.rating)}/5<br><span class="table-subtitle">${escapeHtml(r.feedback || '')}</span></p>
+      `).join('')}`
+      : '<p class="text-secondary">No reviews submitted yet.</p>';
+  }
+}
+
+async function decideExternalPayout(requestId, approve) {
+  try {
+    const response = await fetch(`/api/external-investor/payouts/${requestId}/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approve }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to update payout.');
+    await loadExternalInvestorPortal();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function loadExternalInvestorPortal() {
+  try {
+    const data = await fetchExternalInvestorDashboard();
+    renderExternalPortal(data);
+  } catch (error) {
+    const projectsEl = document.getElementById('externalPortalProjects');
+    if (projectsEl) projectsEl.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function bindExternalInvestorForms() {
+  document.getElementById('externalPortalRefreshBtn')?.addEventListener('click', () => {
+    invalidateStaffViewCache(['external-portal', 'home']);
+    void loadExternalInvestorPortal();
+  });
+
+  document.getElementById('externalPmReviewForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('externalPmReviewMessage');
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+    try {
+      const response = await fetch('/api/external-investor/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          investmentId: document.getElementById('externalPmReviewProject')?.value,
+          rating: Number(document.getElementById('externalPmReviewRating')?.value || 0),
+          feedback: document.getElementById('externalPmReviewFeedback')?.value || '',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to submit review.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Review submitted.';
+      }
+      event.target.reset();
+      document.getElementById('externalPmReviewRating').value = '5';
+      await loadExternalInvestorPortal();
+    } catch (error) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.getElementById('externalChatForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const peerId = document.getElementById('externalChatPeerId')?.value;
+    const body = document.getElementById('externalChatBody')?.value?.trim() || '';
+    const msg = document.getElementById('externalChatMessage');
+    if (!peerId || !body) return;
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+    try {
+      const response = await fetch(`/api/external-investor/chat/${peerId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to send message.');
+      document.getElementById('externalChatBody').value = '';
+      await openExternalChatPeer(peerId);
+    } catch (error) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.querySelectorAll('[data-external-investor-home] [data-staff-nav]').forEach((btn) => {
+    btn.addEventListener('click', () => showStaffView(btn.dataset.staffNav));
+  });
+}
+
+async function openExternalChatPeer(peerId) {
+  externalChatPeerId = peerId;
+  const peerInput = document.getElementById('externalChatPeerId');
+  const sendBtn = document.getElementById('externalChatSendBtn');
+  const title = document.getElementById('externalChatTitle');
+  const thread = document.getElementById('externalChatMessages');
+  if (peerInput) peerInput.value = peerId;
+  if (sendBtn) sendBtn.disabled = !peerId;
+  document.querySelectorAll('#externalChatPeers [data-external-chat-peer]').forEach((btn) => {
+    btn.classList.toggle('active', String(btn.dataset.externalChatPeer) === String(peerId));
+  });
+  try {
+    const response = await fetch(`/api/external-investor/chat/${peerId}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load conversation.');
+    const messages = data.messages || [];
+    if (title) title.textContent = 'Conversation';
+    if (thread) {
+      thread.innerHTML = messages.length
+        ? messages.map((m) => `
+          <div class="u-mb-1">
+            <strong>${escapeHtml(m.senderName || m.senderRole || 'User')}</strong>
+            <span class="table-subtitle">${m.createdAt ? new Date(m.createdAt).toLocaleString() : ''}</span>
+            <p>${escapeHtml(m.body || '')}</p>
+          </div>
+        `).join('')
+        : '<p class="text-secondary">No messages yet. Say hello.</p>';
+      thread.scrollTop = thread.scrollHeight;
+    }
+  } catch (error) {
+    if (thread) thread.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function loadExternalInvestorChat() {
+  const list = document.getElementById('externalChatPeers');
+  try {
+    const response = await fetch('/api/external-investor/chat/peers');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load contacts.');
+    const peers = data.peers || [];
+    if (list) {
+      list.innerHTML = peers.length
+        ? peers.map((peer) => `
+          <button type="button" class="secondary-btn u-mb-1" style="width:100%;text-align:left;" data-external-chat-peer="${escapeHtml(String(peer.userId))}">
+            ${escapeHtml(peer.name || 'Contact')}<br>
+            <span class="table-subtitle">${escapeHtml(String(peer.role || '').replace(/_/g, ' '))}${peer.email ? ` · ${escapeHtml(peer.email)}` : ''}</span>
+          </button>
+        `).join('')
+        : '<p class="text-secondary">No CEO or Project Manager contacts available yet.</p>';
+      list.querySelectorAll('[data-external-chat-peer]').forEach((btn) => {
+        btn.addEventListener('click', () => void openExternalChatPeer(btn.dataset.externalChatPeer));
+      });
+    }
+    if (externalChatPeerId && peers.some((p) => String(p.userId) === String(externalChatPeerId))) {
+      await openExternalChatPeer(externalChatPeerId);
+    }
+  } catch (error) {
+    if (list) list.innerHTML = `<p class="message error">${escapeHtml(error.message)}</p>`;
   }
 }
 
@@ -6665,6 +6979,7 @@ async function init() {
     };
     const roleLabel = (user.role || 'staff').replace(/_/g, ' ');
     const cashierRole = isCashierRole(user);
+    const externalInvestorRole = user.role === 'external_investor';
 
     document.getElementById('dashboardTitle').textContent = window.I18n?.t(`staff.role.${user.role}`, meta.title);
     document.getElementById('dashboardSubtitle').textContent = meta.subtitle;
@@ -6735,56 +7050,69 @@ async function init() {
       navParts.push(navItemHtml({ ...opts, titleKey }));
     };
 
-    navParts.push(`<p class="nav-section-label" data-i18n="nav.section.overview">${window.I18n?.t('nav.section.overview', 'Overview')}</p>`);
-    pushNav({ icon: '🏠', active: true, panel: 'home' });
-    pushNav({ icon: '✅', panel: 'approvals', titleKey: 'nav.approvals' });
-    pushNav({ icon: '📡', panel: 'approval-tracking', titleKey: 'nav.approvalTracking' });
+    if (externalInvestorRole) {
+      // Strict isolation: no society finance, members, or approvals inbox.
+      navParts.push(`<p class="nav-section-label">${window.I18n?.t('nav.section.overview', 'Overview')}</p>`);
+      pushNav({ icon: '🏠', active: true, panel: 'home' });
+      pushNav({ icon: '📈', panel: 'external-portal', titleKey: 'nav.portfolio' });
+      pushNav({ icon: '💬', panel: 'external-chat', titleKey: 'nav.chat' });
+      document.getElementById('permissionStats').innerHTML = `
+        <div class="cashier-pill"><strong>Isolated</strong><span>Portal</span></div>
+        <div class="cashier-pill"><strong>3</strong><span>Modules</span></div>
+        <div class="cashier-pill"><strong>${escapeHtml(roleLabel)}</strong><span>Role</span></div>
+      `;
+    } else {
+      navParts.push(`<p class="nav-section-label" data-i18n="nav.section.overview">${window.I18n?.t('nav.section.overview', 'Overview')}</p>`);
+      pushNav({ icon: '🏠', active: true, panel: 'home' });
+      pushNav({ icon: '✅', panel: 'approvals', titleKey: 'nav.approvals' });
+      pushNav({ icon: '📡', panel: 'approval-tracking', titleKey: 'nav.approvalTracking' });
 
-    const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding', 'reserve', 'ledger', 'audit', 'tracking', 'queue']);
-    const financeNavItems = [];
-    const pushFinance = (opts) => {
-      if (addedPanels.has(opts.panel)) return;
-      if (!cashierRole && CASHIER_ONLY_VIEWS.has(opts.panel)) return;
-      addedPanels.add(opts.panel);
-      const titleKey = opts.titleKey || PANEL_I18N_KEYS[opts.panel] || 'nav.dashboard';
-      financeNavItems.push(navItemHtml({ ...opts, titleKey }));
-    };
+      const financePanels = new Set(['deposits', 'withdrawals', 'investments', 'refunds', 'loans', 'profit', 'funding', 'reserve', 'ledger', 'audit', 'tracking', 'queue']);
+      const financeNavItems = [];
+      const pushFinance = (opts) => {
+        if (addedPanels.has(opts.panel)) return;
+        if (!cashierRole && CASHIER_ONLY_VIEWS.has(opts.panel)) return;
+        addedPanels.add(opts.panel);
+        const titleKey = opts.titleKey || PANEL_I18N_KEYS[opts.panel] || 'nav.dashboard';
+        financeNavItems.push(navItemHtml({ ...opts, titleKey }));
+      };
 
-    if (canManageLedger) pushFinance({ icon: '🏛️', panel: 'ledger' });
-    if (canManageLedger) pushFinance({ icon: '📋', panel: 'audit' });
-    if (showTracking) pushFinance({ icon: '🔍', panel: 'tracking' });
-    if (showQueue) pushFinance({ icon: '⏳', panel: 'queue' });
-    if (showQueue) pushFinance({ icon: '🔄', panel: 'funding' });
-    if (canManageLedger) pushFinance({ icon: '🛡️', panel: 'reserve', titleKey: 'nav.emergencyReserve' });
-    if (showProfit) pushFinance({ icon: '💹', panel: 'profit' });
+      if (canManageLedger) pushFinance({ icon: '🏛️', panel: 'ledger' });
+      if (canManageLedger) pushFinance({ icon: '📋', panel: 'audit' });
+      if (showTracking) pushFinance({ icon: '🔍', panel: 'tracking' });
+      if (showQueue) pushFinance({ icon: '⏳', panel: 'queue' });
+      if (showQueue) pushFinance({ icon: '🔄', panel: 'funding' });
+      if (canManageLedger) pushFinance({ icon: '🛡️', panel: 'reserve', titleKey: 'nav.emergencyReserve' });
+      if (showProfit) pushFinance({ icon: '💹', panel: 'profit' });
 
-    features.forEach((feature) => {
-      if (!financePanels.has(feature.panel)) return;
-      const copy = HOME_MODULE_COPY[feature.panel] || {};
-      pushFinance({
-        titleKey: PANEL_I18N_KEYS[feature.panel],
-        icon: copy.icon || feature.icon || '•',
-        panel: feature.panel,
+      features.forEach((feature) => {
+        if (!financePanels.has(feature.panel)) return;
+        const copy = HOME_MODULE_COPY[feature.panel] || {};
+        pushFinance({
+          titleKey: PANEL_I18N_KEYS[feature.panel],
+          icon: copy.icon || feature.icon || '•',
+          panel: feature.panel,
+        });
       });
-    });
 
-    if (financeNavItems.length) {
-      navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
-      navParts.push(...financeNavItems);
+      if (financeNavItems.length) {
+        navParts.push(`<p class="nav-section-label" data-i18n="nav.section.finance">${window.I18n?.t('nav.section.finance', 'Finance')}</p>`);
+        navParts.push(...financeNavItems);
+      }
+
+      navParts.push(`<p class="nav-section-label" data-i18n="nav.section.management">${window.I18n?.t('nav.section.management', 'Management')}</p>`);
+      if (showMembers) pushNav({ icon: '👥', panel: 'members' });
+
+      features.forEach((feature) => {
+        if (financePanels.has(feature.panel) || feature.panel === 'home') return;
+        const copy = HOME_MODULE_COPY[feature.panel] || {};
+        pushNav({
+          titleKey: PANEL_I18N_KEYS[feature.panel] || `nav.${feature.panel}`,
+          icon: copy.icon || feature.icon || '•',
+          panel: feature.panel,
+        });
+      });
     }
-
-    navParts.push(`<p class="nav-section-label" data-i18n="nav.section.management">${window.I18n?.t('nav.section.management', 'Management')}</p>`);
-    if (showMembers) pushNav({ icon: '👥', panel: 'members' });
-
-    features.forEach((feature) => {
-      if (financePanels.has(feature.panel) || feature.panel === 'home') return;
-      const copy = HOME_MODULE_COPY[feature.panel] || {};
-      pushNav({
-        titleKey: PANEL_I18N_KEYS[feature.panel] || `nav.${feature.panel}`,
-        icon: copy.icon || feature.icon || '•',
-        panel: feature.panel,
-      });
-    });
     document.getElementById('featureNav').innerHTML = navParts.join('');
     window.SocietyHubMobileMenu?.enhanceNav?.(document.getElementById('featureNav'));
 
@@ -6812,6 +7140,9 @@ async function init() {
     if (user.role === 'project_manager') {
       bindPmProjectOpsForms();
     }
+    if (externalInvestorRole) {
+      bindExternalInvestorForms();
+    }
     applyLedgerAdminVisibility(canManageLedger);
     bindProfitPoolForms();
     bindEmergencyReserveForms();
@@ -6826,7 +7157,9 @@ async function init() {
 
     const initial = (window.location.hash || '#home').replace(/^#/, '') || 'home';
     showStaffView(initial, { forceReload: true });
-    void refreshStaffApprovalsBadge();
+    if (!externalInvestorRole) {
+      void refreshStaffApprovalsBadge();
+    }
     void loadStaffNotifications({ openPanel: false });
 
     document.getElementById('staffApprovalsRefreshBtn')?.addEventListener('click', () => {

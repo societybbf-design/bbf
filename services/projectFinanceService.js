@@ -436,6 +436,7 @@ async function distributeSocietyShareToMembers(societyShare, recordedBy, options
 async function recordMonthlyProjectReturn({
   investmentId,
   profitAmount,
+  externalExtraExpenses = 0,
   notes = '',
   recordedBy = 'Cashier',
   yearMonth = null,
@@ -455,9 +456,15 @@ async function recordMonthlyProjectReturn({
     if (!(profit > 0)) {
       throw httpError('Monthly profit amount must be greater than zero.');
     }
+    const externalExtra = money(Math.max(0, externalExtraExpenses));
 
     const stakeholders = resolveProjectStakeholders(investment);
     const split = splitByStakeholders(profit, stakeholders);
+    // External-specific expenses reduce only the external profit share.
+    const externalExpenseApplied = money(Math.min(externalExtra, split.investorShare));
+    const externalNetProfit = money(Math.max(0, split.investorShare - externalExpenseApplied));
+    split.externalExtraExpenses = externalExpenseApplied;
+    split.externalNetProfit = externalNetProfit;
 
     const now = new Date();
     const periodYearMonth = yearMonth
@@ -471,9 +478,10 @@ async function recordMonthlyProjectReturn({
     investment.profit = money(Number(investment.profit || 0) + profit);
     investment.monthlyProfitTotal = money(Number(investment.monthlyProfitTotal || 0) + profit);
     investment.investorProfitBalance = money(
-      Number(investment.investorProfitBalance || 0) + split.investorShare
+      Number(investment.investorProfitBalance || 0) + externalNetProfit
     );
 
+    const netShareByKey = new Map();
     if (Array.isArray(investment.externalInvestors) && investment.externalInvestors.length) {
       const shareByKey = new Map(
         (split.investorShares || []).map((row) => [
@@ -481,12 +489,16 @@ async function recordMonthlyProjectReturn({
           money(row.share),
         ])
       );
+      const grossExternal = money(Math.max(split.investorShare, 0.001));
       for (const stake of investment.externalInvestors) {
         const key = String(stake._id || stake.investor || stake.investorName || '');
-        const stakeShare = shareByKey.has(key)
+        const stakeGross = shareByKey.has(key)
           ? shareByKey.get(key)
           : money((profit * Number(stake.ownershipPct || 0)) / 100);
-        stake.profitBalance = money(Number(stake.profitBalance || 0) + stakeShare);
+        const stakeExpense = money((stakeGross / grossExternal) * externalExpenseApplied);
+        const stakeNet = money(Math.max(0, stakeGross - stakeExpense));
+        netShareByKey.set(key, stakeNet);
+        stake.profitBalance = money(Number(stake.profitBalance || 0) + stakeNet);
       }
       // Keep aggregate in sync with per-stake balances (cash conservation).
       investment.investorProfitBalance = money(
@@ -509,7 +521,7 @@ async function recordMonthlyProjectReturn({
       memberCount: distribution.memberCount,
       shares: distribution.shares,
       societyProfitShare: split.societyShare,
-      investorProfitShare: split.investorShare,
+      investorProfitShare: externalNetProfit,
       societyOwnershipPct: split.societyOwnershipPct,
       investorOwnershipPct: split.investorOwnershipPct,
       distributionKind: 'monthly_return',
@@ -518,6 +530,8 @@ async function recordMonthlyProjectReturn({
         yearMonth: periodYearMonth,
         societyShare: split.societyShare,
         investorShares: split.investorShares || [],
+        externalExtraExpenses: externalExpenseApplied,
+        externalNetProfit,
       },
       notes: notes?.trim() || `Monthly project return (${periodYearMonth}) — equal share among eligible members; new members from next month after join`,
       recordedBy: String(recordedBy || 'Cashier').trim(),
@@ -539,8 +553,12 @@ async function recordMonthlyProjectReturn({
     }
 
     let externalLedger = null;
+    const {
+      creditExternalProfitAccrual,
+      debitExternalExpenseShare,
+    } = require('./externalInvestorLedgerService');
+    // Accrue full external ownership share, then deduct external-specific expenses.
     if (split.investorShare > 0.001) {
-      const { creditExternalProfitAccrual } = require('./externalInvestorLedgerService');
       externalLedger = await creditExternalProfitAccrual(investment, split.investorShare, {
         note: `Monthly return external share ${investment.investmentCode} (${periodYearMonth})`,
         createdBy: recordedBy,
@@ -549,10 +567,45 @@ async function recordMonthlyProjectReturn({
         session,
       });
     }
+    if (externalExpenseApplied > 0.001) {
+      await debitExternalExpenseShare(investment, externalExpenseApplied, {
+        note: `External-specific expense on monthly return ${investment.investmentCode} (${periodYearMonth})`,
+        createdBy: recordedBy,
+        referenceType: 'InvestmentProfit',
+        referenceId: record._id,
+        session,
+      });
+    }
 
-    const investorLabel = (split.investorShares || [])
-      .map((row) => `${row.investorName || 'Investor'} ${formatMoney(row.share, 2)}`)
-      .join(', ') || formatMoney(split.investorShare, 2);
+    // Queue external investor approval before profit is marked paid / executable.
+    let payoutRequests = [];
+    if (externalNetProfit > 0.001 && Array.isArray(investment.externalInvestors)) {
+      const { queueExternalSettlementPayouts } = require('./externalInvestorPortalService');
+      const queued = await queueExternalSettlementPayouts({
+        investment,
+        investorPayouts: (investment.externalInvestors || []).map((stake) => {
+          const key = String(stake._id || stake.investor || stake.investorName || '');
+          return {
+            investor: stake.investor?._id || stake.investor || null,
+            investorName: stake.investorName || stake.investor?.name || '',
+            capitalShare: 0,
+            profitShare: netShareByKey.get(key) || 0,
+            lossShare: 0,
+            accruedProfit: 0,
+          };
+        }),
+        externalExtraExpenses: 0, // already deducted above
+        source: 'monthly_return',
+        referenceType: 'InvestmentProfit',
+        referenceId: record._id,
+        note: `Monthly return payout ${investment.investmentCode} (${periodYearMonth})`,
+        createdBy: recordedBy,
+        session,
+      });
+      payoutRequests = queued.requests || [];
+    }
+
+    const investorLabel = formatMoney(externalNetProfit, 2);
 
     return {
       investment,
@@ -562,9 +615,27 @@ async function recordMonthlyProjectReturn({
       yearMonth: periodYearMonth,
       bankLedger,
       externalLedger,
-      message: `Monthly return ${formatMoney(profit, 2)} for ${periodYearMonth} split — society ${formatMoney(split.societyShare, 2)} equally among ${distribution.memberCount} eligible member(s) (society bank), external ${investorLabel} (isolated sub-ledger).`,
+      payoutRequests,
+      externalExtraExpenses: externalExpenseApplied,
+      message: `Monthly return ${formatMoney(profit, 2)} for ${periodYearMonth} — society ${formatMoney(split.societyShare, 2)} to members (society bank)`
+        + (externalExpenseApplied > 0 ? `, external expense ${formatMoney(externalExpenseApplied, 2)}` : '')
+        + `, external net ${investorLabel} queued for External Investor approval.`,
     };
   });
+
+  for (const req of result.payoutRequests || []) {
+    if (!req.investor) continue;
+    try {
+      await createAdminNotification({
+        type: 'general',
+        title: `Monthly payout approval: ${req.investmentCode || ''}`,
+        message: `Please approve your monthly profit payout of ${formatMoney(req.amount, 2)}.`,
+        relatedId: req._id,
+        relatedModel: 'ExternalPayoutRequest',
+        targetUser: req.investor,
+      });
+    } catch (_) { /* non-fatal */ }
+  }
 
   return result;
 }
@@ -738,6 +809,7 @@ async function liquidateProject({
   saleAmount,
   additionalCosts = 0,
   tax = 0,
+  externalExtraExpenses = 0,
   notes = '',
   recordedBy = 'Admin',
   productName = '',
@@ -870,67 +942,90 @@ async function liquidateProject({
     }
 
     const {
-      debitExternalCapitalOut,
-      debitExternalProfitPayout,
       creditExternalProfitAccrual,
+      debitExternalExpenseShare,
+      ensureExternalLedger,
     } = require('./externalInvestorLedgerService');
+    const { queueExternalSettlementPayouts } = require('./externalInvestorPortalService');
     const investorLedgers = [];
+    const externalExtraRequested = money(Math.max(0, externalExtraExpenses));
     const payoutRows = Array.isArray(investorPayouts) && investorPayouts.length
-      ? investorPayouts.filter((row) => Number(row.payout) > 0.001)
+      ? investorPayouts.filter((row) => Number(row.payout) > 0.001 || Number(row.capitalShare) > 0)
       : (investorPayout > 0.001
         ? [{
           investor: investment.investor?._id || investment.investor || null,
           investorName: investment.investorName || 'investor',
+          capitalShare: money(capitalSplit?.investorShare || 0),
+          profitShare: money(profitSplit?.investorShare || 0),
+          lossShare: money(lossSplit?.investorShare || 0),
+          accruedProfit: 0,
           payout: investorPayout,
         }]
         : []);
-    for (const row of payoutRows) {
-      const payoutAmt = money(row.payout);
-      // Ensure sub-ledger has balance to settle (accrue shortfall as profit credit if needed).
-      const { ensureExternalLedger } = require('./externalInvestorLedgerService');
-      const extLedger = await ensureExternalLedger(investment);
-      if (money(extLedger.bookBalance) + 0.001 < payoutAmt) {
-        const gap = money(payoutAmt - money(extLedger.bookBalance));
+
+    // External-specific expenses reduce external profit only (never society share).
+    const externalProfitPool = money(payoutRows.reduce((sum, row) => (
+      sum + Math.max(
+        0,
+        Number(row.profitShare || 0) - Number(row.lossShare || 0) + Number(row.accruedProfit || 0)
+      )
+    ), 0));
+    const externalExtra = money(Math.min(externalExtraRequested, externalProfitPool));
+
+    // Ensure sub-ledger can cover queued settlement (after expense) + expense debit.
+    const neededExternal = money(
+      payoutRows.reduce((sum, row) => sum + Number(row.payout || 0), 0)
+    );
+    if (neededExternal > 0.001 || externalExtra > 0.001) {
+      const extLedger = await ensureExternalLedger(investment, session);
+      const target = money(neededExternal);
+      if (money(extLedger.bookBalance) + 0.001 < target) {
+        const gap = money(target - money(extLedger.bookBalance));
         await creditExternalProfitAccrual(investment, gap, {
           note: `External settlement top-up ${investment.investmentCode}`,
           createdBy: recordedBy,
           referenceType: 'Investment',
           referenceId: investment._id,
           session,
-          investor: row.investor || null,
-          investorName: row.investorName || '',
         });
-      }
-      const capitalPart = money(Math.min(payoutAmt, Number(row.capitalShare || capitalSplit?.investorShare || 0)));
-      let remaining = payoutAmt;
-      if (capitalPart > 0.001) {
-        const capitalOut = await debitExternalCapitalOut(investment, Math.min(capitalPart, remaining), {
-          note: `External capital return ${investment.investmentCode} → ${row.investorName || 'investor'}`,
-          createdBy: recordedBy,
-          referenceType: 'Investment',
-          referenceId: investment._id,
-          session,
-          investor: row.investor || null,
-          investorName: row.investorName || '',
-        });
-        investorLedgers.push({ ...row, ledger: capitalOut, channel: 'external_sub_ledger' });
-        remaining = money(remaining - Math.min(capitalPart, remaining));
-      }
-      if (remaining > 0.001) {
-        const profitOut = await debitExternalProfitPayout(investment, remaining, {
-          note: `External profit settlement ${investment.investmentCode} → ${row.investorName || 'investor'}`,
-          createdBy: recordedBy,
-          referenceType: 'Investment',
-          referenceId: investment._id,
-          session,
-          investor: row.investor || null,
-          investorName: row.investorName || '',
-          payoutStatus: 'paid',
-        });
-        investorLedgers.push({ ...row, ledger: profitOut, channel: 'external_sub_ledger' });
       }
     }
-    const investorLedger = investorLedgers[0] || null;
+    if (externalExtra > 0.001) {
+      const expenseOut = await debitExternalExpenseShare(investment, externalExtra, {
+        note: `External-specific extra expenses on liquidation ${investment.investmentCode}`,
+        createdBy: recordedBy,
+        referenceType: 'Investment',
+        referenceId: investment._id,
+        session,
+      });
+      investorLedgers.push({ channel: 'external_expense', ledger: expenseOut, amount: externalExtra });
+    }
+
+    // External capital/profit wait for External Investor approval before ledger payout.
+    const queued = await queueExternalSettlementPayouts({
+      investment,
+      investorPayouts: payoutRows,
+      externalExtraExpenses: externalExtra,
+      source: 'liquidation',
+      referenceType: 'Investment',
+      referenceId: investment._id,
+      note: `Liquidation settlement ${investment.investmentCode}`,
+      createdBy: recordedBy,
+      session,
+    });
+    for (const req of queued.requests || []) {
+      investorLedgers.push({
+        investor: req.investor,
+        investorName: req.investorName,
+        payout: req.amount,
+        channel: 'pending_external_approval',
+        requestId: req._id,
+      });
+    }
+    const investorLedger = investorLedgers.find((row) => row.channel === 'pending_external_approval') || investorLedgers[0] || null;
+    const pendingExternalPayoutTotal = money(
+      (queued.requests || []).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    );
 
     const saleCode = await nextSaleCode(session);
     const projectLabel = [
@@ -993,6 +1088,8 @@ async function liquidateProject({
         societySavingsRefund,
         societyProfitShare: profitSplit.societyShare,
         societyLossShare: lossSplit.societyShare,
+        externalExtraExpenses: externalExtra,
+        pendingExternalPayoutTotal,
         investorPayouts: (investorPayouts || []).map((row) => ({
           investor: row.investor,
           investorName: row.investorName,
@@ -1065,7 +1162,14 @@ async function liquidateProject({
       bankLedger,
       investorLedger,
       investorLedgers,
-      message: `Project ${investment.investmentCode} sold/closed (${saleCode}). Capital ${formatMoney(capital, 2)} across ${related.length} investment(s). Net ${formatMoney(netProceeds, 2)}. Ledger locked.`,
+      externalExtraExpenses: externalExtra,
+      pendingExternalPayoutRequests: queued.requests || [],
+      message: `Project ${investment.investmentCode} sold/closed (${saleCode}). Capital ${formatMoney(capital, 2)} across ${related.length} investment(s). Net ${formatMoney(netProceeds, 2)}. Society share settled;`
+        + (externalExtra > 0 ? ` external expense ${formatMoney(externalExtra, 2)};` : '')
+        + (pendingExternalPayoutTotal > 0
+          ? ` external payout ${formatMoney(pendingExternalPayoutTotal, 2)} queued for External Investor approval.`
+          : ' no external payout pending.')
+        + ' Ledger locked.',
     };
   });
 
@@ -1080,6 +1184,24 @@ async function liquidateProject({
       targetRoles: ['ceo', 'cashier'],
     });
   } catch (_) { /* non-fatal */ }
+
+  for (const req of result.pendingExternalPayoutRequests || []) {
+    if (!req.investor) continue;
+    try {
+      await createAdminNotification({
+        type: 'general',
+        title: `Payout approval needed: ${req.investmentCode || result.investment.investmentCode}`,
+        message: `Please approve your settlement payout of ${formatMoney(req.amount, 2)}`
+          + (Number(req.externalExtraExpenses || 0) > 0
+            ? ` (after external expense ${formatMoney(req.externalExtraExpenses, 2)})`
+            : '')
+          + '.',
+        relatedId: req._id,
+        relatedModel: 'ExternalPayoutRequest',
+        targetUser: req.investor,
+      });
+    } catch (_) { /* non-fatal */ }
+  }
 
   const notified = new Set();
   for (const row of result.settlement?.investorPayouts || []) {
