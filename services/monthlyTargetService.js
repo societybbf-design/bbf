@@ -635,33 +635,50 @@ async function bulkUpsertTargets({
 
 /**
  * Pure eligibility check for the cashier deposit dropdown.
- * Exclude: current month fully paid (no arrears), or advance covers the month target (no arrears).
- * Include: prior unpaid months, or current unpaid with advance below the required target.
+ * Show only when the member still has unpaid dues AND Advance Balance is insufficient.
+ * Hide when dues are cleared, or Advance Balance covers outstanding dues / the
+ * current month target (no manual deposit needed).
  */
 function evaluateCashierDepositEligibility({
   currentUnpaid = 0,
   previousUnpaidCount = 0,
+  previousUnpaidTotal = 0,
   advanceBalance = 0,
   requiredAmount = 0,
 } = {}) {
   const unpaid = money(currentUnpaid);
   const priorCount = Number(previousUnpaidCount || 0);
+  const priorTotal = money(
+    previousUnpaidTotal != null && previousUnpaidTotal !== ''
+      ? previousUnpaidTotal
+      : 0
+  );
   const advance = money(advanceBalance);
   const required = money(requiredAmount);
-  const hasArrears = priorCount > 0;
-  const currentPaidInFull = unpaid <= 0;
-  const advanceCoversRequired = required > 0 && advance + 0.001 >= required;
+  const totalDue = money(unpaid + priorTotal);
+  const hasOutstandingDues = totalDue > 0.001 || (priorCount > 0 && priorTotal > 0.001);
 
-  if (hasArrears) {
-    return { eligible: true, reason: 'prior_arrears' };
-  }
-  if (currentPaidInFull) {
+  if (!hasOutstandingDues) {
     return { eligible: false, reason: 'current_month_paid' };
   }
-  if (advanceCoversRequired) {
+
+  // Advance fully covers everything still owed (current remaining + arrears).
+  if (advance + 0.001 >= totalDue) {
+    return {
+      eligible: false,
+      reason: totalDue <= required + 0.001 ? 'advance_covers_target' : 'advance_covers_dues',
+    };
+  }
+
+  // Advance covers the active month target and there are no uncovered arrears.
+  if (required > 0 && advance + 0.001 >= required && priorTotal <= 0.001) {
     return { eligible: false, reason: 'advance_covers_target' };
   }
-  return { eligible: true, reason: 'needs_manual_deposit' };
+
+  return {
+    eligible: true,
+    reason: priorCount > 0 ? 'prior_arrears' : 'needs_manual_deposit',
+  };
 }
 
 /**
@@ -747,6 +764,7 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
     const decision = evaluateCashierDepositEligibility({
       currentUnpaid,
       previousUnpaidCount: prior.count,
+      previousUnpaidTotal: prior.total,
       advanceBalance: member.advanceBalance,
       requiredAmount: required,
     });
@@ -758,6 +776,7 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
       currentUnpaid,
       previousUnpaidCount: prior.count,
       previousUnpaidTotal: prior.total,
+      totalDue: money(currentUnpaid + prior.total),
       requiredAmount: required,
       eligibilityReason: decision.reason,
     }));
@@ -774,7 +793,7 @@ async function listCashierDepositEligibleMembers({ asOfDate = new Date() } = {})
     members: eligible,
     excludedCount,
     totalActive: members.length,
-    reason: `Showing ${eligible.length} of ${members.length} active member(s) who still need a manual deposit.`,
+    reason: `Showing ${eligible.length} of ${members.length} active member(s) with unpaid dues and insufficient Advance Balance.`,
   };
 }
 
