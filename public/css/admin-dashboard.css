@@ -740,7 +740,8 @@
   text-overflow: ellipsis;
 }
 
-.admin-dashboard .page-section .pm-admin-table .pm-cell-main {
+.admin-dashboard .page-section .pm-admin-table .pm-cell-main,
+.admin-dashboard .page-section .pm-admin-table .pm-cell-sub {
   display: block;
   min-width: 0;
   max-width: 100%;
@@ -750,8 +751,18 @@
   overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-cell-main {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.admin-dashboard .page-section .pm-admin-table .pm-cell-sub {
+  margin-top: 0.12rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.25;
 }
 
 .admin-dashboard .page-section .pm-admin-table .pm-col-money .pm-cell-main,

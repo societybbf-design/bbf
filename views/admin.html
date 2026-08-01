@@ -882,7 +882,9 @@
         <section class="panel-card card-form-wide" id="createProjectPanel">
           <h2 data-i18n="admin.sections.createProject">Create Project</h2>
           <p class="table-subtitle" data-i18n="admin.projects.createHelp">
-            Society ownership defaults to 100%. Optionally add External Investors (third-party co-funders registered under User Management → External Investors) so Society % + all external ownership % equals exactly 100%. Internal Investors are not used for ownership sharing. After member approval and cashier payout, the Cashier records inbound external capital.
+            Assign an Investor / Operator (runs the project with society-pool funds) and optionally a Project Manager (oversees the operator and reports through approvals).
+            Society ownership defaults to 100%. Optionally add External Investors (third-party co-funders from User Management → External Investors) so Society % + external ownership % equals exactly 100%.
+            After member approval and cashier payout, the Cashier records inbound external capital.
           </p>
           <form id="projectCreateForm" class="add-member-form">
             <div class="form-row-2">
@@ -895,29 +897,43 @@
                 </label>
               </div>
               <div class="form-group">
+                <label data-i18n="admin.forms.location">
+                  Location
+                  <input type="text" name="location" id="projectLocationInput" placeholder="City / Area" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label data-i18n="admin.forms.assignInvestorOperator">
+                  Assign Investor / Operator
+                  <select name="investorId" id="projectOperatorSelect" required>
+                    <option value="">Choose investor / operator…</option>
+                  </select>
+                </label>
+                <p class="table-subtitle">
+                  Registered Investor who receives society-pool funding and runs the business. Populated from User Management → Investors (not External Investors).
+                </p>
+              </div>
+              <div class="form-group">
                 <label data-i18n="admin.forms.projectManager">
                   Project Manager
                   <select name="projectManagerId" id="projectManagerSelect">
                     <option value="">Unassigned</option>
                   </select>
                 </label>
+                <p class="table-subtitle">
+                  Oversees the operator, monitors project activity, and reports through the approval pipeline.
+                </p>
               </div>
             </div>
             <div class="form-row-2">
-              <div class="form-group">
-                <label data-i18n="admin.forms.location">
-                  Location
-                  <input type="text" name="location" id="projectLocationInput" placeholder="City / Area" required />
-                </label>
-              </div>
               <div class="form-group">
                 <label data-i18n="admin.forms.projectTotalAmount">
                   Total Project Amount (৳)
                   <input type="number" name="amount" id="projectTotalAmount" min="0.01" step="0.01" placeholder="100000.00" required />
                 </label>
               </div>
-            </div>
-            <div class="form-row-2">
               <div class="form-group">
                 <label data-i18n="admin.forms.returnType">
                   Return type
@@ -927,12 +943,12 @@
                   </select>
                 </label>
               </div>
-              <div class="form-group">
-                <label data-i18n="admin.forms.notesOptional">
-                  Notes (optional)
-                  <input type="text" name="notes" id="projectNotesInput" placeholder="Optional project details" />
-                </label>
-              </div>
+            </div>
+            <div class="form-group">
+              <label data-i18n="admin.forms.notesOptional">
+                Notes (optional)
+                <input type="text" name="notes" id="projectNotesInput" placeholder="Optional project details" />
+              </label>
             </div>
             <div class="form-row-2" id="projectTermFields">
               <div class="form-group">
@@ -966,8 +982,8 @@
               <label>External investors (optional)</label>
               <p class="table-subtitle">
                 Add pre-registered <strong>External Investors</strong> (third-party co-funders from User Management → External Investors).
-                Internal Investors and project managers are not listed here.
-                Their ownership percentages plus Society ownership must equal exactly 100%.
+                The Investor / Operator and Project Manager assigned above are not listed here — they do not supply ownership capital.
+                External ownership percentages plus Society ownership must equal exactly 100%.
               </p>
               <div id="projectExternalInvestorRows"></div>
               <button type="button" class="secondary-btn" id="projectAddInvestorBtn">Add external investor</button>
@@ -988,7 +1004,7 @@
               <thead>
                 <tr>
                   <th class="pm-col-id" data-i18n="table.projectId">Project ID</th>
-                  <th class="pm-col-investor" data-i18n="table.investor">Investor</th>
+                  <th class="pm-col-investor" data-i18n="table.investorOperator">Investor / Operator</th>
                   <th class="pm-col-type" data-i18n="table.type">Type</th>
                   <th class="pm-col-return" data-i18n="table.returnMode">Return</th>
                   <th class="pm-col-ownership" data-i18n="table.ownership">Ownership</th>
@@ -1142,7 +1158,7 @@
               <thead>
                 <tr>
                   <th class="pm-col-id" data-i18n="table.projectId">Project ID</th>
-                  <th class="pm-col-investor" data-i18n="table.investor">Investor</th>
+                  <th class="pm-col-investor" data-i18n="table.investorOperator">Investor / Operator</th>
                   <th class="pm-col-type" data-i18n="table.type">Type</th>
                   <th class="pm-col-ownership" data-i18n="table.ownership">Ownership</th>
                   <th class="pm-col-money" data-i18n="table.invested">Invested</th>

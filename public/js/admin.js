@@ -2281,14 +2281,11 @@ async function loadProjectsModule() {
     if (openBody) {
       openBody.innerHTML = open.length
         ? open.map((item) => {
-          const investorLabel = (
-            (Array.isArray(item.externalInvestors) && item.externalInvestors.length
-              ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
-              : '')
-            || item.investor?.name
-            || item.investorName
-            || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
-          );
+          const operatorLabel = item.investor?.name || item.investorName || 'Unassigned';
+          const pmLabel = item.projectManager?.name || '';
+          const investorTitle = pmLabel
+            ? `${operatorLabel} · PM: ${pmLabel}`
+            : operatorLabel;
           const returnFull = projectReturnModeLabel(item.returnMode);
           const returnLabel = projectReturnModeLabel(item.returnMode, { compact: true });
           const ownershipLabel = projectOwnershipLabel(item);
@@ -2299,7 +2296,10 @@ async function loadProjectsModule() {
           return `
           <tr>
             <td class="pm-col-id" title="${escapeHtml(item.investmentCode || '-')}"><strong class="pm-cell-main">${escapeHtml(item.investmentCode || '-')}</strong></td>
-            <td class="pm-col-investor" title="${escapeHtml(investorLabel)}"><span class="pm-cell-main">${escapeHtml(investorLabel)}</span></td>
+            <td class="pm-col-investor" title="${escapeHtml(investorTitle)}">
+              <span class="pm-cell-main">${escapeHtml(operatorLabel)}</span>
+              ${pmLabel ? `<span class="pm-cell-sub">PM: ${escapeHtml(pmLabel)}</span>` : ''}
+            </td>
             <td class="pm-col-type" title="${escapeHtml(typeLabel)}"><span class="pm-cell-main">${escapeHtml(typeLabel)}</span></td>
             <td class="pm-col-return" title="${escapeHtml(returnFull)}"><span class="pm-cell-main">${escapeHtml(returnLabel)}</span></td>
             <td class="pm-col-ownership" title="${escapeHtml(ownershipLabel)}"><span class="pm-cell-main">${escapeHtml(ownershipLabel)}</span></td>
@@ -2340,14 +2340,11 @@ async function loadProjectsModule() {
       closedBody.innerHTML = closed.length
         ? closed.map((item) => {
           const net = Number(item.netProfitLoss != null ? item.netProfitLoss : (Number(item.saleAmount || 0) - Number(item.amount || 0)));
-          const investorLabel = (
-            (Array.isArray(item.externalInvestors) && item.externalInvestors.length
-              ? item.externalInvestors.map((s) => s.investorName || s.investor?.name).filter(Boolean).join(', ')
-              : '')
-            || item.investor?.name
-            || item.investorName
-            || (Number(item.investorOwnershipPct) > 0 ? '-' : 'Society')
-          );
+          const operatorLabel = item.investor?.name || item.investorName || 'Unassigned';
+          const pmLabel = item.projectManager?.name || '';
+          const investorTitle = pmLabel
+            ? `${operatorLabel} · PM: ${pmLabel}`
+            : operatorLabel;
           const ownershipLabel = projectOwnershipLabel(item);
           const investedLabel = formatMoney(Number(item.amount || 0), 2);
           const saleLabel = formatMoney(Number(item.saleAmount || 0), 2);
@@ -2358,7 +2355,10 @@ async function loadProjectsModule() {
           return `
             <tr>
               <td class="pm-col-id" title="${escapeHtml(item.investmentCode || '-')}"><strong class="pm-cell-main">${escapeHtml(item.investmentCode || '-')}</strong></td>
-              <td class="pm-col-investor" title="${escapeHtml(investorLabel)}"><span class="pm-cell-main">${escapeHtml(investorLabel)}</span></td>
+              <td class="pm-col-investor" title="${escapeHtml(investorTitle)}">
+                <span class="pm-cell-main">${escapeHtml(operatorLabel)}</span>
+                ${pmLabel ? `<span class="pm-cell-sub">PM: ${escapeHtml(pmLabel)}</span>` : ''}
+              </td>
               <td class="pm-col-type" title="${escapeHtml(typeLabel)}"><span class="pm-cell-main">${escapeHtml(typeLabel)}</span></td>
               <td class="pm-col-ownership" title="${escapeHtml(ownershipLabel)}"><span class="pm-cell-main">${escapeHtml(ownershipLabel)}</span></td>
               <td class="pm-col-money" title="${escapeHtml(investedLabel)}"><span class="pm-cell-main">${investedLabel}</span></td>
@@ -2482,7 +2482,8 @@ function bindProjectsModule() {
       externalInvestors.reduce((sum, row) => sum + (Number(row.ownershipPct) || 0), 0).toFixed(2)
     );
     const payload = {
-      investorId: externalInvestors[0]?.investorId || null,
+      // Operator (role: investor) — distinct from external co-funders below.
+      investorId: formData.get('investorId') || null,
       investmentType: formData.get('investmentType'),
       projectManagerId: formData.get('projectManagerId') || null,
       location: String(formData.get('location') || '').trim() || 'Not specified',
@@ -2496,6 +2497,13 @@ function bindProjectsModule() {
       notes: formData.get('notes') || '',
     };
 
+    if (!payload.investorId) {
+      if (messageEl) {
+        messageEl.classList.add('error');
+        messageEl.textContent = 'Assign an Investor / Operator who will run this project.';
+      }
+      return;
+    }
     if (!payload.investmentType || !(payload.amount > 0)) {
       if (messageEl) {
         messageEl.classList.add('error');
@@ -6365,6 +6373,10 @@ async function loadInvestmentFormOptions() {
     valueKey: 'name',
     labelFn: (item) => item.name,
     placeholder: 'Choose type…',
+  });
+  fillSelectOptions(document.getElementById('projectOperatorSelect'), investmentFormOptions.investors, {
+    labelFn: (item) => `${item.name} (${item.email})`,
+    placeholder: 'Choose investor / operator…',
   });
   fillSelectOptions(document.getElementById('projectManagerSelect'), investmentFormOptions.projectManagers, {
     labelFn: (item) => `${item.name} (${item.email})`,

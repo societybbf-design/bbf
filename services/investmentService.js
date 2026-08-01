@@ -939,30 +939,37 @@ async function createSocietyInvestment({
     });
   }
 
+  // Investor / Operator — registered investor who runs the project (society pool funds).
+  // Never confuse with externalInvestors (third-party co-funders / ownership stakes).
   let investorUser = null;
-  const primaryInvestorId = investorId
-    || resolvedExternalInvestors[0]?.investor
-    || null;
-  if (primaryInvestorId) {
-    // Project co-funding uses external_investor; legacy single-investor payload may still
-    // reference the same role when ownership is shared.
-    const allowedRoles = resolvedExternalInvestors.length
-      ? ['external_investor']
-      : ['investor', 'external_investor'];
+  if (investorId) {
     investorUser = await User.findOne({
-      _id: primaryInvestorId,
-      role: { $in: allowedRoles },
+      _id: investorId,
+      role: 'investor',
       status: { $ne: 'deleted' },
     });
+    if (!investorUser && fundingKind === 'capital_expansion') {
+      // Preserve legacy parent links that may incorrectly point at another role.
+      investorUser = await User.findOne({
+        _id: investorId,
+        status: { $ne: 'deleted' },
+      });
+    }
     if (!investorUser) {
       const error = new Error(
-        resolvedExternalInvestors.length
-          ? 'Selected external investor was not found. Create them under User Management → External Investors.'
-          : 'Selected investor was not found. Create the investor from User Management first.'
+        'Selected Investor / Operator was not found. '
+        + 'Assign a registered Investor from User Management (Investors), '
+        + 'not an External Investor co-funder.'
       );
       error.status = 404;
       throw error;
     }
+  } else if (fundingKind !== 'capital_expansion') {
+    const error = new Error(
+      'Assign an Investor / Operator who will run this project with society pool funds.'
+    );
+    error.status = 400;
+    throw error;
   }
 
   let projectManagerUser = null;
@@ -991,43 +998,33 @@ async function createSocietyInvestment({
     externalInvestors: resolvedExternalInvestors.length ? resolvedExternalInvestors : null,
   });
 
-  // Legacy single-investor path: synthesize one stake when only aggregate % was provided.
+  // Operator (investorId) never becomes an ownership stake. Co-funding must use externalInvestors[].
   if (!ownership.externalInvestors.length && ownership.investorOwnershipPct > 0) {
-    if (!investorUser && !investorName?.trim() && !partner?.trim()) {
-      const error = new Error('An external investor is required when investor ownership is greater than 0%.');
-      error.status = 400;
-      throw error;
-    }
-    ownership.externalInvestors = [{
-      investor: investorUser?._id || null,
-      investorName: investorUser?.name || investorName?.trim() || partner?.trim() || '',
-      ownershipPct: ownership.investorOwnershipPct,
-      amount: ownership.externalAmount,
-      capitalReceived: 0,
-      capitalReceivedAt: null,
-      profitBalance: 0,
-    }];
+    const error = new Error(
+      'When external ownership is greater than 0%, add registered External Investor co-funders. '
+      + 'The Investor / Operator assignment is separate and does not supply ownership capital.'
+    );
+    error.status = 400;
+    throw error;
   }
 
   const externalNames = ownership.externalInvestors
     .map((row) => row.investorName)
     .filter(Boolean);
   const normalizedType = investmentType?.trim() || 'Fixed Investment';
-  const normalizedName = ownership.investorOwnershipPct <= 0
-    ? (investorName?.trim() || partner?.trim() || 'Society')
-    : (externalNames.join(', ')
-      || investorUser?.name
-      || investorName?.trim()
-      || partner?.trim()
-      || 'Investor');
+  const operatorName = investorUser?.name || investorName?.trim() || partner?.trim() || '';
+  const normalizedName = operatorName
+    || (ownership.investorOwnershipPct > 0
+      ? (externalNames.join(', ') || 'Investor')
+      : 'Society');
   const normalizedLocation = location?.trim()
     || investorUser?.address?.trim()
     || 'Not specified';
   const normalizedSector = sector?.trim() || normalizedType || normalizedLocation || 'General';
-  const normalizedPartner = partner?.trim() || normalizedName || 'Society';
+  const normalizedPartner = partner?.trim() || operatorName || normalizedName || 'Society';
 
   if (!normalizedName) {
-    const error = new Error('Select an investor or provide an investor name.');
+    const error = new Error('Assign an Investor / Operator or provide an investor name.');
     error.status = 400;
     throw error;
   }
@@ -1073,11 +1070,11 @@ async function createSocietyInvestment({
     : 'initial';
   const parentId = parentInvestment || null;
 
-  const primaryExternal = ownership.externalInvestors[0] || null;
   const investment = await Investment.create({
     investmentCode,
     investmentType: normalizedType,
-    investor: primaryExternal?.investor || investorUser?._id || null,
+    // Operator link stays on investor; external co-funders live only in externalInvestors[].
+    investor: investorUser?._id || null,
     projectManager: projectManagerUser?._id || null,
     investorName: normalizedName,
     dateOfBirth: parsedDateOfBirth && !Number.isNaN(parsedDateOfBirth.getTime()) ? parsedDateOfBirth : null,
