@@ -164,6 +164,16 @@ const CASHIER_EXCLUSIVE_PERMISSIONS = Object.freeze([
   'can_disburse_withdrawals',
 ]);
 
+/**
+ * Extra finance controls Project Managers must never receive via UM grants.
+ * (Cashier-exclusive keys are stripped separately for all non-cashier roles.)
+ */
+const PROJECT_MANAGER_BLOCKED_PERMISSIONS = Object.freeze([
+  'can_manage_profit',
+  'can_manage_withdrawals',
+  'can_manage_refunds',
+]);
+
 /** User Management–only permissions (developer role or explicit grant — not CEO full-access bypass). */
 const UM_EXCLUSIVE_PERMISSIONS = Object.freeze(['can_manage_security', 'can_proxy_member_approvals']);
 
@@ -331,6 +341,10 @@ function publicUserPayload(userDoc) {
   if (normalizeRole(role) !== 'cashier') {
     permissions = permissions.filter((key) => !isCashierExclusivePermission(key));
   }
+  // Project Manager sessions never carry payout / deposit-adjacent finance controls.
+  if (normalizeRole(role) === 'project_manager') {
+    permissions = permissions.filter((key) => !PROJECT_MANAGER_BLOCKED_PERMISSIONS.includes(key));
+  }
   // UM-exclusive perms only when explicitly granted (developer role handled above).
   if (!isDeveloperRole(role)) {
     const explicit = new Set(sanitizePermissions(userDoc.permissions || []));
@@ -357,6 +371,7 @@ module.exports = {
   PERMISSIONS,
   PERMISSION_KEYS,
   CASHIER_EXCLUSIVE_PERMISSIONS,
+  PROJECT_MANAGER_BLOCKED_PERMISSIONS,
   UM_EXCLUSIVE_PERMISSIONS,
   DEFAULT_PERMISSIONS_BY_ROLE,
   DASHBOARD_PATHS,

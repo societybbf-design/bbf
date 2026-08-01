@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 const User = require('../models/User');
-const { PERMISSION_KEYS, getDefaultPermissions, CASHIER_EXCLUSIVE_PERMISSIONS } = require('./rbac');
+const {
+  PERMISSION_KEYS,
+  getDefaultPermissions,
+  CASHIER_EXCLUSIVE_PERMISSIONS,
+  PROJECT_MANAGER_BLOCKED_PERMISSIONS,
+} = require('./rbac');
 
 function randomTempPassword() {
   return `Tmp-${crypto.randomBytes(9).toString('base64url')}`;
