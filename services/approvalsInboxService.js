@@ -432,20 +432,25 @@ async function collectStaffItems(user) {
       const { listPendingCeoProjectOps } = require('./projectOpsService');
       const ops = await listPendingCeoProjectOps();
       for (const exp of ops.expenses || []) {
+        const awaitingCeoPay = exp.status === 'external_approved';
         items.push(item({
           id: `project_expense:${exp._id}`,
-          type: 'project_expense_review',
-          title: `Project expense — ${exp.investmentCode || 'Project'}`,
-          subtitle: exp.description || 'Operational expense',
-          amount: exp.amount,
+          type: awaitingCeoPay ? 'project_expense_disburse' : 'project_expense_review',
+          title: awaitingCeoPay
+            ? `Disburse external expense — ${exp.investmentCode || 'Project'}`
+            : `Project expense — ${exp.investmentCode || 'Project'}`,
+          subtitle: awaitingCeoPay
+            ? `${exp.description || 'Operational expense'} · External Investor approved — pay from external ledger`
+            : exp.description || 'Operational expense',
+          amount: awaitingCeoPay ? exp.externalShare : exp.amount,
           status: exp.status,
-          priority: 'normal',
+          priority: awaitingCeoPay ? 'high' : 'normal',
           createdAt: exp.submittedAt || exp.createdAt,
           entityId: exp._id,
           actions: [
             {
               key: 'approve',
-              label: 'Approve (external sub-ledger)',
+              label: awaitingCeoPay ? 'Pay from external ledger' : 'Approve',
               method: 'POST',
               path: `/api/admin/investments/expenses/${exp._id}/ceo-review`,
               body: { approve: true },

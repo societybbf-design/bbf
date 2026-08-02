@@ -4340,24 +4340,45 @@ function renderExternalPortal(data) {
 
   const payoutsEl = document.getElementById('externalPortalPayouts');
   const pending = (data.payoutRequests || []).filter((r) => r.status === 'pending_external_approval');
+  const pendingExpenses = data.expenseApprovals || [];
   if (payoutsEl) {
-    payoutsEl.innerHTML = pending.length
-      ? pending.map((r) => `
+    const cards = [
+      ...pendingExpenses.map((r) => `
         <article class="panel-card u-mb-1">
-          <h4>${escapeHtml(r.investmentCode || 'Project')} · ${money(r.amount)}</h4>
+          <h4>Expense · ${escapeHtml(r.investmentCode || 'Project')} · your share ${money(r.yourShare)}</h4>
+          <p class="table-subtitle">${escapeHtml(r.description || 'Project expense')} · total ${money(r.amount)} · external ${money(r.externalShare)}</p>
+          <div class="inline-actions" style="gap:0.5rem;">
+            <button type="button" class="primary-btn" data-external-expense-approve="${escapeHtml(String(r.id))}">Approve expense</button>
+            <button type="button" class="secondary-btn" data-external-expense-reject="${escapeHtml(String(r.id))}">Reject</button>
+          </div>
+        </article>
+      `),
+      ...pending.map((r) => `
+        <article class="panel-card u-mb-1">
+          <h4>Payout · ${escapeHtml(r.investmentCode || 'Project')} · ${money(r.amount)}</h4>
           <p class="table-subtitle">${escapeHtml(r.kind || 'settlement')} · capital ${money(r.capitalAmount)} · profit ${money(r.profitAmount)}${Number(r.externalExtraExpenses || 0) > 0 ? ` · expense −${money(r.externalExtraExpenses)}` : ''}</p>
+          <p class="table-subtitle">After you approve, the CEO executes final payment from your ledger.</p>
           <div class="inline-actions" style="gap:0.5rem;">
             <button type="button" class="primary-btn" data-external-payout-approve="${escapeHtml(String(r.id))}">Approve payout</button>
             <button type="button" class="secondary-btn" data-external-payout-reject="${escapeHtml(String(r.id))}">Reject</button>
           </div>
         </article>
-      `).join('')
-      : '<p class="text-secondary">No payouts awaiting your approval.</p>';
+      `),
+    ];
+    payoutsEl.innerHTML = cards.length
+      ? cards.join('')
+      : '<p class="text-secondary">No payouts or expenses awaiting your approval.</p>';
     payoutsEl.querySelectorAll('[data-external-payout-approve]').forEach((btn) => {
       btn.addEventListener('click', () => void decideExternalPayout(btn.dataset.externalPayoutApprove, true));
     });
     payoutsEl.querySelectorAll('[data-external-payout-reject]').forEach((btn) => {
       btn.addEventListener('click', () => void decideExternalPayout(btn.dataset.externalPayoutReject, false));
+    });
+    payoutsEl.querySelectorAll('[data-external-expense-approve]').forEach((btn) => {
+      btn.addEventListener('click', () => void decideExternalExpense(btn.dataset.externalExpenseApprove, true));
+    });
+    payoutsEl.querySelectorAll('[data-external-expense-reject]').forEach((btn) => {
+      btn.addEventListener('click', () => void decideExternalExpense(btn.dataset.externalExpenseReject, false));
     });
   }
 
@@ -4406,6 +4427,23 @@ async function decideExternalPayout(requestId, approve) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to update payout.');
+    window.alert(data.message || (approve ? 'Approved — awaiting CEO payment.' : 'Rejected.'));
+    await loadExternalInvestorPortal();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function decideExternalExpense(expenseId, approve) {
+  try {
+    const response = await fetch(`/api/external-investor/expenses/${expenseId}/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approve }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to update expense.');
+    window.alert(data.message || (approve ? 'Approved — awaiting CEO disbursement.' : 'Rejected.'));
     await loadExternalInvestorPortal();
   } catch (error) {
     window.alert(error.message);

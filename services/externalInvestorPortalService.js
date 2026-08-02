@@ -84,7 +84,8 @@ async function getExternalInvestorDashboard(actor) {
   });
 
   const investmentIds = investments.map((row) => row._id);
-  const [ledgers, deposits, payoutRequests, reviews] = await Promise.all([
+  const { listExternalInvestorExpenseApprovals } = require('./projectOpsService');
+  const [ledgers, deposits, payoutRequests, reviews, expenseApprovals] = await Promise.all([
     ExternalInvestorLedger.find({ investment: { $in: investmentIds } }).lean(),
     // Isolated to this investor's projects only; include project-level posts (null investor).
     ExternalInvestorLedgerEntry.find({
@@ -115,6 +116,7 @@ async function getExternalInvestorDashboard(actor) {
       .sort({ createdAt: -1 })
       .limit(50)
       .lean(),
+    listExternalInvestorExpenseApprovals(investorId),
   ]);
 
   const ledgerByInvestment = new Map(ledgers.map((row) => [String(row.investment), row]));
@@ -123,7 +125,8 @@ async function getExternalInvestorDashboard(actor) {
     capitalCommitted: money(projects.reduce((s, p) => s + Number(p.capitalCommitted || 0), 0)),
     capitalReceived: money(projects.reduce((s, p) => s + Number(p.capitalReceived || 0), 0)),
     profitBalance: money(projects.reduce((s, p) => s + Number(p.profitBalance || 0), 0)),
-    pendingApprovals: payoutRequests.filter((r) => r.status === 'pending_external_approval').length,
+    pendingApprovals: payoutRequests.filter((r) => r.status === 'pending_external_approval').length
+      + (expenseApprovals || []).length,
   };
 
   return {
@@ -167,6 +170,22 @@ async function getExternalInvestorDashboard(actor) {
       feedback: row.feedback,
       createdAt: row.createdAt,
     })),
+    expenseApprovals: (expenseApprovals || []).map((row) => {
+      const mine = (row.externalApprovals || []).find(
+        (a) => String(a.investor) === String(investorId)
+      );
+      return {
+        id: row._id,
+        investmentCode: row.investmentCode,
+        description: row.description,
+        amount: money(row.amount),
+        externalShare: money(row.externalShare),
+        yourShare: money(mine?.shareAmount || 0),
+        status: row.status,
+        submittedAt: row.submittedAt,
+        createdAt: row.createdAt,
+      };
+    }),
   };
 }
 
@@ -181,13 +200,48 @@ async function decideExternalPayoutRequest(actor, requestId, { approve = true, n
     throw httpError(`Request is already ${request.status}.`, 409);
   }
 
+  request.decidedAt = new Date();
+  request.decidedBy = String(actor.name || actor.email || investorId);
+  request.decisionNote = String(note || '').trim();
+
   if (!approve) {
     request.status = 'rejected';
-    request.decidedAt = new Date();
-    request.decidedBy = String(actor.name || actor.email || investorId);
-    request.decisionNote = String(note || '').trim();
     await request.save();
     return { request, message: 'Payout request rejected.' };
+  }
+
+  // External Investor approval only — CEO executes final ledger disbursement.
+  request.status = 'approved';
+  await request.save();
+
+  const { createAdminNotification } = require('./adminNotificationService');
+  await createAdminNotification({
+    type: 'general',
+    title: `External payout approved — CEO payment needed: ${request.investmentCode}`,
+    message: `${request.investorName || 'External Investor'} approved ${money(request.amount)}. `
+      + 'Execute final disbursement from their external ledger.',
+    relatedId: request._id,
+    relatedModel: 'ExternalPayoutRequest',
+    targetRoles: ['ceo'],
+  }).catch(() => {});
+
+  return {
+    request,
+    message: `Payout of ${money(request.amount)} approved. Awaiting CEO final disbursement from your external ledger.`,
+  };
+}
+
+/**
+ * CEO executes an External Investor–approved payout / settlement from the project external ledger.
+ */
+async function ceoExecuteExternalPayout(requestId, { executedBy = 'CEO', note = '' } = {}) {
+  const request = await ExternalPayoutRequest.findById(requestId);
+  if (!request) throw httpError('Payout request not found.', 404);
+  if (request.status !== 'approved') {
+    throw httpError(
+      `Only External Investor–approved requests can be paid by CEO (status: ${request.status}).`,
+      409
+    );
   }
 
   const investment = await Investment.findById(request.investment);
@@ -201,8 +255,8 @@ async function decideExternalPayoutRequest(actor, requestId, { approve = true, n
     const out = await debitExternalCapitalOut(investment, capitalAmount, {
       investor: request.investor,
       investorName: request.investorName,
-      note: request.note || `External capital return ${request.investmentCode}`,
-      createdBy: `External Investor ${actor.name || ''}`.trim(),
+      note: note || request.note || `CEO capital return ${request.investmentCode}`,
+      createdBy: executedBy,
       referenceType: 'ExternalPayoutRequest',
       referenceId: request._id,
     });
@@ -212,8 +266,8 @@ async function decideExternalPayoutRequest(actor, requestId, { approve = true, n
     const out = await debitExternalProfitPayout(investment, profitAmount, {
       investor: request.investor,
       investorName: request.investorName,
-      note: request.note || `External profit payout ${request.investmentCode}`,
-      createdBy: `External Investor ${actor.name || ''}`.trim(),
+      note: note || request.note || `CEO profit payout ${request.investmentCode}`,
+      createdBy: executedBy,
       referenceType: 'ExternalPayoutRequest',
       referenceId: request._id,
       payoutStatus: 'paid',
@@ -222,15 +276,15 @@ async function decideExternalPayoutRequest(actor, requestId, { approve = true, n
   }
 
   request.status = 'paid';
-  request.decidedAt = new Date();
-  request.decidedBy = String(actor.name || actor.email || investorId);
-  request.decisionNote = String(note || '').trim();
-  request.ledgerEntryIds = ledgerEntryIds;
+  request.executedAt = new Date();
+  request.executedBy = String(executedBy || 'CEO').trim();
+  if (note) request.decisionNote = [request.decisionNote, note].filter(Boolean).join(' | ');
+  request.ledgerEntryIds = [...(request.ledgerEntryIds || []), ...ledgerEntryIds];
   await request.save();
 
   return {
     request,
-    message: `Payout of ${money(request.amount)} approved and recorded on your external ledger.`,
+    message: `Paid ${money(request.amount)} from external ledger for ${request.investmentCode}.`,
   };
 }
 
@@ -379,6 +433,7 @@ module.exports = {
   money,
   getExternalInvestorDashboard,
   decideExternalPayoutRequest,
+  ceoExecuteExternalPayout,
   submitProjectManagerReview,
   getExternalInvestorChatPeers,
   queueExternalSettlementPayouts,

@@ -2379,9 +2379,10 @@ async function getExternalInvestorPortfolio(investorId) {
   const ExternalInvestorLedger = require('../models/ExternalInvestorLedger');
   const ExternalInvestorLedgerEntry = require('../models/ExternalInvestorLedgerEntry');
   const ExternalPayoutRequest = require('../models/ExternalPayoutRequest');
+  const ProjectExpense = require('../models/ProjectExpense');
 
   const investmentIds = investments.map((row) => row._id);
-  const [ledgers, ledgerEntries, payoutRequests] = await Promise.all([
+  const [ledgers, ledgerEntries, payoutRequests, pendingExpenses] = await Promise.all([
     ExternalInvestorLedger.find({ investment: { $in: investmentIds } }).lean(),
     ExternalInvestorLedgerEntry.find({
       investment: { $in: investmentIds },
@@ -2397,6 +2398,14 @@ async function getExternalInvestorPortfolio(investorId) {
     ExternalPayoutRequest.find({ investor: investor._id })
       .sort({ createdAt: -1 })
       .limit(50)
+      .lean(),
+    ProjectExpense.find({
+      investment: { $in: investmentIds },
+      status: { $in: ['pending_external_approval', 'external_approved'] },
+      'externalApprovals.investor': investor._id,
+    })
+      .sort({ submittedAt: -1 })
+      .limit(30)
       .lean(),
   ]);
 
@@ -2424,6 +2433,7 @@ async function getExternalInvestorPortfolio(investorId) {
       ownershipPct: money2(stake?.ownershipPct || 0),
       capitalCommitted: money2(stake?.amount || 0),
       capitalReceived: money2(stake?.capitalReceived || 0),
+      capitalRemaining: money2(Math.max(0, Number(stake?.amount || 0) - Number(stake?.capitalReceived || 0))),
       profitBalance: money2(stake?.profitBalance || 0),
       ledgerBalance: money2(ledger?.bookBalance || 0),
       projectManager: inv.projectManager
@@ -2455,6 +2465,8 @@ async function getExternalInvestorPortfolio(investorId) {
       profitBalance: money2(projects.reduce((sum, row) => sum + row.profitBalance, 0)),
       ledgerBalance: money2(projects.reduce((sum, row) => sum + row.ledgerBalance, 0)),
       pendingPayouts: payoutRequests.filter((row) => row.status === 'pending_external_approval').length,
+      awaitingCeoPayment: payoutRequests.filter((row) => row.status === 'approved').length
+        + pendingExpenses.filter((row) => row.status === 'external_approved').length,
       depositCount: deposits.length,
     },
     projects,
@@ -2504,6 +2516,17 @@ async function getExternalInvestorPortfolio(investorId) {
       note: row.note || '',
       createdAt: row.createdAt,
       decidedAt: row.decidedAt,
+    })),
+    expenseRequests: pendingExpenses.map((row) => ({
+      id: row._id,
+      investmentCode: row.investmentCode,
+      description: row.description,
+      amount: money2(row.amount),
+      externalShare: money2(row.externalShare),
+      societyShare: money2(row.societyShare),
+      status: row.status,
+      submittedAt: row.submittedAt,
+      createdAt: row.createdAt,
     })),
   };
 }

@@ -46,11 +46,15 @@ const {
 } = require('../services/investmentTypeService');
 const {
   recordExternalInvestment,
+  recordCeoExternalInvestorDeposit,
   recordMonthlyProjectReturn,
   liquidateProject,
   listExternalCapitalQueue,
   listActiveMonthlyProjects,
 } = require('../services/projectFinanceService');
+const {
+  ceoExecuteExternalPayout,
+} = require('../services/externalInvestorPortalService');
 const { generateInvestmentReceiptPdf, generatePayoutVoucherPdf } = require('../services/notificationService');
 const { saveUploadedFiles } = require('../middleware/upload');
 
@@ -127,6 +131,49 @@ router.get('/external-investors/:investorId/portfolio', requirePermission('can_m
     });
   }
 });
+
+/** CEO records physical cash deposit for a specific External Investor stake. */
+router.post(
+  '/external-investors/:investorId/deposits',
+  requireCeo,
+  requirePasswordConfirmation,
+  async (req, res) => {
+    try {
+      const result = await recordCeoExternalInvestorDeposit({
+        investorId: req.params.investorId,
+        investmentId: req.body?.investmentId || req.body?.projectId,
+        amount: req.body?.amount,
+        note: req.body?.note || '',
+        recordedBy: req.session?.user?.name || 'CEO',
+      });
+      return res.status(201).json(result);
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        error: error.message || 'Unable to record external investor deposit.',
+      });
+    }
+  }
+);
+
+/** CEO executes External Investor–approved payout from that investor’s ledger. */
+router.post(
+  '/external-payouts/:requestId/execute',
+  requireCeo,
+  requirePasswordConfirmation,
+  async (req, res) => {
+    try {
+      const result = await ceoExecuteExternalPayout(req.params.requestId, {
+        executedBy: req.session?.user?.name || 'CEO',
+        note: req.body?.note || '',
+      });
+      return res.json(result);
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        error: error.message || 'Unable to execute external payout.',
+      });
+    }
+  }
+);
 
 router.get('/project-managers', requirePermission('can_manage_investments'), async (req, res) => {
   try {

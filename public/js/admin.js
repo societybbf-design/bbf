@@ -1832,6 +1832,13 @@ async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) 
     const returns = data.returns || [];
     const ledgerEntries = data.ledgerEntries || [];
     const payoutRequests = data.payoutRequests || [];
+    const expenseRequests = data.expenseRequests || [];
+    const depositableProjects = projects.filter((p) => (
+      ['active', 'pending_cashier_payment', 'pending_member_approval'].includes(p.status)
+      && Number(p.capitalRemaining || 0) > 0.001
+    ));
+    const approvedPayouts = payoutRequests.filter((r) => r.status === 'approved');
+    const approvedExpenses = expenseRequests.filter((r) => r.status === 'external_approved');
 
     content.innerHTML = `
       <h2 style="margin:0 0 0.35rem;">${escapeCeoHtml(investor.name || 'External Investor')} · External Management</h2>
@@ -1841,9 +1848,67 @@ async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) 
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${formatMoney(Number(summary.capitalReceived || 0), 2)}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit balance</span><strong class="metric-value">${formatMoney(Number(summary.profitBalance || 0), 2)}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Ledger balance</span><strong class="metric-value">${formatMoney(Number(summary.ledgerBalance || 0), 2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending payouts</span><strong class="metric-value">${summary.pendingPayouts || 0}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Deposits recorded</span><strong class="metric-value">${summary.depositCount || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending investor approval</span><strong class="metric-value">${summary.pendingPayouts || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting CEO payment</span><strong class="metric-value">${summary.awaitingCeoPayment || 0}</strong></div></div>
       </div>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">Record cash deposit</h3>
+        <p class="table-subtitle">External investors pay cash physically. Record the deposit here to credit their project capital / ledger balance.</p>
+        <form id="ceoExternalDepositForm" class="add-member-form" data-investor-id="${escapeCeoHtml(String(investor._id || investorId))}">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>
+                Project stake
+                <select name="investmentId" id="ceoExternalDepositProject" required>
+                  <option value="">Choose project…</option>
+                  ${depositableProjects.map((p) => {
+                    const asset = [p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · ');
+                    return `<option value="${escapeCeoHtml(String(p.id))}" data-remaining="${Number(p.capitalRemaining || 0)}">
+                      ${escapeCeoHtml(p.investmentCode || p.id)} · remaining ${formatMoney(Number(p.capitalRemaining || 0), 2)}${asset ? ` · ${escapeCeoHtml(asset)}` : ''}
+                    </option>`;
+                  }).join('')}
+                </select>
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                Cash amount (৳)
+                <input type="number" name="amount" id="ceoExternalDepositAmount" min="0.01" step="0.01" required placeholder="0.00" />
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>
+              Note (optional)
+              <input type="text" name="note" id="ceoExternalDepositNote" maxlength="240" placeholder="e.g. Cash received at office" />
+            </label>
+          </div>
+          <button type="submit" class="primary-btn" ${depositableProjects.length ? '' : 'disabled'}>Record cash deposit</button>
+          <p id="ceoExternalDepositMessage" class="message"></p>
+          ${depositableProjects.length ? '' : '<p class="table-subtitle">No open stakes with remaining committed capital.</p>'}
+        </form>
+      </section>
+
+      <section class="panel-card" style="margin-top:0.85rem;">
+        <h3 style="margin:0 0 0.35rem;">CEO payment queue</h3>
+        <p class="table-subtitle">Items already approved by this External Investor — execute final disbursement from their ledger.</p>
+        <div class="stack-list" id="ceoExternalPaymentQueue">
+          ${[...approvedPayouts.map((r) => `
+            <article class="panel-card u-mb-1">
+              <h4>Payout · ${escapeCeoHtml(r.investmentCode || 'Project')} · ${formatMoney(Number(r.amount || 0), 2)}</h4>
+              <p class="table-subtitle">${escapeCeoHtml(r.kind || r.source || 'settlement')} · capital ${formatMoney(Number(r.capitalAmount || 0), 2)} · profit ${formatMoney(Number(r.profitAmount || 0), 2)}</p>
+              <button type="button" class="primary-btn" data-execute-external-payout="${escapeCeoHtml(String(r.id))}">Pay from external ledger</button>
+            </article>
+          `), ...approvedExpenses.map((r) => `
+            <article class="panel-card u-mb-1">
+              <h4>Expense · ${escapeCeoHtml(r.investmentCode || 'Project')} · ${formatMoney(Number(r.externalShare || 0), 2)}</h4>
+              <p class="table-subtitle">${escapeCeoHtml(r.description || 'Expense')} · External Investor approved</p>
+              <button type="button" class="primary-btn" data-execute-external-expense="${escapeCeoHtml(String(r.id))}">Pay expense from external ledger</button>
+            </article>
+          `)].join('') || '<p class="text-secondary">No items awaiting CEO payment.</p>'}
+        </div>
+      </section>
 
       <section class="panel-card" style="margin-top:0.85rem;">
         <h3 style="margin:0 0 0.35rem;">Project ownership shares</h3>
@@ -1994,9 +2059,92 @@ async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) 
         </div>
       </section>
     `;
+
+    bindExternalInvestorDetailActions(investorId);
   } catch (error) {
     content.innerHTML = `<p class="message error">${escapeCeoHtml(error.message)}</p>`;
   }
+}
+
+function bindExternalInvestorDetailActions(investorId) {
+  const depositForm = document.getElementById('ceoExternalDepositForm');
+  depositForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('ceoExternalDepositMessage');
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+    const formData = new FormData(depositForm);
+    const investmentId = formData.get('investmentId');
+    const amount = Number(formData.get('amount') || 0);
+    if (!investmentId || !(amount > 0)) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = 'Choose a project and enter a deposit amount.';
+      }
+      return;
+    }
+    try {
+      const response = await fetch(`/api/admin/investments/external-investors/${investorId}/deposits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          investmentId,
+          amount,
+          note: formData.get('note') || '',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to record deposit.');
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Deposit recorded.';
+      }
+      await openExternalInvestorDetail(investorId, { pushUrl: false });
+    } catch (error) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    }
+  });
+
+  document.querySelectorAll('[data-execute-external-payout]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const response = await fetch(`/api/admin/investments/external-payouts/${btn.dataset.executeExternalPayout}/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to execute payout.');
+        window.alert(data.message || 'Payout executed.');
+        await openExternalInvestorDetail(investorId, { pushUrl: false });
+      } catch (error) {
+        window.alert(error.message);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-execute-external-expense]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const response = await fetch(`/api/admin/investments/expenses/${btn.dataset.executeExternalExpense}/ceo-review`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approve: true }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to disburse expense.');
+        window.alert(data.message || 'Expense disbursed.');
+        await openExternalInvestorDetail(investorId, { pushUrl: false });
+      } catch (error) {
+        window.alert(error.message);
+      }
+    });
+  });
 }
 
 async function openInvestorDetail(investorId, { pushUrl = false } = {}) {

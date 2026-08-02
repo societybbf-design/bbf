@@ -180,6 +180,79 @@ async function buildPmActivityFeed(managerId) {
   return items.slice(0, 60);
 }
 
+function buildExternalApprovals(investment, externalShare) {
+  const stakes = (investment.externalInvestors || []).filter((row) => Number(row.ownershipPct) > 0 && row.investor);
+  if (!stakes.length || !(externalShare > 0)) return [];
+  const totalPct = stakes.reduce((sum, row) => sum + Number(row.ownershipPct || 0), 0) || 1;
+  let allocated = 0;
+  return stakes.map((stake, index) => {
+    const isLast = index === stakes.length - 1;
+    const shareAmount = isLast
+      ? money(externalShare - allocated)
+      : money((externalShare * Number(stake.ownershipPct || 0)) / totalPct);
+    if (!isLast) allocated = money(allocated + shareAmount);
+    return {
+      investor: stake.investor?._id || stake.investor,
+      investorName: stake.investorName || stake.investor?.name || '',
+      shareAmount,
+      status: 'pending',
+      decidedAt: null,
+      decidedBy: '',
+      decisionNote: '',
+    };
+  }).filter((row) => row.shareAmount > 0.001 && row.investor);
+}
+
+async function notifyExternalApprovers(expense) {
+  for (const row of expense.externalApprovals || []) {
+    if (!row.investor || row.status !== 'pending') continue;
+    await createAdminNotification({
+      type: 'general',
+      title: `Expense approval needed: ${expense.investmentCode}`,
+      message: `${expense.description} — your share ${money(row.shareAmount).toFixed(2)} requires approval before CEO disbursement.`,
+      relatedId: expense._id,
+      relatedModel: 'ProjectExpense',
+      targetUser: row.investor,
+    }).catch(() => {});
+  }
+}
+
+async function routeExpenseAfterSubmit(expense, investment) {
+  const externalShare = money(expense.externalShare);
+  if (externalShare > 0.001) {
+    expense.externalApprovals = buildExternalApprovals(investment, externalShare);
+    if (expense.externalApprovals.length) {
+      expense.status = 'pending_external_approval';
+      await expense.save();
+      await notifyExternalApprovers(expense);
+      await createAdminNotification({
+        type: 'general',
+        title: `Expense awaiting external approval: ${investment.investmentCode}`,
+        message: `${expense.description} — external share ${externalShare.toFixed(2)} routed to External Investor(s) first.`,
+        relatedId: expense._id,
+        relatedModel: 'ProjectExpense',
+        targetRoles: ['ceo'],
+      }).catch(() => {});
+      return {
+        expense,
+        message: 'Expense submitted. External Investor approval is required before CEO can disburse from the external ledger.',
+      };
+    }
+  }
+
+  expense.status = 'submitted';
+  await expense.save();
+  await createAdminNotification({
+    type: 'general',
+    title: `Project expense submitted: ${investment.investmentCode}`,
+    message: `${expense.description} — ${money(expense.amount).toFixed(2)} awaiting CEO review.`,
+    relatedId: expense._id,
+    relatedModel: 'ProjectExpense',
+    targetRoles: ['ceo'],
+  });
+  return { expense, message: 'Expense submitted for CEO review.' };
+}
+
 async function createProjectExpense({
   investmentId,
   user,
@@ -214,48 +287,96 @@ async function createProjectExpense({
     yearMonth: yearMonthFromDate(when),
     category: String(category || 'operational').trim() || 'operational',
     attachments,
-    status: submit ? 'submitted' : 'draft',
-    submittedAt: submit ? new Date() : null,
-    submittedBy: submit ? (user.name || 'Project Manager') : '',
+    status: 'draft',
     societyShare: split.societyShare,
     externalShare: split.investorShare,
     createdBy: user.name || 'Project Manager',
   });
 
-  if (submit) {
-    await createAdminNotification({
-      type: 'general',
-      title: `Project expense submitted: ${investment.investmentCode}`,
-      message: `${desc} — ${value.toFixed(2)} awaiting CEO review.`,
-      relatedId: expense._id,
-      relatedModel: 'ProjectExpense',
-      targetRoles: ['ceo'],
-    });
+  if (!submit) {
+    return { expense, message: 'Expense saved as draft.' };
   }
 
-  return { expense, message: submit ? 'Expense submitted for CEO review.' : 'Expense saved as draft.' };
+  expense.submittedAt = new Date();
+  expense.submittedBy = user.name || 'Project Manager';
+  return routeExpenseAfterSubmit(expense, investment);
 }
 
 async function submitProjectExpense(expenseId, user) {
   const expense = await ProjectExpense.findById(expenseId);
   if (!expense) throw httpError('Expense not found.', 404);
-  await assertPmOwnsProject(expense.investment, user);
-  if (!['draft', 'ceo_rejected'].includes(expense.status)) {
+  const investment = await assertPmOwnsProject(expense.investment, user);
+  if (!['draft', 'ceo_rejected', 'external_rejected'].includes(expense.status)) {
     throw httpError('Only draft or rejected expenses can be submitted.');
   }
-  expense.status = 'submitted';
+  const stakeholders = resolveProjectStakeholders(investment);
+  const split = splitByStakeholders(expense.amount, stakeholders);
+  expense.societyShare = split.societyShare;
+  expense.externalShare = split.investorShare;
   expense.submittedAt = new Date();
   expense.submittedBy = user.name || 'Project Manager';
+  return routeExpenseAfterSubmit(expense, investment);
+}
+
+async function decideExternalExpenseApproval(actor, expenseId, { approve = true, note = '' } = {}) {
+  if (String(actor?.role || '').toLowerCase() !== 'external_investor') {
+    throw httpError('External Investor access only.', 403);
+  }
+  const investorId = String(actor.id || actor._id || '');
+  const expense = await ProjectExpense.findById(expenseId);
+  if (!expense) throw httpError('Expense not found.', 404);
+  if (expense.status !== 'pending_external_approval') {
+    throw httpError(`Expense is not awaiting external approval (status: ${expense.status}).`, 409);
+  }
+
+  const approval = (expense.externalApprovals || []).find((row) => String(row.investor) === investorId);
+  if (!approval) throw httpError('This expense does not require your approval.', 403);
+  if (approval.status !== 'pending') {
+    throw httpError(`You already ${approval.status} this expense.`, 409);
+  }
+
+  approval.status = approve ? 'approved' : 'rejected';
+  approval.decidedAt = new Date();
+  approval.decidedBy = String(actor.name || actor.email || investorId);
+  approval.decisionNote = String(note || '').trim();
+
+  if (!approve) {
+    expense.status = 'external_rejected';
+    await expense.save();
+    await createAdminNotification({
+      type: 'general',
+      title: `External expense rejected: ${expense.investmentCode}`,
+      message: `${expense.description} was rejected by ${approval.investorName || 'External Investor'}.`,
+      relatedId: expense._id,
+      relatedModel: 'ProjectExpense',
+      targetRoles: ['ceo', 'project_manager'],
+    }).catch(() => {});
+    return { expense, message: 'Expense rejected.' };
+  }
+
+  const allApproved = (expense.externalApprovals || []).every((row) => row.status === 'approved');
+  if (allApproved) {
+    expense.status = 'external_approved';
+    await expense.save();
+    await createAdminNotification({
+      type: 'general',
+      title: `External expense approved — CEO payment needed: ${expense.investmentCode}`,
+      message: `${expense.description} — disburse external share ${money(expense.externalShare).toFixed(2)} from the external ledger.`,
+      relatedId: expense._id,
+      relatedModel: 'ProjectExpense',
+      targetRoles: ['ceo'],
+    }).catch(() => {});
+    return {
+      expense,
+      message: 'Approved. The request is now with the CEO for final disbursement from your external ledger.',
+    };
+  }
+
   await expense.save();
-  await createAdminNotification({
-    type: 'general',
-    title: `Project expense submitted: ${expense.investmentCode}`,
-    message: `${expense.description} — ${money(expense.amount).toFixed(2)} awaiting CEO review.`,
-    relatedId: expense._id,
-    relatedModel: 'ProjectExpense',
-    targetRoles: ['ceo'],
-  });
-  return { expense, message: 'Expense submitted for CEO review.' };
+  return {
+    expense,
+    message: 'Approved. Waiting for remaining External Investors before CEO disbursement.',
+  };
 }
 
 async function ceoReviewProjectExpense(expenseId, {
@@ -266,58 +387,112 @@ async function ceoReviewProjectExpense(expenseId, {
 } = {}) {
   const expense = await ProjectExpense.findById(expenseId);
   if (!expense) throw httpError('Expense not found.', 404);
-  if (expense.status !== 'submitted') {
-    throw httpError('Expense is not awaiting CEO review.');
-  }
 
-  const investment = await Investment.findById(expense.investment);
+  const investment = await Investment.findById(expense.investment)
+    .populate('externalInvestors.investor', 'name email role');
   if (!investment) throw httpError('Project not found.', 404);
 
   expense.ceoReviewedAt = new Date();
   expense.ceoReviewedBy = reviewedBy;
   expense.ceoNote = String(note || '').trim();
 
-  if (!approve) {
-    expense.status = 'ceo_rejected';
+  // Society-only / legacy path.
+  if (expense.status === 'submitted') {
+    if (!approve) {
+      expense.status = 'ceo_rejected';
+      await expense.save();
+      return { expense, message: 'Expense rejected by CEO.' };
+    }
+    if (money(expense.externalShare) > 0.001) {
+      expense.externalApprovals = buildExternalApprovals(investment, expense.externalShare);
+      if (expense.externalApprovals.length) {
+        expense.status = 'pending_external_approval';
+        await expense.save();
+        await notifyExternalApprovers(expense);
+        return {
+          expense,
+          message: 'External share present — routed to External Investor(s) for approval before disbursement.',
+        };
+      }
+    }
+    if (executeSocietyDebit && money(expense.societyShare) > 0) {
+      const { debit } = require('./bankLedgerService');
+      const bank = await debit({
+        type: 'operational_expense',
+        amount: expense.societyShare,
+        referenceType: 'ProjectExpense',
+        referenceId: expense._id,
+        note: `Society project expense ${expense.investmentCode}: ${expense.description}`,
+        createdBy: reviewedBy,
+      });
+      expense.societyLedgerEntryId = bank?.entry?._id || null;
+      expense.status = 'executed';
+    } else {
+      expense.status = 'ceo_approved';
+    }
     await expense.save();
-    return { expense, message: 'Expense rejected by CEO.' };
+    return {
+      expense,
+      message: executeSocietyDebit
+        ? 'Expense approved; society share posted to bank ledger.'
+        : 'Expense approved (society share only — no external ledger debit).',
+    };
   }
 
-  // External expense share — isolated sub-ledger only (never society bank).
-  if (money(expense.externalShare) > 0) {
-    const external = await debitExternalExpenseShare(investment, expense.externalShare, {
-      note: `External expense share: ${expense.description}`,
-      createdBy: reviewedBy,
-      referenceType: 'ProjectExpense',
-      referenceId: expense._id,
-    });
-    expense.externalLedgerEntryId = external.entry._id;
-  }
-
-  // Society share optional execution — only when CEO explicitly requests society debit.
-  if (executeSocietyDebit && money(expense.societyShare) > 0) {
-    const { debit } = require('./bankLedgerService');
-    const bank = await debit({
-      type: 'operational_expense',
-      amount: expense.societyShare,
-      referenceType: 'ProjectExpense',
-      referenceId: expense._id,
-      note: `Society project expense ${expense.investmentCode}: ${expense.description}`,
-      createdBy: reviewedBy,
-    });
-    expense.societyLedgerEntryId = bank?.entry?._id || null;
+  // After External Investor approval — CEO executes payment from external ledger.
+  if (expense.status === 'external_approved') {
+    if (!approve) {
+      expense.status = 'ceo_rejected';
+      await expense.save();
+      return { expense, message: 'Expense rejected by CEO after external approval.' };
+    }
+    if (money(expense.externalShare) > 0) {
+      const external = await debitExternalExpenseShare(investment, expense.externalShare, {
+        note: `External expense share (CEO disbursement): ${expense.description}`,
+        createdBy: reviewedBy,
+        referenceType: 'ProjectExpense',
+        referenceId: expense._id,
+      });
+      expense.externalLedgerEntryId = external.entry._id;
+    }
+    if (executeSocietyDebit && money(expense.societyShare) > 0) {
+      const { debit } = require('./bankLedgerService');
+      const bank = await debit({
+        type: 'operational_expense',
+        amount: expense.societyShare,
+        referenceType: 'ProjectExpense',
+        referenceId: expense._id,
+        note: `Society project expense ${expense.investmentCode}: ${expense.description}`,
+        createdBy: reviewedBy,
+      });
+      expense.societyLedgerEntryId = bank?.entry?._id || null;
+    }
     expense.status = 'executed';
-  } else {
-    expense.status = 'ceo_approved';
+    await expense.save();
+    return {
+      expense,
+      message: 'Disbursed from External Investor ledger'
+        + (executeSocietyDebit && money(expense.societyShare) > 0 ? ' and society bank for society share.' : '.'),
+    };
   }
 
-  await expense.save();
-  return {
-    expense,
-    message: executeSocietyDebit
-      ? 'Expense approved; society share posted to bank ledger. External share on sub-ledger only.'
-      : 'Expense approved. External share tracked on isolated sub-ledger (society bank untouched).',
-  };
+  throw httpError(
+    `Expense cannot be reviewed in status "${expense.status}". `
+    + 'Await External Investor approval when an external share is involved.',
+    409
+  );
+}
+
+async function listExternalInvestorExpenseApprovals(investorId) {
+  return ProjectExpense.find({
+    status: 'pending_external_approval',
+    externalApprovals: {
+      $elemMatch: { investor: investorId, status: 'pending' },
+    },
+  })
+    .sort({ submittedAt: -1 })
+    .limit(50)
+    .lean();
 }
 
 async function listProjectExpenses(investmentId, user) {
@@ -485,7 +660,9 @@ async function ceoReviewMonthlyReport(reportId, {
 
 async function listPendingCeoProjectOps() {
   const [expenses, reports] = await Promise.all([
-    ProjectExpense.find({ status: 'submitted' }).sort({ submittedAt: -1 }).limit(50).lean(),
+    ProjectExpense.find({
+      status: { $in: ['submitted', 'external_approved'] },
+    }).sort({ submittedAt: -1 }).limit(50).lean(),
     ProjectMonthlyReport.find({ status: 'pending_ceo' }).sort({ submittedAt: -1 }).limit(50).lean(),
   ]);
   return { expenses, reports };
@@ -499,8 +676,10 @@ module.exports = {
   buildPmActivityFeed,
   createProjectExpense,
   submitProjectExpense,
+  decideExternalExpenseApproval,
   ceoReviewProjectExpense,
   listProjectExpenses,
+  listExternalInvestorExpenseApprovals,
   createOrSubmitMonthlyReport,
   ceoReviewMonthlyReport,
   listPendingCeoProjectOps,

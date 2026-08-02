@@ -61,12 +61,41 @@ const ProjectExpenseSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'submitted', 'ceo_approved', 'ceo_rejected', 'executed'],
+    enum: [
+      'draft',
+      'submitted',
+      'pending_external_approval',
+      'external_approved',
+      'external_rejected',
+      'ceo_approved',
+      'ceo_rejected',
+      'executed',
+    ],
     default: 'draft',
     index: true,
   },
   submittedAt: { type: Date, default: null },
   submittedBy: { type: String, trim: true, default: '' },
+  /**
+   * Per-investor approvals for the external ownership share.
+   * Required before CEO can disburse from that investor's ledger.
+   */
+  externalApprovals: {
+    type: [{
+      investor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      investorName: { type: String, trim: true, default: '' },
+      shareAmount: { type: Number, default: 0, min: 0 },
+      status: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected'],
+        default: 'pending',
+      },
+      decidedAt: { type: Date, default: null },
+      decidedBy: { type: String, trim: true, default: '' },
+      decisionNote: { type: String, trim: true, default: '' },
+    }],
+    default: [],
+  },
   ceoReviewedAt: { type: Date, default: null },
   ceoReviewedBy: { type: String, trim: true, default: '' },
   ceoNote: { type: String, trim: true, default: '' },
