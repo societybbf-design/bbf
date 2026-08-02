@@ -2675,18 +2675,22 @@ async function updateInvestment(investmentId, updates = {}) {
 
 async function deleteInvestment(investmentId) {
   const investment = await getInvestmentById(investmentId);
-  let refund = null;
 
-  // Only refund society savings for investments that already completed cashier payment
-  if (investment.status === 'active' || investment.status === 'sold') {
-    refund = await refundToTotalSavings(investment.amount);
+  // Funded / closed projects must be liquidated or settled — never hard-deleted with a blind refund.
+  if (['active', 'sold', 'closed'].includes(String(investment.status || ''))) {
+    const error = new Error(
+      'Cannot delete a funded or closed project. Use liquidation / settlement instead.'
+    );
+    error.status = 409;
+    throw error;
   }
 
   await investment.deleteOne();
 
   return {
     investment,
-    refund,
+    refund: null,
+    message: 'Pending project deleted. No society savings refund was applied.',
   };
 }
 

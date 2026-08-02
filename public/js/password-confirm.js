@@ -139,9 +139,9 @@
     const url = typeof input === 'string' ? input : (input && input.url) || '';
     const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
     const isApi = String(url).startsWith('/api/');
+    // Mutating /api/developer/* calls must re-confirm password (do not blanket-skip).
     const skip = skipPasswordConfirm
       || String(url).startsWith('/api/auth/')
-      || String(url).startsWith('/api/developer/')
       || String(url).startsWith('/api/member/');
 
     if (!mutating || !isApi || skip) {

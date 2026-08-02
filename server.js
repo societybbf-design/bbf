@@ -220,11 +220,6 @@ function buildApp(sessionStore) {
     return res.redirect(dashboardPathForRole(req.session?.user?.role) || '/');
   }
 
-  function ensureDeveloperPage(req, res, next) {
-    if (isDeveloperRole(req.session?.user?.role)) return next();
-    return res.redirect(dashboardPathForRole(req.session?.user?.role) || '/');
-  }
-
   function ensureUserManagementPage(req, res, next) {
     if (canAccessDeveloperModule(req.session?.user?.role)) return next();
     return res.redirect(dashboardPathForRole(req.session?.user?.role) || '/');
@@ -393,8 +388,6 @@ function buildApp(sessionStore) {
     });
   });
 
-  // silence unused-lint style for ensureDeveloperPage (kept for future /developer HTML page)
-  void ensureDeveloperPage;
 }
 
 async function connectMongo() {

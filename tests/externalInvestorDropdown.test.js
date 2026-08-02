@@ -24,7 +24,7 @@ test('external_investor is a distinct assignable role', () => {
   assert.ok(ALL_ROLES.includes('external_investor'));
   assert.ok(ASSIGNABLE_ROLES.includes('external_investor'));
   assert.equal(ROLE_LABELS.external_investor, 'External Investor');
-  assert.deepEqual(getDefaultPermissions('external_investor'), ['can_view_reports']);
+  assert.deepEqual(getDefaultPermissions('external_investor'), ['can_view_reports', 'can_manage_chat']);
   assert.equal(dashboardPathForRole('external_investor'), '/dashboard/investor');
   assert.notEqual(ROLE_LABELS.investor, ROLE_LABELS.external_investor);
 });

@@ -849,7 +849,8 @@ function clientIp(req) {
 
 function rolesRequiringPasswordConfirm(role) {
   // Any staff role that can reach money/member mutation routes must re-confirm.
-  return ['ceo', 'admin', 'project_manager', 'cashier', 'employee', 'investor'].includes(role)
+  // Developer (User Management absolute control) is included — stolen sessions must re-auth.
+  return ['ceo', 'admin', 'developer', 'project_manager', 'cashier', 'employee', 'investor'].includes(role)
     || isFullAccessRole(role);
 }
 

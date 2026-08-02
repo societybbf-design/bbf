@@ -2134,7 +2134,7 @@ function bindExternalInvestorDetailActions(investorId) {
         const response = await fetch(`/api/admin/investments/expenses/${btn.dataset.executeExternalExpense}/ceo-review`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approve: true }),
+          body: JSON.stringify({ approve: true, executeSocietyDebit: true }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to disburse expense.');

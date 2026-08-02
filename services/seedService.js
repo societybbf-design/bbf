@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const User = require('../models/User');
 const {
-  PERMISSION_KEYS,
   getDefaultPermissions,
   CASHIER_EXCLUSIVE_PERMISSIONS,
   PROJECT_MANAGER_BLOCKED_PERMISSIONS,
@@ -11,181 +10,245 @@ function randomTempPassword() {
   return `Tmp-${crypto.randomBytes(9).toString('base64url')}`;
 }
 
-async function seedDefaultUsers() {
+function envFlag(name) {
+  const raw = String(process.env[name] || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
+/**
+ * Ensure the platform developer account exists / stays active.
+ * Never overwrites an existing password hash.
+ */
+async function ensureDeveloperUser() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const developerEmail = process.env.DEVELOPER_EMAIL || 'developer@bondhutto-bandhon.foundation';
+  const developerEmail = (
+    process.env.DEVELOPER_EMAIL || 'developer@bondhutto-bandhon.foundation'
+  ).toLowerCase().trim();
   const developerPassword = process.env.DEVELOPER_PASSWORD
     || (isProduction ? null : 'devSecure2003');
-  const ceoEmail = process.env.CEO_EMAIL || 'mdsamim62003@gmail.com';
-  const ceoPassword = process.env.CEO_PASSWORD || null;
-  const memberEmail = process.env.SEED_MEMBER_EMAIL || 'mdsamim62004@gmail.com';
-  const memberPassword = process.env.SEED_MEMBER_PASSWORD || null;
 
-  try {
-    // Migrate legacy admin accounts to CEO with operational permissions
-    const ceoPerms = getDefaultPermissions('ceo');
-    await User.updateMany(
-      { role: 'admin' },
+  const existingDev = await User.findOne({ role: 'developer', email: developerEmail });
+  if (existingDev) {
+    await User.updateOne(
+      { _id: existingDev._id },
       {
         $set: {
-          role: 'ceo',
-          permissions: ceoPerms,
+          role: 'developer',
+          permissions: getDefaultPermissions('developer'),
+          status: 'active',
         },
       }
     );
+    return existingDev;
+  }
 
-    const developerExists = await User.exists({ email: developerEmail, role: 'developer' });
-    if (!developerExists) {
-      if (!developerPassword) {
-        console.warn(
-          '[seed] Skipping developer create in production — set DEVELOPER_PASSWORD (and preferably DEVELOPER_EMAIL).'
-        );
-      } else {
-        const existingByEmail = await User.findOne({ email: developerEmail });
-        if (existingByEmail) {
-          existingByEmail.role = 'developer';
-          existingByEmail.permissions = getDefaultPermissions('developer');
-          existingByEmail.status = 'active';
-          await existingByEmail.save();
-        } else {
-          await User.create({
-            name: 'Platform Developer',
-            email: developerEmail,
-            password: developerPassword,
-            role: 'developer',
-            permissions: getDefaultPermissions('developer'),
-            savings: 0,
-            profit: 0,
-            status: 'active',
-          });
-        }
-        console.log('Developer user seeded. Email:', developerEmail);
+  // Any developer role (different email) — keep them, do not create a second account.
+  const anyDeveloper = await User.findOne({ role: 'developer', status: { $ne: 'deleted' } });
+  if (anyDeveloper) {
+    await User.updateOne(
+      { _id: anyDeveloper._id },
+      {
+        $set: {
+          permissions: getDefaultPermissions('developer'),
+          status: 'active',
+        },
       }
-    } else {
+    );
+    return anyDeveloper;
+  }
+
+  if (!developerPassword) {
+    console.warn(
+      '[seed] No developer account found and DEVELOPER_PASSWORD is unset in production — skipping create.'
+    );
+    return null;
+  }
+
+  const existingByEmail = await User.findOne({ email: developerEmail });
+  if (existingByEmail) {
+    existingByEmail.role = 'developer';
+    existingByEmail.permissions = getDefaultPermissions('developer');
+    existingByEmail.status = 'active';
+    await existingByEmail.save();
+    console.log('Developer role applied to existing user. Email:', developerEmail);
+    return existingByEmail;
+  }
+
+  const created = await User.create({
+    name: 'Platform Developer',
+    email: developerEmail,
+    password: developerPassword,
+    role: 'developer',
+    permissions: getDefaultPermissions('developer'),
+    savings: 0,
+    profit: 0,
+    status: 'active',
+  });
+  console.log('Developer user seeded. Email:', developerEmail);
+  return created;
+}
+
+async function ensureCeoUser() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const onlyDeveloper = envFlag('SEED_ONLY_DEVELOPER');
+  // Fresh / production-clean mode: do not auto-create CEO.
+  if (onlyDeveloper) return null;
+
+  const ceoEmail = (process.env.CEO_EMAIL || '').toLowerCase().trim();
+  const ceoPassword = process.env.CEO_PASSWORD || null;
+  // Require an explicit CEO_EMAIL (and in production, CEO_PASSWORD) before creating.
+  if (!ceoEmail) {
+    return null;
+  }
+  if (isProduction && !ceoPassword && !envFlag('SEED_CEO')) {
+    console.warn('[seed] CEO_EMAIL set but CEO_PASSWORD missing in production — skipping CEO create.');
+    return null;
+  }
+  if (!isProduction && !ceoPassword && !envFlag('SEED_CEO')) {
+    // Dev convenience: only seed CEO when explicitly requested or password provided.
+    if (!envFlag('SEED_CEO')) return null;
+  }
+
+  const ceoPerms = getDefaultPermissions('ceo');
+  const existing = await User.findOne({ email: ceoEmail });
+  if (existing) {
+    if (existing.role !== 'ceo' && existing.role !== 'admin' && existing.role !== 'developer') {
+      existing.role = 'ceo';
+      existing.permissions = ceoPerms;
+      await existing.save();
+      console.log('Existing user promoted to CEO. Email:', ceoEmail);
+    } else if (existing.role === 'admin' || existing.role === 'ceo') {
       await User.updateOne(
-        { email: developerEmail },
-        {
-          $set: {
-            role: 'developer',
-            permissions: getDefaultPermissions('developer'),
-            status: 'active',
-          },
-        }
+        { _id: existing._id },
+        { $set: { role: 'ceo', permissions: ceoPerms } }
       );
     }
+    return existing;
+  }
 
-    const ceoExists = await User.exists({ email: ceoEmail, role: { $in: ['ceo', 'admin'] } });
-    if (!ceoExists) {
-      const passwordToUse = ceoPassword || (!isProduction ? 'samim2003' : randomTempPassword());
-      await User.create({
-        name: 'CEO',
-        email: ceoEmail,
-        password: passwordToUse,
+  const passwordToUse = ceoPassword || (!isProduction ? randomTempPassword() : randomTempPassword());
+  await User.create({
+    name: 'CEO',
+    email: ceoEmail,
+    password: passwordToUse,
+    role: 'ceo',
+    permissions: ceoPerms,
+    savings: 0,
+    profit: 0,
+  });
+  console.log('CEO user seeded. Email:', ceoEmail);
+  return true;
+}
+
+async function ensureOptionalTestMember() {
+  if (process.env.NODE_ENV === 'production') return null;
+  if (envFlag('SEED_ONLY_DEVELOPER')) return null;
+  if (!envFlag('SEED_MEMBER')) return null;
+
+  const memberEmail = (
+    process.env.SEED_MEMBER_EMAIL || process.env.MEMBER_EMAIL || ''
+  ).toLowerCase().trim();
+  const memberPassword = process.env.SEED_MEMBER_PASSWORD || process.env.MEMBER_PASSWORD || null;
+  if (!memberEmail || !memberPassword) {
+    console.warn('[seed] SEED_MEMBER=1 but SEED_MEMBER_EMAIL/PASSWORD missing — skipping.');
+    return null;
+  }
+
+  const memberExists = await User.exists({ email: memberEmail });
+  if (memberExists) return null;
+
+  await User.create({
+    name: 'Test Member',
+    email: memberEmail,
+    password: memberPassword,
+    role: 'member',
+    permissions: getDefaultPermissions('member'),
+    savings: 0,
+    profit: 0,
+  });
+  console.log('Test member seeded. Email:', memberEmail);
+  return true;
+}
+
+async function backfillStaffPermissions() {
+  // Migrate legacy admin accounts to CEO with operational permissions
+  const ceoPerms = getDefaultPermissions('ceo');
+  await User.updateMany(
+    { role: 'admin' },
+    {
+      $set: {
         role: 'ceo',
         permissions: ceoPerms,
-        savings: 0,
-        profit: 0,
-      });
-      if (isProduction && !ceoPassword) {
-        console.warn(
-          `[seed] CEO created with a one-time random password. Set CEO_PASSWORD before first deploy, or reset via User Management. Email: ${ceoEmail}`
-        );
-      } else {
-        console.log('CEO user seeded. Email:', ceoEmail);
-      }
-    } else {
-      await User.updateOne(
-        { email: ceoEmail },
-        {
-          $set: {
-            role: 'ceo',
-            permissions: ceoPerms,
-          },
-        }
-      );
+      },
     }
+  );
 
-    // Never auto-seed a test member account in production with a known password.
-    if (!isProduction) {
-      const memberExists = await User.exists({ email: memberEmail, role: 'member' });
-      if (!memberExists) {
-        await User.create({
-          name: 'Test Member',
-          email: memberEmail,
-          password: memberPassword || 'samim2004',
-          role: 'member',
-          permissions: getDefaultPermissions('member'),
-          savings: 0,
-          profit: 0,
-        });
-        console.log('Test member seeded. Email:', memberEmail);
-      }
-    }
+  const usersMissingPerms = await User.find({
+    $or: [{ permissions: { $exists: false } }, { permissions: { $size: 0 } }],
+    role: { $nin: ['member'] },
+  });
 
-    // Backfill empty permissions for existing users
-    const usersMissingPerms = await User.find({
-      $or: [{ permissions: { $exists: false } }, { permissions: { $size: 0 } }],
-      role: { $nin: ['member'] },
-    });
+  for (const user of usersMissingPerms) {
+    user.permissions = getDefaultPermissions(user.role);
+    await user.save();
+  }
 
-    for (const user of usersMissingPerms) {
-      user.permissions = getDefaultPermissions(user.role);
-      await user.save();
-    }
-
-    // Ensure cashiers can access Messenger chat + loan disbursement/repayments + Profit & Loss
-    const cashiers = await User.find({ role: 'cashier', status: { $ne: 'deleted' } });
-    for (const cashier of cashiers) {
-      let perms = Array.isArray(cashier.permissions) ? [...cashier.permissions] : [];
-      let changed = false;
-      ['can_manage_chat', 'can_manage_members', 'can_disburse_loans', 'can_manage_profit', 'can_manage_deposits'].forEach((key) => {
-        if (!perms.includes(key)) {
-          perms.push(key);
-          changed = true;
-        }
-      });
-      // Loan approval stays with CEO — strip review permission if present on cashier accounts
-      if (perms.includes('can_manage_loans')) {
-        perms = perms.filter((key) => key !== 'can_manage_loans');
+  const cashiers = await User.find({ role: 'cashier', status: { $ne: 'deleted' } });
+  for (const cashier of cashiers) {
+    let perms = Array.isArray(cashier.permissions) ? [...cashier.permissions] : [];
+    let changed = false;
+    ['can_manage_chat', 'can_manage_members', 'can_disburse_loans', 'can_manage_profit', 'can_manage_deposits'].forEach((key) => {
+      if (!perms.includes(key)) {
+        perms.push(key);
         changed = true;
       }
-      if (changed) {
-        cashier.permissions = perms;
-        await cashier.save();
-      }
-    }
-
-    // Strip cashier-exclusive disbursement from non-cashier staff (CEO/PM/etc.)
-    const nonCashiers = await User.find({
-      role: { $nin: ['cashier', 'member'] },
-      status: { $ne: 'deleted' },
-      permissions: { $in: [...CASHIER_EXCLUSIVE_PERMISSIONS] },
     });
-    for (const user of nonCashiers) {
-      user.permissions = (user.permissions || []).filter(
-        (key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
-      );
-      await user.save();
+    if (perms.includes('can_manage_loans')) {
+      perms = perms.filter((key) => key !== 'can_manage_loans');
+      changed = true;
     }
+    if (changed) {
+      cashier.permissions = perms;
+      await cashier.save();
+    }
+  }
 
-    // Project managers no longer approve loans by default
-    await User.updateMany(
-      { role: 'project_manager', permissions: 'can_manage_loans' },
-      { $pull: { permissions: 'can_manage_loans' } }
+  const nonCashiers = await User.find({
+    role: { $nin: ['cashier', 'member'] },
+    status: { $ne: 'deleted' },
+    permissions: { $in: [...CASHIER_EXCLUSIVE_PERMISSIONS] },
+  });
+  for (const user of nonCashiers) {
+    user.permissions = (user.permissions || []).filter(
+      (key) => !CASHIER_EXCLUSIVE_PERMISSIONS.includes(key)
     );
+    await user.save();
+  }
 
-    // Strip finance payout / review controls that must never sit on PM accounts
-    const pmsWithBlocked = await User.find({
-      role: 'project_manager',
-      status: { $ne: 'deleted' },
-      permissions: { $in: [...PROJECT_MANAGER_BLOCKED_PERMISSIONS] },
-    });
-    for (const user of pmsWithBlocked) {
-      user.permissions = (user.permissions || []).filter(
-        (key) => !PROJECT_MANAGER_BLOCKED_PERMISSIONS.includes(key)
-      );
-      await user.save();
-    }
+  await User.updateMany(
+    { role: 'project_manager', permissions: 'can_manage_loans' },
+    { $pull: { permissions: 'can_manage_loans' } }
+  );
+
+  const pmsWithBlocked = await User.find({
+    role: 'project_manager',
+    status: { $ne: 'deleted' },
+    permissions: { $in: [...PROJECT_MANAGER_BLOCKED_PERMISSIONS] },
+  });
+  for (const user of pmsWithBlocked) {
+    user.permissions = (user.permissions || []).filter(
+      (key) => !PROJECT_MANAGER_BLOCKED_PERMISSIONS.includes(key)
+    );
+    await user.save();
+  }
+}
+
+async function seedDefaultUsers() {
+  try {
+    await ensureDeveloperUser();
+    await ensureCeoUser();
+    await ensureOptionalTestMember();
+    await backfillStaffPermissions();
   } catch (error) {
     console.error('Failed to seed default users:', error);
   }
@@ -193,4 +256,5 @@ async function seedDefaultUsers() {
 
 module.exports = {
   seedDefaultUsers,
+  ensureDeveloperUser,
 };
