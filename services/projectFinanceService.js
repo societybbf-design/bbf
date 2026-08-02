@@ -448,17 +448,22 @@ async function recordExternalInvestment({
     throw httpError('This project has 0% external ownership — no external capital to record.');
   }
 
-  const received = money(amount != null ? amount : expected);
+  const already = money(investment.externalCapitalReceived || 0);
+  const remaining = money(Math.max(0, expected - already));
+  if (!(remaining > 0.001)) {
+    throw httpError('External capital has already been fully recorded for this project.', 409);
+  }
+
+  // Partial / incremental deposits allowed (CEO may have recorded some stake cash already).
+  const received = money(amount != null ? amount : remaining);
   if (!(received > 0)) {
     throw httpError('External investment amount must be greater than zero.');
   }
-  if (Math.abs(received - expected) > 0.02) {
+  if (received - remaining > 0.02) {
     throw httpError(
-      `External capital must equal the project external share ${formatMoney(expected, 2)}. Received ${formatMoney(received, 2)}.`
+      `External capital cannot exceed remaining ${formatMoney(remaining, 2)} `
+      + `(expected ${formatMoney(expected, 2)}, already received ${formatMoney(already, 2)}).`
     );
-  }
-  if (money(investment.externalCapitalReceived) > 0) {
-    throw httpError('External capital has already been recorded for this project.', 409);
   }
 
   // Absolute isolation: external capital never credits the Society Bank Ledger.
@@ -475,16 +480,23 @@ async function recordExternalInvestment({
   });
 
   const now = new Date();
-  investment.externalCapitalReceived = received;
+  investment.externalCapitalReceived = money(already + received);
   investment.externalCapitalReceivedAt = now;
   investment.externalCapitalRecordedBy = String(recordedBy || 'Cashier').trim();
   // Legacy field retained for audit pointers — now references external sub-ledger entry.
   investment.externalCapitalLedgerEntryId = externalLedger?.entry?._id || null;
 
+  // Allocate this deposit across stakes that still have remaining committed capital.
   if (Array.isArray(investment.externalInvestors) && investment.externalInvestors.length) {
+    let left = received;
     for (const stake of investment.externalInvestors) {
-      stake.capitalReceived = money(stake.amount || 0);
+      if (!(left > 0.001)) break;
+      const stakeRemaining = money(Math.max(0, Number(stake.amount || 0) - Number(stake.capitalReceived || 0)));
+      if (!(stakeRemaining > 0.001)) continue;
+      const apply = money(Math.min(left, stakeRemaining));
+      stake.capitalReceived = money(Number(stake.capitalReceived || 0) + apply);
       stake.capitalReceivedAt = now;
+      left = money(left - apply);
     }
   }
 
@@ -497,7 +509,8 @@ async function recordExternalInvestment({
   await createAdminNotification({
     type: 'general',
     title: `External capital recorded: ${investment.investmentCode}`,
-    message: `${formatMoney(received, 2)} received from ${stakeholderNames} on isolated external sub-ledger (society bank unchanged).`,
+    message: `${formatMoney(received, 2)} received from ${stakeholderNames} on isolated external sub-ledger `
+      + `(${formatMoney(investment.externalCapitalReceived, 2)} / ${formatMoney(expected, 2)}; society bank unchanged).`,
     relatedId: investment._id,
     relatedModel: 'Investment',
     targetRoles: ['ceo', 'cashier'],
@@ -508,7 +521,8 @@ async function recordExternalInvestment({
     externalLedger,
     bankLedger: null,
     societyBankImpact: false,
-    message: `External investment of ${formatMoney(received, 2)} recorded on project external sub-ledger for ${investment.investmentCode}. Society bank ledger was not affected.`,
+    message: `External investment of ${formatMoney(received, 2)} recorded on project external sub-ledger for ${investment.investmentCode} `
+      + `(${formatMoney(investment.externalCapitalReceived, 2)} / ${formatMoney(expected, 2)}). Society bank ledger was not affected.`,
   };
 }
 
@@ -1337,11 +1351,17 @@ async function liquidateProject({
 }
 
 async function listExternalCapitalQueue() {
+  // Include projects with partial CEO/cashier deposits until fully funded.
   return Investment.find({
     status: { $in: ['active', 'pending_cashier_payment', 'pending_member_approval'] },
     externalAmount: { $gt: 0 },
-    externalCapitalReceived: { $lte: 0 },
     ledgerLockedAt: null,
+    $expr: {
+      $lt: [
+        { $ifNull: ['$externalCapitalReceived', 0] },
+        '$externalAmount',
+      ],
+    },
   })
     .populate('investor', 'name email phone')
     .populate('externalInvestors.investor', 'name email phone')

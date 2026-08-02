@@ -283,11 +283,16 @@ router.post('/expenses/:expenseId/submit', requirePermission('can_manage_investm
 
 router.post('/expenses/:expenseId/ceo-review', requireCeo, requirePasswordConfirmation, async (req, res) => {
   try {
+    // Default society bank debit ON when approving (callers may pass false to skip).
+    const executeSocietyDebit = req.body?.executeSocietyDebit === false
+      || req.body?.executeSocietyDebit === 'false'
+      ? false
+      : true;
     const result = await ceoReviewProjectExpense(req.params.expenseId, {
       approve: req.body?.approve !== false && req.body?.approved !== false,
       note: req.body?.note || '',
       reviewedBy: req.session.user.name || 'CEO',
-      executeSocietyDebit: Boolean(req.body?.executeSocietyDebit),
+      executeSocietyDebit,
     });
     return res.json(result);
   } catch (error) {
@@ -672,7 +677,7 @@ router.get('/:id/receipt', requirePermission('can_manage_investments'), async (r
   }
 });
 
-router.post('/', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.post('/', requireCeo, requirePasswordConfirmation, async (req, res) => {
   try {
     const {
       amount,
@@ -732,7 +737,7 @@ router.post('/', requirePermission('can_manage_investments'), requirePasswordCon
 });
 
 /** CEO: propose capital expansion on a running project → member approval → existing cashier queue. */
-router.post('/:id/expand-capital', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.post('/:id/expand-capital', requireCeo, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await proposeCapitalExpansion({
       parentInvestmentId: req.params.id,
@@ -753,7 +758,7 @@ router.post('/:id/expand-capital', requirePermission('can_manage_investments'), 
   }
 });
 
-router.put('/:id', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.put('/:id', requireCeo, requirePasswordConfirmation, async (req, res) => {
   try {
     const investment = await updateInvestment(req.params.id, req.body);
     return res.json({ investment });
@@ -762,7 +767,7 @@ router.put('/:id', requirePermission('can_manage_investments'), requirePasswordC
   }
 });
 
-router.delete('/:id', requirePermission('can_manage_investments'), requirePasswordConfirmation, async (req, res) => {
+router.delete('/:id', requireCeo, requirePasswordConfirmation, async (req, res) => {
   try {
     const result = await deleteInvestment(req.params.id);
     return res.json(result);

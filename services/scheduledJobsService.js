@@ -29,7 +29,10 @@ async function runDailyAutoDeductionJob() {
 
 function startScheduledJobs() {
   if (intervalHandle) return intervalHandle;
-  if (String(process.env.DISABLE_SCHEDULED_JOBS || '').toLowerCase() === 'true') {
+  const disabled = ['1', 'true', 'yes'].includes(
+    String(process.env.DISABLE_SCHEDULED_JOBS || '').toLowerCase()
+  );
+  if (disabled) {
     console.log('[scheduledJobs] disabled via DISABLE_SCHEDULED_JOBS');
     return null;
   }

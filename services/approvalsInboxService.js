@@ -453,7 +453,7 @@ async function collectStaffItems(user) {
               label: awaitingCeoPay ? 'Pay from external ledger' : 'Approve',
               method: 'POST',
               path: `/api/admin/investments/expenses/${exp._id}/ceo-review`,
-              body: { approve: true },
+              body: { approve: true, executeSocietyDebit: true },
               requiresPassword: true,
             },
             {

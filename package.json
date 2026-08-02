@@ -11,6 +11,8 @@
     "start:direct": "node server.js",
     "restart": "node scripts/start-server.js",
     "check:production": "node scripts/check-production.js",
+    "db:reset": "node scripts/reset-database.js",
+    "db:reset:confirm": "node scripts/reset-database.js --confirm",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
