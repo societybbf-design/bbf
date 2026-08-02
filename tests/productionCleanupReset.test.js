@@ -7,6 +7,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const resetScript = fs.readFileSync(path.join(root, 'scripts/reset-database.js'), 'utf8');
+const resetService = fs.readFileSync(path.join(root, 'services/databaseResetService.js'), 'utf8');
 const seedService = fs.readFileSync(path.join(root, 'services/seedService.js'), 'utf8');
 const securityService = fs.readFileSync(path.join(root, 'services/securityService.js'), 'utf8');
 const passwordConfirm = fs.readFileSync(path.join(root, 'public/js/password-confirm.js'), 'utf8');
@@ -19,10 +20,11 @@ const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 const memberHtml = fs.readFileSync(path.join(root, 'views/member.html'), 'utf8');
 
 test('reset-database script preserves developer role and requires confirm', () => {
-  assert.match(resetScript, /role:\s*'developer'/);
   assert.match(resetScript, /--confirm/);
-  assert.match(resetScript, /dropCollection/);
-  assert.match(resetScript, /Preserving/);
+  assert.match(resetScript, /wipeTransactionalDatabase/);
+  assert.match(resetService, /role:\s*'developer'/);
+  assert.match(resetService, /dropCollection/);
+  assert.match(resetService, /developersPreserved|Restored|preserve/i);
   assert.equal(typeof packageJson.scripts['db:reset:confirm'], 'string');
 });
 

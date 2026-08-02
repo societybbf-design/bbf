@@ -51,6 +51,7 @@ const TAB_TITLE_KEYS = {
   audits: ['um.securityAudit', 'Security Audit', 'um.auditNote', 'Login failures, lockouts, OTP requests, password changes, and email updates.'],
   approvals: ['Member Approvals', 'Member Approvals', 'um.approvalsNote', 'Track member votes and record proxy approvals for absent members. CEO and Cashier steps are not changed.'],
   security: ['um.mySecurity', 'My Security', 'um.changePasswordTitle', 'Change my password'],
+  danger: ['Danger Zone', 'Danger Zone', 'Database wipe', 'Clear all trial data. Keeps developer login only.'],
 };
 
 const ROLE_DIRECTORY = [
@@ -743,6 +744,55 @@ function bindUi() {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = '/';
   });
+
+  document.getElementById('umDatabaseWipeForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('umWipeMessage');
+    const btn = document.getElementById('umWipeSubmitBtn');
+    const phrase = String(document.getElementById('umWipeConfirmPhrase')?.value || '').trim();
+    if (msg) {
+      msg.textContent = '';
+      msg.classList.remove('success', 'error');
+    }
+    if (phrase !== 'WIPE_ALL_DATA') {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = 'Type WIPE_ALL_DATA exactly to confirm.';
+      }
+      return;
+    }
+    const ok = window.confirm(
+      'Delete ALL members, cashiers, CEOs, external investors, deposits, loans, projects, and ledger balances?\n\n'
+      + 'Developer login will be kept. This cannot be undone.'
+    );
+    if (!ok) return;
+    if (btn) btn.disabled = true;
+    try {
+      const data = await api('/api/developer/database/wipe', {
+        method: 'POST',
+        body: JSON.stringify({ confirmPhrase: 'WIPE_ALL_DATA' }),
+      });
+      if (msg) {
+        msg.classList.add('success');
+        msg.textContent = data.message || 'Database wiped.';
+      }
+      window.alert(
+        `${data.message || 'Database wiped.'}\n\n`
+        + `Collections cleared: ${data.collectionCount || 0}\n`
+        + `Developers kept: ${(data.developerEmails || []).join(', ') || data.developersPreserved || 0}\n\n`
+        + 'You will be signed out. Log in again with the developer account.\n'
+        + 'Set SEED_ONLY_DEVELOPER=1 in Hostinger so trial CEO/cashier/member accounts are not recreated.'
+      );
+      window.location.href = '/';
+    } catch (error) {
+      if (msg) {
+        msg.classList.add('error');
+        msg.textContent = error.message;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
 }
 
 async function initDeveloperControls() {
@@ -760,6 +810,11 @@ async function initDeveloperControls() {
     const initialEl = document.getElementById('umSidebarInitial');
     if (nameEl) nameEl.textContent = developerSessionUser.name || 'User Management';
     if (initialEl) initialEl.textContent = (developerSessionUser.name || 'U')[0].toUpperCase();
+
+    const isDev = developerSessionUser.role === 'developer';
+    document.querySelectorAll('[data-developer-only-nav], [data-developer-only-panel]').forEach((el) => {
+      el.classList.toggle('hidden', !isDev);
+    });
 
     // Bind UI outside the redirect-on-error path so a leftover handler cannot
     // bounce developer sessions between / and /user-management forever.

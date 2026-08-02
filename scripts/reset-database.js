@@ -3,22 +3,21 @@
  * Production / pre-launch database wipe.
  *
  * Drops every MongoDB collection EXCEPT developer login accounts
- * (role === 'developer'). Sessions are cleared. On next app boot,
- * organization settings + investment types are re-seeded; with
- * SEED_ONLY_DEVELOPER=1 (default for this script's companion env),
- * only the developer account remains.
+ * (role === 'developer'). Sessions are cleared. Organization settings
+ * and investment types are re-seeded for a clean boot.
  *
  * Usage:
- *   MONGO_URI=... node scripts/reset-database.js
  *   MONGO_URI=... node scripts/reset-database.js --confirm
+ *   RESET_DB_CONFIRM=YES MONGO_URI=... npm run db:reset:confirm
  *
- * Safety: requires --confirm (or RESET_DB_CONFIRM=YES) so it cannot
- * be run accidentally.
+ * Prefer SEED_ONLY_DEVELOPER=1 in Hostinger env after wipe so CEO/cashier
+ * /member demo accounts are not recreated on restart.
  */
 'use strict';
 
 require('dotenv').config();
 const mongoose = require('mongoose');
+const { wipeTransactionalDatabase } = require('../services/databaseResetService');
 
 const mongoUri = String(process.env.MONGO_URI || process.env.MONGODB_URI || '').trim();
 const confirmed = process.argv.includes('--confirm')
@@ -41,54 +40,26 @@ async function main() {
 
   console.log(`[reset-db] Connecting to ${maskUri(mongoUri)}`);
   await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 15000 });
-  const db = mongoose.connection.db;
 
-  const collections = await db.listCollections().toArray();
-  const names = collections.map((c) => c.name).sort();
-  console.log(`[reset-db] Found ${names.length} collection(s): ${names.join(', ') || '(none)'}`);
+  const result = await wipeTransactionalDatabase({
+    reseedBasics: true,
+    actorLabel: 'cli:reset-database',
+  });
 
-  // Preserve developer credentials (password hash, email, name).
-  let preservedDevelopers = [];
-  if (names.includes('users')) {
-    const users = db.collection('users');
-    preservedDevelopers = await users.find({ role: 'developer' }).toArray();
-    console.log(`[reset-db] Preserving ${preservedDevelopers.length} developer account(s).`);
-  }
-
-  for (const name of names) {
-    try {
-      await db.dropCollection(name);
-      console.log(`[reset-db] Dropped collection: ${name}`);
-    } catch (error) {
-      // NamespaceNotFound is fine if another process raced.
-      if (error?.codeName !== 'NamespaceNotFound' && error?.code !== 26) {
-        console.warn(`[reset-db] Could not drop ${name}:`, error.message);
-      }
-    }
-  }
-
-  if (preservedDevelopers.length) {
-    // Strip Mongo internal fields that could conflict on re-insert.
-    const docs = preservedDevelopers.map((doc) => {
-      const copy = { ...doc };
-      // Keep _id so sessions / bookmarks to the same account remain valid if any linger.
-      return copy;
-    });
-    await db.collection('users').insertMany(docs);
-    console.log(`[reset-db] Restored ${docs.length} developer user(s):`);
-    docs.forEach((d) => {
-      console.log(`  - ${d.email || d._id} (${d.name || 'unnamed'})`);
-    });
+  console.log(`[reset-db] Dropped ${result.collectionCount} collection(s).`);
+  if (result.developersPreserved) {
+    console.log(`[reset-db] Restored ${result.developersPreserved} developer user(s):`);
+    (result.developerEmails || []).forEach((email) => console.log(`  - ${email}`));
   } else {
     console.warn(
       '[reset-db] No developer users were found to preserve. '
-      + 'On next boot, seedDefaultUsers will create one if DEVELOPER_PASSWORD is set.'
+      + 'ensureDeveloperUser will create one if DEVELOPER_PASSWORD is set.'
     );
   }
+  console.log('[reset-db]', result.message);
+  console.log('[reset-db] Set SEED_ONLY_DEVELOPER=1 on Hostinger to keep only the developer login after restart.');
 
   await mongoose.disconnect();
-  console.log('[reset-db] Done. Database is empty except preserved developer login(s).');
-  console.log('[reset-db] Start the app with SEED_ONLY_DEVELOPER=1 to avoid re-creating demo CEO/member accounts.');
 }
 
 main().catch(async (error) => {
