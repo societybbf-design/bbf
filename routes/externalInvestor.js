@@ -8,6 +8,8 @@ const {
   getExternalInvestorChatPeers,
 } = require('../services/externalInvestorPortalService');
 const { decideExternalExpenseApproval } = require('../services/projectOpsService');
+const { decideExternalProjectCommitment } = require('../services/investmentService');
+const { getWalletSnapshot } = require('../services/externalInvestorWalletService');
 const {
   getStaffMessages,
   sendStaffMessage,
@@ -89,6 +91,36 @@ router.post('/expenses/:id/decide', async (req, res) => {
   } catch (error) {
     return res.status(error.status || 500).json({
       error: error.message || 'Unable to update expense approval.',
+    });
+  }
+});
+
+router.post('/projects/:id/decide', async (req, res) => {
+  try {
+    const approve = !(
+      req.body?.approve === false
+      || req.body?.decision === 'rejected'
+      || req.body?.status === 'rejected'
+    );
+    const result = await decideExternalProjectCommitment(req.session.user, req.params.id, {
+      approve,
+      note: req.body?.note || '',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to update project commitment.',
+    });
+  }
+});
+
+router.get('/wallet', async (req, res) => {
+  try {
+    const wallet = await getWalletSnapshot(req.session.user.id || req.session.user._id);
+    return res.json({ wallet });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load wallet.',
     });
   }
 });

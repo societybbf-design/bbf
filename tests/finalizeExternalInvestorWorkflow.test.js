@@ -55,7 +55,7 @@ test('CEO External Investor profile UI exposes deposit form and payment queue', 
   assert.match(adminJs, /data-execute-external-expense/);
   assert.match(adminJs, /Pay from external ledger/);
   assert.match(adminJs, /bindExternalInvestorDetailActions/);
-  assert.match(adminJs, /Awaiting CEO payment/);
+  assert.match(adminJs, /Awaiting CEO action|Awaiting CEO payment/);
 });
 
 test('portfolio summarizes capital remaining and CEO payment queue', () => {

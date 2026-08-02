@@ -26,7 +26,12 @@ const {
   listExternalInvestorUsers,
   listProjectManagers,
   updateInvestment,
+  ceoConfirmExternalFundRelease,
 } = require('../services/investmentService');
+const {
+  creditWalletDeposit,
+  getWalletSnapshot,
+} = require('../services/externalInvestorWalletService');
 const {
   getAssignedProjectsWorkspace,
   createProjectExpense,
@@ -132,24 +137,70 @@ router.get('/external-investors/:investorId/portfolio', requirePermission('can_m
   }
 });
 
-/** CEO records physical cash deposit for a specific External Investor stake. */
+/**
+ * CEO records physical cash deposit for an External Investor.
+ * - No investmentId → credits unallocated wallet (required before joint project create)
+ * - With investmentId → legacy per-project stake deposit
+ */
 router.post(
   '/external-investors/:investorId/deposits',
   requireCeo,
   requirePasswordConfirmation,
   async (req, res) => {
     try {
+      const investmentId = req.body?.investmentId || req.body?.projectId || '';
+      const recordedBy = req.session?.user?.name || 'CEO';
+      if (!investmentId || investmentId === 'wallet') {
+        const result = await creditWalletDeposit({
+          investorId: req.params.investorId,
+          amount: req.body?.amount,
+          note: req.body?.note || '',
+          recordedBy,
+        });
+        return res.status(201).json(result);
+      }
       const result = await recordCeoExternalInvestorDeposit({
         investorId: req.params.investorId,
-        investmentId: req.body?.investmentId || req.body?.projectId,
+        investmentId,
         amount: req.body?.amount,
         note: req.body?.note || '',
-        recordedBy: req.session?.user?.name || 'CEO',
+        recordedBy,
       });
       return res.status(201).json(result);
     } catch (error) {
       return res.status(error.status || 500).json({
         error: error.message || 'Unable to record external investor deposit.',
+      });
+    }
+  }
+);
+
+router.get('/external-investors/:investorId/wallet', requirePermission('can_manage_investments'), async (req, res) => {
+  try {
+    const wallet = await getWalletSnapshot(req.params.investorId);
+    return res.json({ wallet });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to load external investor wallet.',
+    });
+  }
+});
+
+/** CEO confirms fund release after External Investor project approval — locks wallet capital. */
+router.post(
+  '/:id/external-fund-release',
+  requireCeo,
+  requirePasswordConfirmation,
+  async (req, res) => {
+    try {
+      const result = await ceoConfirmExternalFundRelease(req.params.id, {
+        confirmedBy: req.session?.user?.name || 'CEO',
+        note: req.body?.note || '',
+      });
+      return res.json(result);
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        error: error.message || 'Unable to confirm external fund release.',
       });
     }
   }
