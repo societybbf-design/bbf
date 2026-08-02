@@ -964,17 +964,26 @@
             </div>
           </form>
           <div class="stats-grid u-mt-1" id="auditSummaryStats"></div>
-          <div class="table-wrapper u-mt-1">
-            <table class="data-table table-cards" id="auditTransactionsTable">
+          <div class="table-wrapper audit-table-wrap u-mt-1">
+            <table class="data-table table-cards audit-data-table" id="auditTransactionsTable">
+              <colgroup>
+                <col class="audit-col-date" />
+                <col class="audit-col-category" />
+                <col class="audit-col-direction" />
+                <col class="audit-col-amount" />
+                <col class="audit-col-description" />
+                <col class="audit-col-actor" />
+                <col class="audit-col-balance" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th data-i18n="table.date">Date</th>
-                  <th>Category</th>
-                  <th>Direction</th>
-                  <th data-i18n="table.amount">Amount</th>
-                  <th>Description</th>
-                  <th data-i18n="table.actor">Actor</th>
-                  <th>Balance after</th>
+                  <th scope="col" data-i18n="table.date">Date</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Direction</th>
+                  <th scope="col" data-i18n="table.amount">Amount</th>
+                  <th scope="col">Description</th>
+                  <th scope="col" data-i18n="table.actor">Actor</th>
+                  <th scope="col">Balance after</th>
                 </tr>
               </thead>
               <tbody id="auditTransactionsBody"><tr><td colspan="7">Loading audit trail…</td></tr></tbody>

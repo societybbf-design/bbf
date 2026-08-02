@@ -1564,10 +1564,17 @@ html[data-theme="light"] .smart-alloc-row {
   }
 }
 
-/* Staff Reports / Audit containment & typography */
-.cashier-shell .staff-reports-panel,
-.cashier-shell [data-staff-view="audit"] {
+/* Staff Reports containment & typography */
+.cashier-shell .staff-reports-panel {
   max-width: 1100px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.cashier-shell [data-staff-view="audit"] {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -1605,17 +1612,111 @@ html[data-theme="light"] .smart-alloc-row {
   flex-wrap: wrap;
 }
 
-.cashier-shell [data-staff-view="audit"] .table-wrapper {
+/* Transaction Audit: keep columns readable; scroll horizontally instead of shredding text */
+.cashier-shell [data-staff-view="audit"] .table-wrapper,
+.cashier-shell [data-staff-view="audit"] .table-wrapper.audit-table-wrap {
   max-width: 100%;
   min-width: 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   border-radius: 12px;
+  /* Room so floating Notes FAB does not cover Balance after */
+  padding-right: 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table {
+  width: 100%;
+  min-width: 1040px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-date { width: 11rem; }
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-category { width: 10rem; }
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-direction { width: 6.5rem; }
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-amount { width: 8.5rem; }
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-description { width: auto; }
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-actor { width: 7.5rem; }
+.cashier-shell [data-staff-view="audit"] .audit-data-table .audit-col-balance { width: 9.5rem; }
+
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table th,
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table td {
+  vertical-align: middle;
+  line-height: 1.4;
+  padding: 0.7rem 0.85rem;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  white-space: nowrap;
+}
+
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--bg-card, #0f172a);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table .audit-cell-amount,
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table .audit-cell-balance,
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table th:nth-child(4),
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table th:nth-child(7) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table .audit-cell-direction,
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table th:nth-child(3) {
+  text-align: center;
+}
+
+/* Description is the only column allowed to wrap */
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table .audit-cell-description,
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table th:nth-child(5) {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  min-width: 14rem;
+}
+
+.cashier-shell [data-staff-view="audit"] .data-table.audit-data-table .audit-cell-category {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* Override legacy shredding rules that applied to all audit th/td */
 .cashier-shell [data-staff-view="audit"] .data-table th,
 .cashier-shell [data-staff-view="audit"] .data-table td {
-  vertical-align: top;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+@media (max-width: 768px) {
+  /* Card stack on phones — restore flexible wrapping inside cards */
+  .cashier-shell [data-staff-view="audit"] .data-table.audit-data-table {
+    min-width: 0;
+    table-layout: auto;
+  }
+
+  .cashier-shell [data-staff-view="audit"] .data-table.audit-data-table th,
+  .cashier-shell [data-staff-view="audit"] .data-table.audit-data-table td {
+    white-space: normal;
+    text-align: right;
+  }
+
+  .cashier-shell [data-staff-view="audit"] .data-table.audit-data-table td::before {
+    text-align: left;
+  }
 }

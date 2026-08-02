@@ -3927,13 +3927,13 @@ function renderAuditRows(transactions = [], { append = false } = {}) {
   if (!tbody) return;
   const rows = transactions.map((tx) => `
     <tr>
-      <td>${escapeHtml(tx.occurredAt ? new Date(tx.occurredAt).toLocaleString() : '—')}</td>
-      <td>${escapeHtml(tx.categoryLabel || tx.category || '—')}</td>
-      <td><span class="${auditDirectionClass(tx.direction)}">${escapeHtml(tx.direction === 'in' ? 'In' : 'Out')}</span></td>
-      <td>${money(tx.amount)}</td>
-      <td>${escapeHtml(tx.description || '—')}</td>
-      <td>${escapeHtml(tx.actor || '—')}</td>
-      <td>${tx.balanceAfter != null ? money(tx.balanceAfter) : '—'}</td>
+      <td data-label="Date" class="audit-cell-date">${escapeHtml(tx.occurredAt ? new Date(tx.occurredAt).toLocaleString() : '—')}</td>
+      <td data-label="Category" class="audit-cell-category">${escapeHtml(tx.categoryLabel || tx.category || '—')}</td>
+      <td data-label="Direction" class="audit-cell-direction"><span class="${auditDirectionClass(tx.direction)}">${escapeHtml(tx.direction === 'in' ? 'In' : 'Out')}</span></td>
+      <td data-label="Amount" class="audit-cell-amount">${money(tx.amount)}</td>
+      <td data-label="Description" class="audit-cell-description">${escapeHtml(tx.description || '—')}</td>
+      <td data-label="Actor" class="audit-cell-actor">${escapeHtml(tx.actor || '—')}</td>
+      <td data-label="Balance after" class="audit-cell-balance">${tx.balanceAfter != null ? money(tx.balanceAfter) : '—'}</td>
     </tr>
   `).join('');
 
