@@ -321,6 +321,111 @@ async function nextSaleCode(session = null) {
 }
 
 /**
+ * CEO records a physical cash deposit for a specific External Investor
+ * against one of their project ownership stakes (isolated external ledger).
+ * Supports partial / incremental deposits up to the remaining committed capital.
+ */
+async function recordCeoExternalInvestorDeposit({
+  investorId,
+  investmentId,
+  amount,
+  note = '',
+  recordedBy = 'CEO',
+} = {}) {
+  if (!investorId) throw httpError('External investor is required.');
+  if (!investmentId) throw httpError('Project is required.');
+
+  const investment = await getActiveProject(investmentId);
+  assertNotLocked(investment);
+  if (!['active', 'pending_cashier_payment', 'pending_member_approval'].includes(investment.status)) {
+    throw httpError('External deposits can only be recorded for open projects.');
+  }
+
+  const stake = (investment.externalInvestors || []).find(
+    (row) => String(row.investor?._id || row.investor || '') === String(investorId)
+  );
+  if (!stake) {
+    throw httpError('This External Investor does not hold an ownership stake on the selected project.', 404);
+  }
+
+  const deposit = money(amount);
+  if (!(deposit > 0)) throw httpError('Deposit amount must be greater than zero.');
+
+  const committed = money(stake.amount || 0);
+  const already = money(stake.capitalReceived || 0);
+  const remaining = money(Math.max(0, committed - already));
+  if (!(remaining > 0.001)) {
+    throw httpError('This investor’s committed capital for the project is already fully deposited.', 409);
+  }
+  if (deposit - remaining > 0.02) {
+    throw httpError(
+      `Deposit cannot exceed remaining committed capital ${formatMoney(remaining, 2)} `
+      + `(committed ${formatMoney(committed, 2)}, already received ${formatMoney(already, 2)}).`
+    );
+  }
+
+  const User = require('../models/User');
+  const investor = await User.findOne({
+    _id: investorId,
+    role: 'external_investor',
+    status: { $ne: 'deleted' },
+  }).select('name email');
+  if (!investor) throw httpError('External investor not found.', 404);
+
+  const { creditExternalCapital } = require('./externalInvestorLedgerService');
+  const externalLedger = await creditExternalCapital(investment, deposit, {
+    investor: investor._id,
+    investorName: investor.name || stake.investorName || '',
+    note: note?.trim()
+      || `CEO cash deposit from ${investor.name || 'External Investor'} for ${investment.investmentCode}`,
+    createdBy: recordedBy,
+    referenceType: 'ExternalInvestorDeposit',
+    referenceId: investment._id,
+  });
+
+  const now = new Date();
+  stake.capitalReceived = money(already + deposit);
+  stake.capitalReceivedAt = now;
+  stake.investorName = stake.investorName || investor.name || '';
+
+  investment.externalCapitalReceived = money(
+    Number(investment.externalCapitalReceived || 0) + deposit
+  );
+  investment.externalCapitalReceivedAt = now;
+  investment.externalCapitalRecordedBy = String(recordedBy || 'CEO').trim();
+  investment.externalCapitalLedgerEntryId = externalLedger?.entry?._id || investment.externalCapitalLedgerEntryId || null;
+  await investment.save();
+
+  await createAdminNotification({
+    type: 'general',
+    title: `External deposit recorded: ${investment.investmentCode}`,
+    message: `${formatMoney(deposit, 2)} cash deposit from ${investor.name || 'External Investor'} `
+      + `credited to isolated external ledger (remaining stake ${formatMoney(money(committed - stake.capitalReceived), 2)}).`,
+    relatedId: investment._id,
+    relatedModel: 'Investment',
+    targetRoles: ['ceo', 'cashier'],
+    targetUser: investor._id,
+  }).catch(() => {});
+
+  return {
+    investment,
+    investor,
+    stake: {
+      investor: stake.investor,
+      investorName: stake.investorName,
+      ownershipPct: stake.ownershipPct,
+      amount: money(stake.amount),
+      capitalReceived: money(stake.capitalReceived),
+      remaining: money(Math.max(0, committed - stake.capitalReceived)),
+    },
+    externalLedger,
+    deposit,
+    message: `Recorded cash deposit ${formatMoney(deposit, 2)} for ${investor.name || 'External Investor'} `
+      + `on ${investment.investmentCode}. Capital received ${formatMoney(stake.capitalReceived, 2)} / ${formatMoney(committed, 2)}.`,
+  };
+}
+
+/**
  * Cashier records inbound external investor capital for a co-funded project.
  */
 async function recordExternalInvestment({
@@ -1267,6 +1372,7 @@ module.exports = {
   getActiveProject,
   listRelatedActiveInvestments,
   recordExternalInvestment,
+  recordCeoExternalInvestorDeposit,
   recordMonthlyProjectReturn,
   liquidateProject,
   listExternalCapitalQueue,

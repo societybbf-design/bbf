@@ -33,7 +33,7 @@ const ExternalPayoutRequestSchema = new mongoose.Schema({
   },
   kind: {
     type: String,
-    enum: ['profit', 'capital', 'settlement'],
+    enum: ['profit', 'capital', 'settlement', 'expense'],
     default: 'settlement',
     index: true,
   },
@@ -68,9 +68,18 @@ const ExternalPayoutRequestSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['liquidation', 'monthly_return', 'manual'],
+    enum: ['liquidation', 'monthly_return', 'project_expense', 'manual'],
     default: 'manual',
     index: true,
+  },
+  executedAt: {
+    type: Date,
+    default: null,
+  },
+  executedBy: {
+    type: String,
+    trim: true,
+    default: '',
   },
   referenceType: {
     type: String,

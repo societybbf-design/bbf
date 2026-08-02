@@ -7,6 +7,7 @@ const {
   submitProjectManagerReview,
   getExternalInvestorChatPeers,
 } = require('../services/externalInvestorPortalService');
+const { decideExternalExpenseApproval } = require('../services/projectOpsService');
 const {
   getStaffMessages,
   sendStaffMessage,
@@ -69,6 +70,25 @@ router.post('/reviews', async (req, res) => {
   } catch (error) {
     return res.status(error.status || 500).json({
       error: error.message || 'Unable to submit review.',
+    });
+  }
+});
+
+router.post('/expenses/:id/decide', async (req, res) => {
+  try {
+    const approve = !(
+      req.body?.approve === false
+      || req.body?.decision === 'rejected'
+      || req.body?.status === 'rejected'
+    );
+    const result = await decideExternalExpenseApproval(req.session.user, req.params.id, {
+      approve,
+      note: req.body?.note || '',
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || 'Unable to update expense approval.',
     });
   }
 });
