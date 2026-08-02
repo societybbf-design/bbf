@@ -297,6 +297,8 @@ async function enrichInvestmentsWithSaleData(investments, { syncSaleStatus = fal
     const plain = investment.toObject ? investment.toObject() : { ...investment };
     const record = latestByInvestment.get(String(plain._id));
     const workflowPending = [
+      'pending_external_approval',
+      'pending_ceo_fund_release',
       'pending_member_approval',
       'pending_ceo_authorization',
       'pending_cashier_payment',
@@ -370,11 +372,15 @@ async function enrichInvestmentsWithSaleData(investments, { syncSaleStatus = fal
   return {
     active: enriched.filter((item) => item.status === 'active'),
     sold: enriched.filter((item) => item.status === 'sold' || item.status === 'closed'),
+    pendingExternalApproval: enriched.filter((item) => item.status === 'pending_external_approval'),
+    pendingCeoFundRelease: enriched.filter((item) => item.status === 'pending_ceo_fund_release'),
     pendingMemberApproval: enriched.filter((item) => item.status === 'pending_member_approval'),
     pendingCeoAuthorization: enriched.filter((item) => item.status === 'pending_ceo_authorization'),
     pendingCashierPayment: enriched.filter((item) => item.status === 'pending_cashier_payment'),
     pending: enriched.filter((item) => (
-      item.status === 'pending_member_approval'
+      item.status === 'pending_external_approval'
+      || item.status === 'pending_ceo_fund_release'
+      || item.status === 'pending_member_approval'
       || item.status === 'pending_ceo_authorization'
       || item.status === 'pending_cashier_payment'
     )),
@@ -384,6 +390,10 @@ async function enrichInvestmentsWithSaleData(investments, { syncSaleStatus = fal
 
 function getInvestmentDisplayStatus(status) {
   switch (status) {
+    case 'pending_external_approval':
+      return 'Pending External Investor Approval';
+    case 'pending_ceo_fund_release':
+      return 'Pending CEO Fund Release';
     case 'pending_member_approval':
       return 'Pending Member Approval';
     case 'pending_ceo_authorization':
@@ -1076,6 +1086,19 @@ async function createSocietyInvestment({
     : 'initial';
   const parentId = parentInvestment || null;
 
+  const hasExternalStakes = ownership.externalInvestors.length > 0;
+  // Joint projects: External Investor must have wallet balance before create.
+  if (hasExternalStakes) {
+    const {
+      assertInvestorsCanCoverStakes,
+    } = require('./externalInvestorWalletService');
+    await assertInvestorsCanCoverStakes(ownership.externalInvestors);
+  }
+
+  const initialStatus = hasExternalStakes
+    ? 'pending_external_approval'
+    : 'pending_member_approval';
+
   const investment = await Investment.create({
     investmentCode,
     investmentType: normalizedType,
@@ -1102,6 +1125,12 @@ async function createSocietyInvestment({
       amount: row.amount,
       capitalReceived: 0,
       capitalReceivedAt: null,
+      capitalLocked: 0,
+      capitalLockedAt: null,
+      approvalStatus: hasExternalStakes ? 'pending' : 'not_required',
+      approvedAt: null,
+      approvedBy: '',
+      approvalNote: '',
       profitBalance: 0,
     })),
     sector: normalizedSector,
@@ -1111,12 +1140,27 @@ async function createSocietyInvestment({
     documents: Array.isArray(documents) ? documents : [],
     eligibleMembers: eligibleMembers.map((member) => member._id),
     approvals: [],
-    status: 'pending_member_approval',
+    status: initialStatus,
     fundingKind: normalizedFundingKind,
     parentInvestment: parentId,
     createdBy: createdBy?.trim() || 'Admin',
     member: null,
   });
+
+  // Soft-hold wallet capital so it cannot be double-committed while approval is pending.
+  if (hasExternalStakes) {
+    const { reserveForProject } = require('./externalInvestorWalletService');
+    for (const stake of investment.externalInvestors || []) {
+      if (!stake.investor || !(Number(stake.amount) > 0)) continue;
+      await reserveForProject({
+        investorId: stake.investor,
+        amount: stake.amount,
+        investment,
+        note: `Reserved for project ${investment.investmentCode}`,
+        createdBy: createdBy?.trim() || 'CEO',
+      });
+    }
+  }
 
   await investment.populate([
     { path: 'investor', select: 'name email role phone address dateOfBirth' },
@@ -1130,6 +1174,43 @@ async function createSocietyInvestment({
   const ownershipLabel = ownership.externalInvestors.length
     ? `Society ${ownership.societyOwnershipPct}% / ${ownership.externalInvestors.map((s) => `${s.investorName || 'Investor'} ${s.ownershipPct}%`).join(' · ')}`
     : `Society ${ownership.societyOwnershipPct}% / Investor ${ownership.investorOwnershipPct}%`;
+
+  if (hasExternalStakes) {
+    for (const stake of investment.externalInvestors || []) {
+      if (!stake.investor) continue;
+      await createAdminNotification({
+        type: 'general',
+        title: `Project capital approval needed: ${investment.investmentCode}`,
+        message: `${isExpansion ? 'Capital expansion' : 'New project'} — your share `
+          + `${formatMoney(Number(stake.amount || 0), 2)} (${Number(stake.ownershipPct || 0).toFixed(2)}%) `
+          + 'requires your approval before funds can be locked and the project continues.',
+        relatedId: investment._id,
+        relatedModel: 'Investment',
+        targetUser: stake.investor?._id || stake.investor,
+      }).catch(() => {});
+    }
+
+    await createAdminNotification({
+      type: 'general',
+      title: isExpansion
+        ? `Capital expansion awaiting external approval: ${investment.investmentCode}`
+        : `Investment awaiting external approval: ${investment.investmentCode}`,
+      message: `${ownershipLabel}. External Investor approval is required before member voting and fund finalization.`,
+      relatedId: investment._id,
+      relatedModel: 'Investment',
+      targetRoles: ['ceo'],
+    });
+
+    return {
+      investment,
+      approvalTracking: await buildApprovalTracking(investment),
+      savingsUpdate: null,
+      message: isExpansion
+        ? 'Capital expansion submitted. Waiting for External Investor approval before CEO fund release and member voting.'
+        : 'Joint project submitted. Waiting for External Investor approval. Funds stay reserved (not finalized) until they approve and CEO confirms release.',
+    };
+  }
+
   const notifyTitle = isExpansion
     ? `Capital expansion request ${investment.investmentCode}`
     : `New investment request ${investment.investmentCode}`;
@@ -1165,6 +1246,229 @@ async function createSocietyInvestment({
     message: isExpansion
       ? 'Capital expansion submitted for member approval. Cashier payment uses the existing queue after approval.'
       : 'Investment submitted for member approval. Funds will be deducted after cashier payment.',
+  };
+}
+
+/**
+ * External Investor approves or rejects their capital commitment on a joint project.
+ */
+async function decideExternalProjectCommitment(actor, investmentId, { approve = true, note = '' } = {}) {
+  if (String(actor?.role || '').toLowerCase() !== 'external_investor') {
+    const error = new Error('External Investor access only.');
+    error.status = 403;
+    throw error;
+  }
+  const investorId = String(actor.id || actor._id || '');
+  const investment = await Investment.findById(investmentId);
+  if (!investment) {
+    const error = new Error('Project not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (investment.status !== 'pending_external_approval') {
+    const error = new Error(
+      `This project is not awaiting External Investor approval (status: ${investment.status}).`
+    );
+    error.status = 409;
+    throw error;
+  }
+
+  const stake = (investment.externalInvestors || []).find(
+    (row) => String(row.investor) === investorId
+  );
+  if (!stake) {
+    const error = new Error('You do not have a capital commitment on this project.');
+    error.status = 403;
+    throw error;
+  }
+  if (stake.approvalStatus !== 'pending') {
+    const error = new Error(`You already ${stake.approvalStatus} this project commitment.`);
+    error.status = 409;
+    throw error;
+  }
+
+  stake.approvalStatus = approve ? 'approved' : 'rejected';
+  stake.approvedAt = new Date();
+  stake.approvedBy = String(actor.name || actor.email || investorId);
+  stake.approvalNote = String(note || '').trim();
+
+  if (!approve) {
+    investment.status = 'rejected';
+    await investment.save();
+
+    const { unreserveForProject } = require('./externalInvestorWalletService');
+    for (const row of investment.externalInvestors || []) {
+      if (!(Number(row.amount) > 0) || !row.investor) continue;
+      // Release every reserved stake — project is rejected.
+      if (Number(row.capitalLocked || 0) > 0) continue;
+      await unreserveForProject({
+        investorId: row.investor,
+        amount: row.amount,
+        investment,
+        note: `Released after rejection of ${investment.investmentCode}`,
+        createdBy: stake.approvedBy,
+      }).catch(() => {});
+    }
+
+    await createAdminNotification({
+      type: 'general',
+      title: `External capital rejected: ${investment.investmentCode}`,
+      message: `${stake.investorName || 'External Investor'} rejected their `
+        + `${formatMoney(Number(stake.amount || 0), 2)} commitment. Project closed; reserved funds released.`,
+      relatedId: investment._id,
+      relatedModel: 'Investment',
+      targetRoles: ['ceo'],
+    }).catch(() => {});
+
+    return {
+      investment,
+      message: 'Project commitment rejected. Reserved wallet funds have been released.',
+    };
+  }
+
+  const allApproved = (investment.externalInvestors || []).every(
+    (row) => row.approvalStatus === 'approved' || row.approvalStatus === 'not_required'
+  );
+
+  if (allApproved) {
+    investment.status = 'pending_ceo_fund_release';
+    await investment.save();
+    await createAdminNotification({
+      type: 'general',
+      title: `External capital approved — CEO fund release needed: ${investment.investmentCode}`,
+      message: 'All External Investors approved. Confirm to lock allocated capital in their wallets '
+        + 'and continue to member approval.',
+      relatedId: investment._id,
+      relatedModel: 'Investment',
+      targetRoles: ['ceo'],
+    }).catch(() => {});
+    return {
+      investment,
+      message: 'Approved. Waiting for CEO to confirm fund release and lock your capital.',
+    };
+  }
+
+  await investment.save();
+  return {
+    investment,
+    message: 'Approved. Waiting for remaining External Investors before CEO fund release.',
+  };
+}
+
+/**
+ * CEO confirms fund release after External Investor approval:
+ * reserved wallet capital → locked, project ledger credited, then member voting opens.
+ */
+async function ceoConfirmExternalFundRelease(investmentId, {
+  confirmedBy = 'CEO',
+  note = '',
+} = {}) {
+  const investment = await Investment.findById(investmentId)
+    .populate('externalInvestors.investor', 'name email role');
+  if (!investment) {
+    const error = new Error('Project not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (investment.status !== 'pending_ceo_fund_release') {
+    const error = new Error(
+      `Project is not awaiting CEO fund release (status: ${investment.status}).`
+    );
+    error.status = 409;
+    throw error;
+  }
+
+  const pending = (investment.externalInvestors || []).filter(
+    (row) => row.approvalStatus === 'pending'
+  );
+  if (pending.length) {
+    const error = new Error('Cannot release funds until every External Investor has approved.');
+    error.status = 409;
+    throw error;
+  }
+
+  const {
+    lockReservedForProject,
+  } = require('./externalInvestorWalletService');
+  const { creditExternalCapital } = require('./externalInvestorLedgerService');
+
+  const now = new Date();
+  let lockedTotal = 0;
+
+  for (const stake of investment.externalInvestors || []) {
+    const amount = Number((Number(stake.amount || 0)).toFixed(2));
+    if (!(amount > 0) || !stake.investor) continue;
+    if (Number(stake.capitalLocked || 0) >= amount - 0.001) continue;
+
+    await lockReservedForProject({
+      investorId: stake.investor?._id || stake.investor,
+      amount,
+      investment,
+      note: note || `CEO fund release for ${investment.investmentCode}`,
+      createdBy: confirmedBy,
+    });
+
+    await creditExternalCapital(investment, amount, {
+      investor: stake.investor?._id || stake.investor,
+      investorName: stake.investorName || stake.investor?.name || '',
+      note: note || `Locked project capital for ${investment.investmentCode}`,
+      createdBy: confirmedBy,
+      referenceType: 'ExternalFundRelease',
+      referenceId: investment._id,
+    });
+
+    stake.capitalLocked = amount;
+    stake.capitalLockedAt = now;
+    stake.capitalReceived = amount;
+    stake.capitalReceivedAt = now;
+    lockedTotal += amount;
+  }
+
+  investment.externalCapitalReceived = Number(
+    (Number(investment.externalCapitalReceived || 0) + lockedTotal).toFixed(2)
+  );
+  investment.externalCapitalReceivedAt = now;
+  investment.externalCapitalRecordedBy = String(confirmedBy || 'CEO').trim();
+  investment.externalFundsReleasedAt = now;
+  investment.externalFundsReleasedBy = String(confirmedBy || 'CEO').trim();
+  investment.status = 'pending_member_approval';
+  await investment.save();
+
+  const eligibleMembers = await User.find({
+    _id: { $in: investment.eligibleMembers || [] },
+    role: 'member',
+    status: 'active',
+  }).select('_id name');
+
+  const ownershipLabel = `Society ${investment.societyOwnershipPct}% / `
+    + `${(investment.externalInvestors || []).map((s) => `${s.investorName || 'Investor'} ${s.ownershipPct}%`).join(' · ')}`;
+
+  await Promise.all(eligibleMembers.map((member) => createMemberNotification({
+    memberId: member._id,
+    type: 'general',
+    title: `New investment request ${investment.investmentCode}`,
+    message: `${investment.investorName || 'Project'} · ${investment.investmentType || 'Project'} · `
+      + `${formatMoney(Number(investment.amount || 0), 2)} · ${ownershipLabel}. `
+      + 'External capital is locked. Please review and approve.',
+    relatedId: investment._id,
+    relatedModel: 'Investment',
+  })));
+
+  await createAdminNotification({
+    type: 'general',
+    title: `External funds locked: ${investment.investmentCode}`,
+    message: `${formatMoney(lockedTotal, 2)} locked from External Investor wallet(s). `
+      + `Project moved to member approval (${eligibleMembers.length} members).`,
+    relatedId: investment._id,
+    relatedModel: 'Investment',
+    targetRoles: ['ceo'],
+  }).catch(() => {});
+
+  return {
+    investment,
+    lockedTotal,
+    message: `External capital of ${formatMoney(lockedTotal, 2)} locked. `
+      + 'Project is now open for member approval. Remaining wallet balances stay available for extra expenses.',
   };
 }
 
@@ -2092,6 +2396,24 @@ async function completeCashierPayment(investmentId, {
     throw error;
   }
 
+  // Joint projects cannot finalize society disbursement until external capital is locked.
+  const externalAmount = Number(investment.externalAmount || 0);
+  if (externalAmount > 0.001) {
+    const stakes = Array.isArray(investment.externalInvestors) ? investment.externalInvestors : [];
+    const unlocked = stakes.filter((row) => {
+      const need = Number(row.amount || 0);
+      return need > 0.001 && Number(row.capitalLocked || 0) + 0.001 < need;
+    });
+    if (unlocked.length || !investment.externalFundsReleasedAt) {
+      const error = new Error(
+        'External Investor capital must be approved and locked by CEO fund release '
+        + 'before cashier can finalize society disbursement.'
+      );
+      error.status = 409;
+      throw error;
+    }
+  }
+
   const fundingCheck = await getCashierPaymentFundingSnapshot(investment);
   if (!fundingCheck.openingSet) {
     const error = new Error('Set the bank ledger opening balance before completing payment.');
@@ -2382,7 +2704,8 @@ async function getExternalInvestorPortfolio(investorId) {
   const ProjectExpense = require('../models/ProjectExpense');
 
   const investmentIds = investments.map((row) => row._id);
-  const [ledgers, ledgerEntries, payoutRequests, pendingExpenses] = await Promise.all([
+  const { getWalletSnapshot } = require('./externalInvestorWalletService');
+  const [ledgers, ledgerEntries, payoutRequests, pendingExpenses, wallet] = await Promise.all([
     ExternalInvestorLedger.find({ investment: { $in: investmentIds } }).lean(),
     ExternalInvestorLedgerEntry.find({
       investment: { $in: investmentIds },
@@ -2407,6 +2730,7 @@ async function getExternalInvestorPortfolio(investorId) {
       .sort({ submittedAt: -1 })
       .limit(30)
       .lean(),
+    getWalletSnapshot(investor._id),
   ]);
 
   const ledgerByInvestment = new Map(ledgers.map((row) => [String(row.investment), row]));
@@ -2433,7 +2757,9 @@ async function getExternalInvestorPortfolio(investorId) {
       ownershipPct: money2(stake?.ownershipPct || 0),
       capitalCommitted: money2(stake?.amount || 0),
       capitalReceived: money2(stake?.capitalReceived || 0),
+      capitalLocked: money2(stake?.capitalLocked || 0),
       capitalRemaining: money2(Math.max(0, Number(stake?.amount || 0) - Number(stake?.capitalReceived || 0))),
+      approvalStatus: stake?.approvalStatus || 'not_required',
       profitBalance: money2(stake?.profitBalance || 0),
       ledgerBalance: money2(ledger?.bookBalance || 0),
       projectManager: inv.projectManager
@@ -2455,20 +2781,27 @@ async function getExternalInvestorPortfolio(investorId) {
     || row.type === 'external_capital_out'
     || row.type === 'external_profit_accrual'
   ));
+  const awaitingFundRelease = projects.filter((row) => row.status === 'pending_ceo_fund_release');
 
   return {
     investor,
+    wallet,
     summary: {
       projectCount: projects.length,
       capitalCommitted: money2(projects.reduce((sum, row) => sum + row.capitalCommitted, 0)),
       capitalReceived: money2(projects.reduce((sum, row) => sum + row.capitalReceived, 0)),
       profitBalance: money2(projects.reduce((sum, row) => sum + row.profitBalance, 0)),
       ledgerBalance: money2(projects.reduce((sum, row) => sum + row.ledgerBalance, 0)),
+      walletAvailable: money2(wallet.availableBalance),
+      walletReserved: money2(wallet.reservedBalance),
+      walletLocked: money2(wallet.lockedBalance),
       pendingPayouts: payoutRequests.filter((row) => row.status === 'pending_external_approval').length,
       awaitingCeoPayment: payoutRequests.filter((row) => row.status === 'approved').length
-        + pendingExpenses.filter((row) => row.status === 'external_approved').length,
+        + pendingExpenses.filter((row) => row.status === 'external_approved').length
+        + awaitingFundRelease.length,
       depositCount: deposits.length,
     },
+    awaitingFundRelease,
     projects,
     deposits: deposits.map((row) => ({
       id: row._id,
@@ -2730,6 +3063,8 @@ function buildInvestmentSummaryFromGrouped(grouped, totalSavings = 0) {
 module.exports = {
   approveInvestmentByMember,
   authorizeInvestmentByCeo,
+  decideExternalProjectCommitment,
+  ceoConfirmExternalFundRelease,
   buildApprovalTracking,
   buildApprovalTrackingBatch,
   completeCashierPayment,

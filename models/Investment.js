@@ -76,6 +76,39 @@ const ExternalInvestorStakeSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  /** Wallet capital locked to this stake after External Investor approve + CEO release */
+  capitalLocked: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  capitalLockedAt: {
+    type: Date,
+    default: null,
+  },
+  /**
+   * External Investor approval of this project commitment.
+   * pending → approved → (CEO fund release locks capital) | rejected
+   */
+  approvalStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected', 'not_required'],
+    default: 'not_required',
+  },
+  approvedAt: {
+    type: Date,
+    default: null,
+  },
+  approvedBy: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  approvalNote: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   profitBalance: {
     type: Number,
     default: 0,
@@ -291,6 +324,10 @@ const InvestmentSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: [
+      /** Joint projects: waiting for External Investor commitment approval */
+      'pending_external_approval',
+      /** External Investor(s) approved — CEO must confirm fund release / lock */
+      'pending_ceo_fund_release',
       'pending_member_approval',
       /** After unanimous member approval — CEO must authorize before cashier queue. */
       'pending_ceo_authorization',
@@ -302,6 +339,16 @@ const InvestmentSchema = new mongoose.Schema({
     ],
     default: 'pending_member_approval',
     index: true,
+  },
+  /** CEO confirmed external capital lock / fund release */
+  externalFundsReleasedAt: {
+    type: Date,
+    default: null,
+  },
+  externalFundsReleasedBy: {
+    type: String,
+    trim: true,
+    default: '',
   },
   ceoAuthorizedAt: {
     type: Date,

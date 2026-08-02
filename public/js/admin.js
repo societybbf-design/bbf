@@ -1827,12 +1827,14 @@ async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) 
 
     const investor = data.investor || {};
     const summary = data.summary || {};
+    const wallet = data.wallet || {};
     const projects = data.projects || [];
     const deposits = data.deposits || [];
     const returns = data.returns || [];
     const ledgerEntries = data.ledgerEntries || [];
     const payoutRequests = data.payoutRequests || [];
     const expenseRequests = data.expenseRequests || [];
+    const awaitingFundRelease = data.awaitingFundRelease || [];
     const depositableProjects = projects.filter((p) => (
       ['active', 'pending_cashier_payment', 'pending_member_approval'].includes(p.status)
       && Number(p.capitalRemaining || 0) > 0.001
@@ -1844,28 +1846,28 @@ async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) 
       <h2 style="margin:0 0 0.35rem;">${escapeCeoHtml(investor.name || 'External Investor')} · External Management</h2>
       <p class="table-subtitle">${escapeCeoHtml(investor.email || '')}${investor.phone ? ` · ${escapeCeoHtml(investor.phone)}` : ''} · Status ${escapeCeoHtml(investor.status || 'active')}</p>
       <div class="metrics-grid u-my-1">
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet available</span><strong class="metric-value">${formatMoney(Number(wallet.availableBalance || summary.walletAvailable || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet reserved</span><strong class="metric-value">${formatMoney(Number(wallet.reservedBalance || summary.walletReserved || 0), 2)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet locked</span><strong class="metric-value">${formatMoney(Number(wallet.lockedBalance || summary.walletLocked || 0), 2)}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${summary.projectCount || 0}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${formatMoney(Number(summary.capitalReceived || 0), 2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit balance</span><strong class="metric-value">${formatMoney(Number(summary.profitBalance || 0), 2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Ledger balance</span><strong class="metric-value">${formatMoney(Number(summary.ledgerBalance || 0), 2)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending investor approval</span><strong class="metric-value">${summary.pendingPayouts || 0}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting CEO payment</span><strong class="metric-value">${summary.awaitingCeoPayment || 0}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Awaiting CEO action</span><strong class="metric-value">${summary.awaitingCeoPayment || 0}</strong></div></div>
       </div>
 
       <section class="panel-card" style="margin-top:0.85rem;">
         <h3 style="margin:0 0 0.35rem;">Record cash deposit</h3>
-        <p class="table-subtitle">External investors pay cash physically. Record the deposit here to credit their project capital / ledger balance.</p>
+        <p class="table-subtitle">Physical cash credits the investor wallet first (required before joint project create). Optional project stake deposits remain available for legacy top-ups.</p>
         <form id="ceoExternalDepositForm" class="add-member-form" data-investor-id="${escapeCeoHtml(String(investor._id || investorId))}">
           <div class="form-row-2">
             <div class="form-group">
               <label>
-                Project stake
+                Deposit destination
                 <select name="investmentId" id="ceoExternalDepositProject" required>
-                  <option value="">Choose project…</option>
+                  <option value="wallet" selected>Wallet (unallocated — for new projects)</option>
                   ${depositableProjects.map((p) => {
                     const asset = [p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · ');
                     return `<option value="${escapeCeoHtml(String(p.id))}" data-remaining="${Number(p.capitalRemaining || 0)}">
-                      ${escapeCeoHtml(p.investmentCode || p.id)} · remaining ${formatMoney(Number(p.capitalRemaining || 0), 2)}${asset ? ` · ${escapeCeoHtml(asset)}` : ''}
+                      Project ${escapeCeoHtml(p.investmentCode || p.id)} · remaining ${formatMoney(Number(p.capitalRemaining || 0), 2)}${asset ? ` · ${escapeCeoHtml(asset)}` : ''}
                     </option>`;
                   }).join('')}
                 </select>
@@ -1884,17 +1886,22 @@ async function openExternalInvestorDetail(investorId, { pushUrl = false } = {}) 
               <input type="text" name="note" id="ceoExternalDepositNote" maxlength="240" placeholder="e.g. Cash received at office" />
             </label>
           </div>
-          <button type="submit" class="primary-btn" ${depositableProjects.length ? '' : 'disabled'}>Record cash deposit</button>
+          <button type="submit" class="primary-btn">Record cash deposit</button>
           <p id="ceoExternalDepositMessage" class="message"></p>
-          ${depositableProjects.length ? '' : '<p class="table-subtitle">No open stakes with remaining committed capital.</p>'}
         </form>
       </section>
 
       <section class="panel-card" style="margin-top:0.85rem;">
         <h3 style="margin:0 0 0.35rem;">CEO payment queue</h3>
-        <p class="table-subtitle">Items already approved by this External Investor — execute final disbursement from their ledger.</p>
+        <p class="table-subtitle">Confirm fund release (lock wallet capital) or execute approved payouts / expenses from the external ledger.</p>
         <div class="stack-list" id="ceoExternalPaymentQueue">
-          ${[...approvedPayouts.map((r) => `
+          ${[...awaitingFundRelease.map((r) => `
+            <article class="panel-card u-mb-1">
+              <h4>Fund release · ${escapeCeoHtml(r.investmentCode || 'Project')} · ${formatMoney(Number(r.capitalCommitted || 0), 2)}</h4>
+              <p class="table-subtitle">External Investor approved — lock allocated capital and open member approval</p>
+              <button type="button" class="primary-btn" data-confirm-external-fund-release="${escapeCeoHtml(String(r.id))}">Confirm &amp; lock funds</button>
+            </article>
+          `), ...approvedPayouts.map((r) => `
             <article class="panel-card u-mb-1">
               <h4>Payout · ${escapeCeoHtml(r.investmentCode || 'Project')} · ${formatMoney(Number(r.amount || 0), 2)}</h4>
               <p class="table-subtitle">${escapeCeoHtml(r.kind || r.source || 'settlement')} · capital ${formatMoney(Number(r.capitalAmount || 0), 2)} · profit ${formatMoney(Number(r.profitAmount || 0), 2)}</p>
@@ -2076,12 +2083,12 @@ function bindExternalInvestorDetailActions(investorId) {
       msg.classList.remove('success', 'error');
     }
     const formData = new FormData(depositForm);
-    const investmentId = formData.get('investmentId');
+    const investmentId = formData.get('investmentId') || 'wallet';
     const amount = Number(formData.get('amount') || 0);
-    if (!investmentId || !(amount > 0)) {
+    if (!(amount > 0)) {
       if (msg) {
         msg.classList.add('error');
-        msg.textContent = 'Choose a project and enter a deposit amount.';
+        msg.textContent = 'Enter a deposit amount.';
       }
       return;
     }
@@ -2090,7 +2097,7 @@ function bindExternalInvestorDetailActions(investorId) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          investmentId,
+          investmentId: investmentId === 'wallet' ? '' : investmentId,
           amount,
           note: formData.get('note') || '',
         }),
@@ -2108,6 +2115,24 @@ function bindExternalInvestorDetailActions(investorId) {
         msg.textContent = error.message;
       }
     }
+  });
+
+  document.querySelectorAll('[data-confirm-external-fund-release]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const response = await fetch(`/api/admin/investments/${btn.dataset.confirmExternalFundRelease}/external-fund-release`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to confirm fund release.');
+        window.alert(data.message || 'Funds locked.');
+        await openExternalInvestorDetail(investorId, { pushUrl: false });
+      } catch (error) {
+        window.alert(error.message);
+      }
+    });
   });
 
   document.querySelectorAll('[data-execute-external-payout]').forEach((btn) => {

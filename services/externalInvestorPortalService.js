@@ -39,9 +39,21 @@ function stakeMatchesInvestor(investment, investorId) {
  */
 async function getExternalInvestorDashboard(actor) {
   const investorId = assertExternalInvestor(actor);
+  const { getWalletSnapshot } = require('./externalInvestorWalletService');
   const investments = await Investment.find({
     'externalInvestors.investor': investorId,
-    status: { $in: ['pending_member_approval', 'pending_ceo_authorization', 'pending_cashier_payment', 'active', 'sold', 'closed'] },
+    status: {
+      $in: [
+        'pending_external_approval',
+        'pending_ceo_fund_release',
+        'pending_member_approval',
+        'pending_ceo_authorization',
+        'pending_cashier_payment',
+        'active',
+        'sold',
+        'closed',
+      ],
+    },
   })
     .select(
       // Intentionally omit society pool / member-facing fields for isolation.
@@ -69,6 +81,8 @@ async function getExternalInvestorDashboard(actor) {
       ownershipPct: money(stake?.ownershipPct || 0),
       capitalCommitted: money(stake?.amount || 0),
       capitalReceived: money(stake?.capitalReceived || 0),
+      capitalLocked: money(stake?.capitalLocked || 0),
+      approvalStatus: stake?.approvalStatus || 'not_required',
       profitBalance: money(stake?.profitBalance || 0),
       projectManager: inv.projectManager
         ? {
@@ -83,9 +97,13 @@ async function getExternalInvestorDashboard(actor) {
     };
   });
 
+  const projectApprovals = projects.filter(
+    (p) => p.status === 'pending_external_approval' && p.approvalStatus === 'pending'
+  );
+
   const investmentIds = investments.map((row) => row._id);
   const { listExternalInvestorExpenseApprovals } = require('./projectOpsService');
-  const [ledgers, deposits, payoutRequests, reviews, expenseApprovals] = await Promise.all([
+  const [ledgers, deposits, payoutRequests, reviews, expenseApprovals, wallet] = await Promise.all([
     ExternalInvestorLedger.find({ investment: { $in: investmentIds } }).lean(),
     // Isolated to this investor's projects only; include project-level posts (null investor).
     ExternalInvestorLedgerEntry.find({
@@ -117,6 +135,7 @@ async function getExternalInvestorDashboard(actor) {
       .limit(50)
       .lean(),
     listExternalInvestorExpenseApprovals(investorId),
+    getWalletSnapshot(investorId),
   ]);
 
   const ledgerByInvestment = new Map(ledgers.map((row) => [String(row.investment), row]));
@@ -125,13 +144,27 @@ async function getExternalInvestorDashboard(actor) {
     capitalCommitted: money(projects.reduce((s, p) => s + Number(p.capitalCommitted || 0), 0)),
     capitalReceived: money(projects.reduce((s, p) => s + Number(p.capitalReceived || 0), 0)),
     profitBalance: money(projects.reduce((s, p) => s + Number(p.profitBalance || 0), 0)),
+    walletAvailable: money(wallet.availableBalance),
+    walletReserved: money(wallet.reservedBalance),
+    walletLocked: money(wallet.lockedBalance),
     pendingApprovals: payoutRequests.filter((r) => r.status === 'pending_external_approval').length
-      + (expenseApprovals || []).length,
+      + (expenseApprovals || []).length
+      + projectApprovals.length,
   };
 
   return {
     investorId,
+    wallet,
     totals,
+    projectApprovals: projectApprovals.map((p) => ({
+      id: p.id,
+      investmentCode: p.investmentCode,
+      investmentType: p.investmentType,
+      ownershipPct: p.ownershipPct,
+      capitalCommitted: p.capitalCommitted,
+      status: p.status,
+      createdAt: p.createdAt,
+    })),
     projects: projects.map((p) => ({
       ...p,
       ledgerBalance: money(ledgerByInvestment.get(String(p.id))?.bookBalance || 0),

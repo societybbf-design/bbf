@@ -378,6 +378,44 @@ async function collectStaffItems(user) {
 
   // CEO authorization queue (after member approvals, before cashier).
   if (isFullAccessRole(user.role) || user.role === 'ceo' || user.role === 'admin') {
+    const awaitingFundRelease = await Investment.find({
+      member: null,
+      status: 'pending_ceo_fund_release',
+    })
+      .populate('externalInvestors.investor', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    for (const inv of awaitingFundRelease) {
+      const externalTotal = Number(inv.externalAmount || 0);
+      items.push(item({
+        id: `investment_fund_release:${inv._id}`,
+        type: 'investment_external_fund_release',
+        title: `Lock external capital — ${inv.investmentCode || 'Investment'}`,
+        subtitle: 'External Investor approved — confirm to lock wallet capital and open member approval',
+        amount: externalTotal,
+        status: inv.status,
+        priority: 'high',
+        createdAt: inv.updatedAt || inv.createdAt,
+        entityId: inv._id,
+        actions: [
+          {
+            key: 'approve',
+            label: 'Confirm & lock funds',
+            method: 'POST',
+            path: `/api/admin/investments/${inv._id}/external-fund-release`,
+            body: {},
+            requiresPassword: true,
+          },
+        ],
+        details: {
+          projectCode: inv.investmentCode || '',
+          fundingKind: inv.fundingKind || 'initial',
+        },
+        deepLink: { dashboard: 'admin', hash: '#approvals' },
+      }));
+    }
+
     const awaitingCeo = await Investment.find({
       member: null,
       status: 'pending_ceo_authorization',

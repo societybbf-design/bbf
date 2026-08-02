@@ -4298,9 +4298,9 @@ async function loadExternalInvestorHome() {
     const totals = data.totals || {};
     if (metricsEl) {
       metricsEl.innerHTML = `
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet available</span><strong class="metric-value">${money(totals.walletAvailable)}</strong></div></div>
+        <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet locked</span><strong class="metric-value">${money(totals.walletLocked)}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${Number(totals.projects || 0)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${money(totals.capitalReceived)}</strong></div></div>
-        <div class="metric-card"><div class="metric-content"><span class="metric-label">Profit balance</span><strong class="metric-value">${money(totals.profitBalance)}</strong></div></div>
         <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending approvals</span><strong class="metric-value">${Number(totals.pendingApprovals || 0)}</strong></div></div>
       `;
     }
@@ -4316,9 +4316,9 @@ function renderExternalPortal(data) {
   const metricsEl = document.getElementById('externalPortalMetrics');
   if (metricsEl) {
     metricsEl.innerHTML = `
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Projects</span><strong class="metric-value">${Number(totals.projects || 0)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital committed</span><strong class="metric-value">${money(totals.capitalCommitted)}</strong></div></div>
-      <div class="metric-card"><div class="metric-content"><span class="metric-label">Capital received</span><strong class="metric-value">${money(totals.capitalReceived)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet available</span><strong class="metric-value">${money(totals.walletAvailable)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet reserved</span><strong class="metric-value">${money(totals.walletReserved)}</strong></div></div>
+      <div class="metric-card"><div class="metric-content"><span class="metric-label">Wallet locked</span><strong class="metric-value">${money(totals.walletLocked)}</strong></div></div>
       <div class="metric-card"><div class="metric-content"><span class="metric-label">Pending approvals</span><strong class="metric-value">${Number(totals.pendingApprovals || 0)}</strong></div></div>
     `;
   }
@@ -4331,7 +4331,7 @@ function renderExternalPortal(data) {
         <article class="panel-card u-mb-1">
           <h4>${escapeHtml(p.investmentCode || 'Project')} · ${escapeHtml(p.status || '')}</h4>
           <p>${escapeHtml(p.investmentType || 'Project')}${p.projectAsset ? ` · ${escapeHtml([p.projectAssetCategory, p.projectAsset].filter(Boolean).join(' · '))}` : ''}${p.location ? ` · ${escapeHtml(p.location)}` : ''}</p>
-          <p class="table-subtitle">Your ownership ${Number(p.ownershipPct || 0).toFixed(2)}% · Capital ${money(p.capitalReceived)} / ${money(p.capitalCommitted)} · Profit ${money(p.profitBalance)} · Ledger ${money(p.ledgerBalance)}</p>
+          <p class="table-subtitle">Your ownership ${Number(p.ownershipPct || 0).toFixed(2)}% · Capital ${money(p.capitalReceived)} / ${money(p.capitalCommitted)} · Locked ${money(p.capitalLocked)} · Profit ${money(p.profitBalance)} · Ledger ${money(p.ledgerBalance)}</p>
           ${p.projectManager ? `<p><strong>Project Manager:</strong> ${escapeHtml(p.projectManager.name || '—')}${p.projectManager.email ? ` · ${escapeHtml(p.projectManager.email)}` : ''}${p.projectManager.phone ? ` · ${escapeHtml(p.projectManager.phone)}` : ''}</p>` : '<p class="text-secondary">No Project Manager assigned.</p>'}
         </article>
       `).join('')
@@ -4341,8 +4341,20 @@ function renderExternalPortal(data) {
   const payoutsEl = document.getElementById('externalPortalPayouts');
   const pending = (data.payoutRequests || []).filter((r) => r.status === 'pending_external_approval');
   const pendingExpenses = data.expenseApprovals || [];
+  const pendingProjects = data.projectApprovals || [];
   if (payoutsEl) {
     const cards = [
+      ...pendingProjects.map((r) => `
+        <article class="panel-card u-mb-1">
+          <h4>Project commitment · ${escapeHtml(r.investmentCode || 'Project')} · ${money(r.capitalCommitted)}</h4>
+          <p class="table-subtitle">${escapeHtml(r.investmentType || 'Project')} · your ownership ${Number(r.ownershipPct || 0).toFixed(2)}%</p>
+          <p class="table-subtitle">Your wallet share is already reserved. Approve to let the CEO lock it to this project; remaining available balance stays free for extra expenses.</p>
+          <div class="inline-actions" style="gap:0.5rem;">
+            <button type="button" class="primary-btn" data-external-project-approve="${escapeHtml(String(r.id))}">Approve commitment</button>
+            <button type="button" class="secondary-btn" data-external-project-reject="${escapeHtml(String(r.id))}">Reject</button>
+          </div>
+        </article>
+      `),
       ...pendingExpenses.map((r) => `
         <article class="panel-card u-mb-1">
           <h4>Expense · ${escapeHtml(r.investmentCode || 'Project')} · your share ${money(r.yourShare)}</h4>
@@ -4367,7 +4379,13 @@ function renderExternalPortal(data) {
     ];
     payoutsEl.innerHTML = cards.length
       ? cards.join('')
-      : '<p class="text-secondary">No payouts or expenses awaiting your approval.</p>';
+      : '<p class="text-secondary">No project commitments, payouts, or expenses awaiting your approval.</p>';
+    payoutsEl.querySelectorAll('[data-external-project-approve]').forEach((btn) => {
+      btn.addEventListener('click', () => void decideExternalProject(btn.dataset.externalProjectApprove, true));
+    });
+    payoutsEl.querySelectorAll('[data-external-project-reject]').forEach((btn) => {
+      btn.addEventListener('click', () => void decideExternalProject(btn.dataset.externalProjectReject, false));
+    });
     payoutsEl.querySelectorAll('[data-external-payout-approve]').forEach((btn) => {
       btn.addEventListener('click', () => void decideExternalPayout(btn.dataset.externalPayoutApprove, true));
     });
@@ -4444,6 +4462,22 @@ async function decideExternalExpense(expenseId, approve) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to update expense.');
     window.alert(data.message || (approve ? 'Approved — awaiting CEO disbursement.' : 'Rejected.'));
+    await loadExternalInvestorPortal();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function decideExternalProject(investmentId, approve) {
+  try {
+    const response = await fetch(`/api/external-investor/projects/${investmentId}/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approve }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to update project commitment.');
+    window.alert(data.message || (approve ? 'Approved — awaiting CEO fund release.' : 'Rejected.'));
     await loadExternalInvestorPortal();
   } catch (error) {
     window.alert(error.message);
