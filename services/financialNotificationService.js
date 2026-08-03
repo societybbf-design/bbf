@@ -1,7 +1,4 @@
-const { uiText } = require('./i18nService');
 const { formatMoney } = require('./moneyFormat');
-const { createAdminNotification } = require('./adminNotificationService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
 const { paymentChannelLabel } = require('./paymentChannelService');
 const { brandingSubjectSuffix } = require('./organizationBranding');
@@ -19,21 +16,10 @@ async function notifyDepositRecorded({
   const channelLabel = paymentChannelLabel(paymentMethod);
   const receiptLabel = receiptNumber ? ` Receipt ${receiptNumber}.` : '';
 
-  // Deposit confirmations go only to the depositing member (not broadcast).
-  await Promise.allSettled([
-    createMemberNotification({
-      memberId: member._id,
-      type: 'deposit',
-      title: uiText('bn', 'depositRecorded', 'Deposit recorded'),
-      message: `Your deposit of ${amountLabel} via ${channelLabel} has been recorded.${receiptLabel}`,
-      relatedId: deposit._id,
-      relatedModel: 'Deposit',
-    }),
-    notifyMemberByEmailAndSms(member, {
-      subject: `Deposit recorded — ${brandingSubjectSuffix('en')}`,
-      message: `Dear ${member.name}, your deposit of ${amountLabel} via ${channelLabel} has been recorded.${receiptLabel}`,
-    }),
-  ]);
+  await notifyMemberByEmailAndSms(member, {
+    subject: `Deposit recorded — ${brandingSubjectSuffix('en')}`,
+    message: `Dear ${member.name}, your deposit of ${amountLabel} via ${channelLabel} has been recorded.${receiptLabel}`,
+  });
 }
 
 async function notifyWithdrawalEvent({
@@ -48,49 +34,13 @@ async function notifyWithdrawalEvent({
   const isNew = status === 'pending';
 
   if (isNew) {
-    await createAdminNotification({
-      type: 'withdrawal',
-      title: `Withdrawal request from ${member.name}`,
-      message: `${member.name} requested ${amountLabel} from Advance Balance. CEO approval required before Cashier payout.`,
-      relatedId: request._id,
-      relatedModel: 'WithdrawalRequest',
-      targetRoles: ['ceo'],
-    });
-    await createMemberNotification({
-      memberId: member._id,
-      type: 'withdrawal',
-      title: 'Withdrawal request submitted',
-      message: `Your withdrawal request for ${amountLabel} has been submitted and is awaiting CEO approval. Payouts come from your Advance Balance only.`,
-      relatedId: request._id,
-      relatedModel: 'WithdrawalRequest',
-    });
     return;
   }
-
-  await createMemberNotification({
-    memberId: member._id,
-    type: 'withdrawal',
-    title: `Withdrawal ${status}`,
-    message: `Your withdrawal request for ${amountLabel} is now ${status}.`,
-    relatedId: request._id,
-    relatedModel: 'WithdrawalRequest',
-  });
 
   await notifyMemberByEmailAndSms(member, {
     subject: `Withdrawal ${status} — ${brandingSubjectSuffix('en')}`,
     message: `Dear ${member.name}, your withdrawal request for ${amountLabel} is now ${status}.`,
   });
-
-  if (status === 'processed') {
-    await createAdminNotification({
-      type: 'withdrawal',
-      title: `Withdrawal processed for ${member.name}`,
-      message: `${actorName} processed ${amountLabel} for ${member.name}.`,
-      relatedId: request._id,
-      relatedModel: 'WithdrawalRequest',
-      targetRoles: ['ceo'],
-    });
-  }
 }
 
 async function notifyProfitDistribution({
@@ -99,29 +49,8 @@ async function notifyProfitDistribution({
   distributedBy = 'Cashier',
   distributionId = null,
 }) {
-  const amountLabel = `${formatMoney(Number(totalAmount || 0), 2)}`;
-
-  await createAdminNotification({
-    type: 'dividend',
-    title: 'Profit distributed to members',
-    message: `${distributedBy} distributed ${amountLabel} across ${members.length} member(s).`,
-    relatedId: distributionId,
-    relatedModel: 'ProfitDistribution',
-    targetRoles: ['ceo', 'cashier'],
-  });
-
   await Promise.allSettled(members.map(async (share) => {
-    const memberId = share.memberId || share.member;
-    if (!memberId) return;
     const shareAmount = Number(share.share || share.amount || 0);
-    await createMemberNotification({
-      memberId,
-      type: 'dividend',
-      title: uiText('bn', 'profitCredited', 'Profit credited'),
-      message: `You received a profit distribution of ${formatMoney(shareAmount, 2)}.`,
-      relatedId: distributionId,
-      relatedModel: 'ProfitDistribution',
-    });
     if (share.memberName || share.email) {
       await notifyMemberByEmailAndSms(
         { name: share.memberName, email: share.email, phone: share.phone },

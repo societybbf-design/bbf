@@ -4,7 +4,6 @@ const { brandingSubjectSuffix } = require('./organizationBranding');
 const MonthlyContributionDue = require('../models/MonthlyContributionDue');
 const User = require('../models/User');
 const { yearMonthFromDate } = require('./monthlyTargetService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
 const { recordAdminActivity } = require('./activityLogService');
 
@@ -60,17 +59,6 @@ async function sendDuesReminders({
 
     const member = await User.findById(target.memberId).select('name email phone');
     if (!member) continue;
-
-    if (channel === 'all' || channel === 'in_app') {
-      await createMemberNotification({
-        memberId: member._id,
-        type: 'general',
-        title: uiText('bn', 'duesReminder', 'Monthly dues reminder'),
-        message,
-        relatedId: target.dueId,
-        relatedModel: 'MonthlyContributionDue',
-      });
-    }
 
     if (channel === 'all' || channel === 'sms_email') {
       await notifyMemberByEmailAndSms(member, {

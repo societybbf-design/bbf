@@ -129,9 +129,6 @@ test('decideExternalPayoutRequest sets approved without immediate ledger debit',
     },
   };
   ExternalPayoutRequest.findById = async () => fakeRequest;
-  const adminNotify = require('../services/adminNotificationService');
-  const originalNotify = adminNotify.createAdminNotification;
-  adminNotify.createAdminNotification = async () => ({});
   try {
     const { decideExternalPayoutRequest } = require('../services/externalInvestorPortalService');
     const result = await decideExternalPayoutRequest(
@@ -144,6 +141,5 @@ test('decideExternalPayoutRequest sets approved without immediate ledger debit',
     assert.match(result.message, /CEO|disbursement|ledger/i);
   } finally {
     ExternalPayoutRequest.findById = originalFindById;
-    adminNotify.createAdminNotification = originalNotify;
   }
 });

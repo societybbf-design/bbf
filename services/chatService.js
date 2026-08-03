@@ -2,8 +2,6 @@ const mongoose = require('mongoose');
 const ChatMessage = require('../models/ChatMessage');
 const StaffChatMessage = require('../models/StaffChatMessage');
 const User = require('../models/User');
-const { createAdminNotification } = require('./adminNotificationService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { saveUploadedFiles } = require('../middleware/upload');
 const { normalizeRole, ROLE_LABELS } = require('./rbac');
 
@@ -186,30 +184,6 @@ async function sendMessage({
 
   const populated = await ChatMessage.findById(message._id)
     .populate('replyTo', 'body senderName senderRole attachments createdAt');
-
-  const previewBase = trimmedBody
-    || (attachments.length ? `📎 ${attachments[0].originalName}` : 'New message');
-  const preview = previewBase.length > 120 ? `${previewBase.slice(0, 117)}...` : previewBase;
-
-  if (normalizedRole === 'member') {
-    await createAdminNotification({
-      type: 'general',
-      title: `Message from ${member.name}`,
-      message: preview,
-      relatedId: memberId,
-      relatedModel: 'User',
-      targetRoles: ['ceo', 'cashier'],
-    });
-  } else {
-    await createMemberNotification({
-      memberId,
-      type: 'general',
-      title: 'New message from society office',
-      message: preview,
-      relatedId: message._id,
-      relatedModel: 'ChatMessage',
-    });
-  }
 
   return serializeMessage(populated);
 }
@@ -507,19 +481,6 @@ async function sendStaffMessage({
 
   const populated = await StaffChatMessage.findById(message._id)
     .populate('replyTo', 'body senderName senderRole attachments createdAt');
-
-  const previewBase = trimmedBody
-    || (attachments.length ? `📎 ${attachments[0].originalName}` : 'New message');
-  const preview = previewBase.length > 120 ? `${previewBase.slice(0, 117)}...` : previewBase;
-
-  await createAdminNotification({
-    type: 'general',
-    title: `Message from ${sender.name || 'Staff'}`,
-    message: preview,
-    relatedId: senderId,
-    relatedModel: 'User',
-    targetUser: peerId,
-  });
 
   return serializeStaffMessage(populated);
 }

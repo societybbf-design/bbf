@@ -8479,115 +8479,6 @@ async function updateLoanApplication(loanId, status) {
   await refreshLoanPortfolioData();
 }
 
-async function loadAdminNotifications({ openPanel = false } = {}) {
-  const list = document.getElementById('adminNotificationList');
-  const badge = document.getElementById('adminNotificationBadge');
-  const panel = document.getElementById('adminNotificationPanel');
-
-  if (openPanel && list) {
-    list.innerHTML = '<p class="table-subtitle">Loading notifications...</p>';
-  }
-
-  try {
-    const response = await fetch('/api/admin/notifications');
-    if (!response.ok) return;
-    const data = await response.json();
-    const notifications = data.notifications || [];
-    const unreadCount = data.unreadCount || 0;
-    if (badge) {
-      badge.textContent = unreadCount;
-      badge.classList.toggle('hidden', unreadCount === 0);
-    }
-    const snapshotUnreadAlerts = document.getElementById('snapshotUnreadAlerts');
-    if (snapshotUnreadAlerts) {
-      snapshotUnreadAlerts.textContent = unreadCount;
-    }
-    if (openPanel && list) {
-      list.innerHTML = window.SocietyNotifications
-        ? window.SocietyNotifications.renderNotificationItems(notifications, { idAttr: 'data-notification-id' })
-        : '<p class="table-subtitle">Unable to render notifications.</p>';
-    }
-    if (openPanel && panel) {
-      panel.classList.remove('hidden');
-      panel.hidden = false;
-    }
-  } catch (error) {
-    if (openPanel && list) list.innerHTML = '<p class="table-subtitle">Unable to load notifications.</p>';
-  }
-}
-
-function bindAdminNotificationUi() {
-  const btn = document.getElementById('adminNotificationBtn');
-  const panel = document.getElementById('adminNotificationPanel');
-  const markAllBtn = document.getElementById('markAllNotificationsReadBtn');
-  const snapshotOpenBtn = document.getElementById('snapshotOpenNotificationsBtn');
-
-  const closePanel = () => {
-    if (!panel) return;
-    panel.classList.add('hidden');
-    panel.hidden = true;
-  };
-
-  const openNotifications = () => {
-    void loadAdminNotifications({ openPanel: true });
-  };
-
-  void loadAdminNotifications({ openPanel: false });
-
-  if (btn && panel) {
-    btn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      if (panel.classList.contains('hidden')) {
-        openNotifications();
-      } else {
-        closePanel();
-      }
-    });
-  }
-
-  if (snapshotOpenBtn) {
-    snapshotOpenBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openNotifications();
-    });
-  }
-
-  document.addEventListener('click', (event) => {
-    if (!panel || panel.classList.contains('hidden')) {
-      return;
-    }
-    if (!panel.contains(event.target) && event.target !== btn && event.target !== snapshotOpenBtn) {
-      closePanel();
-    }
-  });
-
-  if (markAllBtn) {
-    markAllBtn.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      await fetch('/api/admin/notifications/read-all', { method: 'PATCH' });
-      await loadAdminNotifications({ openPanel: true });
-    });
-  }
-
-  document.addEventListener('click', async (event) => {
-    const item = event.target.closest('#adminNotificationPanel [data-notification-id]');
-    if (!item || !panel || panel.classList.contains('hidden')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (window.SocietyNotifications?.handleNotificationClick) {
-      await window.SocietyNotifications.handleNotificationClick(item, {
-        readUrl: (id) => `/api/admin/notifications/${id}/read`,
-        closePanel,
-        onSameDashboard: (section) => navigateToPage(section),
-      });
-      void loadAdminNotifications({ openPanel: false });
-      return;
-    }
-    await fetch(`/api/admin/notifications/${item.dataset.notificationId}/read`, { method: 'PATCH' });
-    await loadAdminNotifications({ openPanel: true });
-  });
-}
-
 async function loadPendingKycDocuments() {
   const list = document.getElementById('pendingKycList');
   if (!list) return;
@@ -8790,7 +8681,6 @@ document.addEventListener('DOMContentLoaded', () => {
   bindDashboardNotes();
   bindMemberListTabs();
   bindAdminDashboardCards();
-  bindAdminNotificationUi();
   bindDividendUi();
   bindLoanReviewUi();
   bindLoanRepaymentAdminUi();

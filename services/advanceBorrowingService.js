@@ -5,7 +5,6 @@ const InternalBorrowing = require('../models/InternalBorrowing');
 const InvestmentContribution = require('../models/InvestmentContribution');
 const Investment = require('../models/Investment');
 const { creditInbound, tryCredit } = require('./bankLedgerService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
 const { bindSession, sessionOpt, createWithSession } = require('./mongoTransaction');
 
@@ -279,16 +278,6 @@ async function notifyLenderAdvanceRefund({
     + ` has been successfully returned and added to your Advance Balance.`
     + ` Current advance balance: ${formatMoney(lenderAdvanceAfter, 2)}.`
     + (borrower?.name ? ` (Repaid by ${borrower.name}.)` : '');
-
-  await createMemberNotification({
-    memberId: lender._id,
-    type: 'deposit',
-    title: 'Advance balance refunded',
-    message,
-    relatedId: borrowingId,
-    relatedModel: 'InternalBorrowing',
-    link: 'portfolio',
-  });
 
   await notifyMemberByEmailAndSms(lender, {
     subject: 'Advance balance refunded',

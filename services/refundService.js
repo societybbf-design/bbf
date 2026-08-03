@@ -4,8 +4,6 @@ const { formatMoney } = require('./moneyFormat');
 const Refund = require('../models/Refund');
 const User = require('../models/User');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
-const { createMemberNotification } = require('./memberNotificationService');
-const { createAdminNotification } = require('./adminNotificationService');
 const { recordAdminActivity } = require('./activityLogService');
 const { withMongoTransaction } = require('./mongoTransaction');
 const { normalizePaymentChannel } = require('./paymentChannelService');
@@ -112,24 +110,6 @@ async function createMemberRefundRequest({ memberId, amount, reason }) {
     status: 'pending',
   });
 
-  await createAdminNotification({
-    type: 'refund',
-    title: `Refund request from ${member.name}`,
-    message: `${member.name} requested a refund of ${formatMoney(normalizedAmount, 2)}. Reason: ${refund.reason}`,
-    relatedId: refund._id,
-    relatedModel: 'Refund',
-    targetRoles: ['ceo'],
-  });
-
-  await createMemberNotification({
-    memberId: member._id,
-    type: 'refund',
-    title: 'Refund request submitted',
-    message: `Your refund request for ${formatMoney(normalizedAmount, 2)} is awaiting CEO review.`,
-    relatedId: refund._id,
-    relatedModel: 'Refund',
-  });
-
   return { refund, availability };
 }
 
@@ -154,28 +134,11 @@ async function approveRefund(refundId, { reviewedBy = 'CEO', adminNote = '' } = 
 
   const member = await User.findById(refund.member).select('name email phone');
   if (member) {
-    await createMemberNotification({
-      memberId: member._id,
-      type: 'refund',
-      title: 'Refund approved',
-      message: `Your refund of ${formatMoney(Number(refund.amount), 2)} was approved by the CEO and sent to the Cashier for payout.`,
-      relatedId: refund._id,
-      relatedModel: 'Refund',
-    });
     await notifyMemberByEmailAndSms(member, {
       subject: 'Refund Approved',
       message: `Dear ${member.name}, your refund of ${formatMoney(Number(refund.amount), 2)} was approved and is awaiting Cashier disbursement.`,
     });
   }
-
-  await createAdminNotification({
-    type: 'refund',
-    title: `Refund ready for Cashier payout`,
-    message: `CEO approved refund of ${formatMoney(Number(refund.amount), 2)} for ${member?.name || 'member'}.`,
-    relatedId: refund._id,
-    relatedModel: 'Refund',
-    targetRoles: ['cashier'],
-  });
 
   return refund;
 }
@@ -201,14 +164,6 @@ async function rejectRefund(refundId, { reviewedBy = 'CEO', adminNote = '' } = {
 
   const member = await User.findById(refund.member).select('name email phone');
   if (member) {
-    await createMemberNotification({
-      memberId: member._id,
-      type: 'refund',
-      title: 'Refund rejected',
-      message: `Your refund request for ${formatMoney(Number(refund.amount), 2)} was rejected.${refund.adminNote ? ` Note: ${refund.adminNote}` : ''}`,
-      relatedId: refund._id,
-      relatedModel: 'Refund',
-    });
     await notifyMemberByEmailAndSms(member, {
       subject: 'Refund Rejected',
       message: `Dear ${member.name}, your refund request for ${formatMoney(Number(refund.amount), 2)} was rejected.`,
@@ -309,25 +264,9 @@ async function processRefundPayout(refundId, {
     });
 
     const { refund, member } = result;
-    await createMemberNotification({
-      memberId: member._id,
-      type: 'refund',
-      title: 'Refund paid',
-      message: `Your refund of ${formatMoney(amount, 2)} has been paid by the Cashier.`,
-      relatedId: refund._id,
-      relatedModel: 'Refund',
-    });
     await notifyMemberByEmailAndSms(member, {
       subject: 'Refund Completed',
       message: `Dear ${member.name}, your refund of ${formatMoney(amount, 2)} has been disbursed.`,
-    });
-    await createAdminNotification({
-      type: 'refund',
-      title: `Refund completed for ${member.name}`,
-      message: `Cashier paid refund of ${formatMoney(amount, 2)}.`,
-      relatedId: refund._id,
-      relatedModel: 'Refund',
-      targetRoles: ['ceo', 'cashier'],
     });
     await recordAdminActivity({
       action: 'refund_completed',

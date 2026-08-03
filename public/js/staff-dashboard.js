@@ -936,92 +936,6 @@ async function refreshStaffApprovalsBadge() {
   await window.ApprovalsInbox.refreshBadge('[data-staff-nav="approvals"]');
 }
 
-async function loadStaffNotifications({ openPanel = false } = {}) {
-  const list = document.getElementById('staffNotificationList');
-  const badge = document.getElementById('staffNotificationBadge');
-  const panel = document.getElementById('staffNotificationPanel');
-
-  if (openPanel && list) {
-    list.innerHTML = '<p class="table-subtitle">Loading notifications...</p>';
-  }
-
-  try {
-    const response = await fetch('/api/admin/notifications');
-    if (!response.ok) return;
-    const data = await response.json();
-    const notifications = data.notifications || [];
-    const unreadCount = data.unreadCount || 0;
-    if (badge) {
-      badge.textContent = unreadCount;
-      badge.classList.toggle('hidden', unreadCount === 0);
-    }
-    if (openPanel && list) {
-      list.innerHTML = window.SocietyNotifications
-        ? window.SocietyNotifications.renderNotificationItems(notifications, { idAttr: 'data-staff-notification-id' })
-        : '<p class="table-subtitle">Unable to render notifications.</p>';
-    }
-    if (openPanel && panel) {
-      panel.classList.remove('hidden');
-      panel.hidden = false;
-    }
-  } catch (error) {
-    if (openPanel && list) {
-      list.innerHTML = `<p class="table-subtitle">${escapeHtml(error.message || 'Unable to load notifications.')}</p>`;
-    }
-  }
-}
-
-function bindStaffNotificationUi() {
-  const btn = document.getElementById('staffNotificationBtn');
-  const panel = document.getElementById('staffNotificationPanel');
-  const markAllBtn = document.getElementById('markAllStaffNotificationsReadBtn');
-  if (!btn || !panel) return;
-
-  const closePanel = () => {
-    panel.classList.add('hidden');
-    panel.hidden = true;
-  };
-
-  void loadStaffNotifications({ openPanel: false });
-
-  btn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    if (panel.classList.contains('hidden')) {
-      void loadStaffNotifications({ openPanel: true });
-    } else {
-      closePanel();
-    }
-  });
-
-  document.addEventListener('click', (event) => {
-    if (panel.classList.contains('hidden')) return;
-    if (!panel.contains(event.target) && event.target !== btn) {
-      closePanel();
-    }
-  });
-
-  markAllBtn?.addEventListener('click', async (event) => {
-    event.stopPropagation();
-    await fetch('/api/admin/notifications/read-all', { method: 'PATCH' });
-    await loadStaffNotifications({ openPanel: true });
-  });
-
-  document.addEventListener('click', async (event) => {
-    const item = event.target.closest('#staffNotificationPanel [data-staff-notification-id]');
-    if (!item || panel.classList.contains('hidden')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (window.SocietyNotifications?.handleNotificationClick) {
-      await window.SocietyNotifications.handleNotificationClick(item, {
-        readUrl: (id) => `/api/admin/notifications/${id}/read`,
-        closePanel,
-        onSameDashboard: (section) => showStaffView(section, { forceReload: true }),
-      });
-      void loadStaffNotifications({ openPanel: false });
-    }
-  });
-}
-
 function bindStaffNavigation() {
   document.addEventListener('click', (event) => {
     const trigger = event.target.closest('[data-staff-nav]');
@@ -7227,14 +7141,11 @@ async function init() {
     bindCashierInvestorProfileModal();
     bindCashierPaymentShortfallModal();
 
-    bindStaffNotificationUi();
-
     const initial = (window.location.hash || '#home').replace(/^#/, '') || 'home';
     showStaffView(initial, { forceReload: true });
     if (!externalInvestorRole) {
       void refreshStaffApprovalsBadge();
     }
-    void loadStaffNotifications({ openPanel: false });
 
     document.getElementById('staffApprovalsRefreshBtn')?.addEventListener('click', () => {
       invalidateStaffViewCache(['approvals']);

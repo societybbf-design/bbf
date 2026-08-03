@@ -167,20 +167,6 @@
           <span class="theme-icon-sun" aria-hidden="true">☀️</span>
           <span class="theme-icon-moon" aria-hidden="true">🌙</span>
         </button>
-        <div class="notification-menu">
-          <button type="button" class="notification-bell-btn" id="adminNotificationBtn" data-i18n-title="common.viewNotifications" title="View Notifications" data-i18n-aria-label="common.viewNotifications" aria-label="View Notifications">
-            🔔 <span class="notification-badge hidden" id="adminNotificationBadge">0</span>
-          </button>
-          <div id="adminNotificationPanel" class="notification-panel hidden" hidden>
-            <div class="notification-panel-header">
-              <strong data-i18n="common.notifications">Notifications</strong>
-              <button type="button" class="secondary-btn" id="markAllNotificationsReadBtn" data-i18n="common.markAllRead">Mark all read</button>
-            </div>
-            <div id="adminNotificationList" class="notification-list">
-              <p class="table-subtitle notification-empty-state" data-i18n="adminUi.notificationsClick">Click "View Notifications" to load updates.</p>
-            </div>
-          </div>
-        </div>
         <div class="search-wrapper">
           <span class="search-icon" aria-hidden="true">🔍</span>
           <input data-i18n-placeholder="common.searchMembers" type="search" class="search-input" id="memberSearch" placeholder="Search members by name..." aria-label="Search members" />
@@ -399,11 +385,6 @@
               <span class="snapshot-label" data-i18n="admin.kpi.activeMembers">Active Members</span>
               <strong class="kpi-one-number snapshot-number" id="snapshotActiveMembers">0</strong>
               <button type="button" class="secondary-btn" data-quick-nav="members" data-i18n="admin.buttons.view">View</button>
-            </div>
-            <div class="dashboard-snapshot-card">
-              <span class="snapshot-label" data-i18n="admin.kpi.unreadAlerts">Unread Alerts</span>
-              <strong class="kpi-one-number snapshot-number" id="snapshotUnreadAlerts">0</strong>
-              <button type="button" class="secondary-btn view-notifications-btn" id="snapshotOpenNotificationsBtn" data-i18n="admin.buttons.viewNotifications">View Notifications</button>
             </div>
           </div>
           <div class="table-wrapper dashboard-live-table-wrap">
@@ -2470,7 +2451,6 @@
   <script defer src="/static/js/password-confirm.js"></script>
   <script defer src="/static/js/approvals-inbox.js"></script>
   <script defer src="/static/js/chat-shared.js"></script>
-  <script defer src="/static/js/notification-nav.js"></script>
   <script defer src="/static/js/money.js"></script>
   <script defer src="/static/js/admin.js"></script>
 </body>

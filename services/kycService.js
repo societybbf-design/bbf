@@ -1,6 +1,5 @@
 const KycDocument = require('../models/KycDocument');
 const User = require('../models/User');
-const { createAdminNotification } = require('./adminNotificationService');
 const { sendTransactionalEmail } = require('./notificationService');
 const { sendSms } = require('./smsService');
 
@@ -17,15 +16,6 @@ async function submitKycProfile(memberId, profile = {}) {
   if (profile.nidNumber) member.nidNumber = profile.nidNumber.trim();
   member.kycStatus = 'submitted';
   await member.save();
-
-  await createAdminNotification({
-    type: 'kyc',
-    title: `KYC Submitted by ${member.name}`,
-    message: `${member.name} submitted KYC details for review.`,
-    relatedId: member._id,
-    relatedModel: 'User',
-    targetRoles: ['ceo'],
-  });
 
   return member;
 }
@@ -54,15 +44,6 @@ async function addKycDocuments(memberId, files = [], documentType = 'other') {
 
   member.kycStatus = member.kycStatus === 'verified' ? 'verified' : 'submitted';
   await member.save();
-
-  await createAdminNotification({
-    type: 'kyc',
-    title: `KYC Documents Uploaded by ${member.name}`,
-    message: `${member.name} uploaded ${documents.length} KYC document(s).`,
-    relatedId: member._id,
-    relatedModel: 'User',
-    targetRoles: ['ceo'],
-  });
 
   return documents;
 }

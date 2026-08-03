@@ -3,7 +3,6 @@ const User = require('../models/User');
 const { notifyWithdrawalEvent } = require('./financialNotificationService');
 const { recordAdminActivity } = require('./activityLogService');
 const { normalizePaymentChannel } = require('./paymentChannelService');
-const { createAdminNotification } = require('./adminNotificationService');
 const { formatMoney } = require('./moneyFormat');
 
 function money(value) {
@@ -185,15 +184,6 @@ async function approveWithdrawal(requestId, {
     status: 'approved',
     actorName: reviewedBy,
   });
-
-  await createAdminNotification({
-    type: 'withdrawal',
-    title: `Withdrawal approved: ${member.name}`,
-    message: `${reviewedBy} approved ${formatMoney(request.amount, 2)}. Cashier: verify Advance Balance before payout.`,
-    relatedId: request._id,
-    relatedModel: 'WithdrawalRequest',
-    targetRoles: ['cashier'],
-  }).catch(() => null);
 
   await recordAdminActivity({
     action: 'withdrawal_status_updated',
