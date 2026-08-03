@@ -18,7 +18,6 @@ const root = path.join(__dirname, '..');
 const serviceJs = fs.readFileSync(path.join(root, 'services/withdrawalService.js'), 'utf8');
 const routesJs = fs.readFileSync(path.join(root, 'routes/withdrawals.js'), 'utf8');
 const inboxJs = fs.readFileSync(path.join(root, 'services/approvalsInboxService.js'), 'utf8');
-const notifyJs = fs.readFileSync(path.join(root, 'services/financialNotificationService.js'), 'utf8');
 const adminJs = fs.readFileSync(path.join(root, 'public/js/admin.js'), 'utf8');
 const staffJs = fs.readFileSync(path.join(root, 'public/js/staff-dashboard.js'), 'utf8');
 const memberHtml = fs.readFileSync(path.join(root, 'views/member.html'), 'utf8');
@@ -106,11 +105,6 @@ test('can_disburse_withdrawals is cashier-exclusive; CEO keeps review only', () 
   });
   assert.equal(ceoPayload.permissions.includes('can_disburse_withdrawals'), false);
   assert.equal(ceoPayload.permissions.includes('can_manage_withdrawals'), true);
-});
-
-test('new withdrawal requests notify CEO only; approve notifies cashier', () => {
-  assert.match(notifyJs, /targetRoles:\s*\['ceo'\]/);
-  assert.match(serviceJs, /targetRoles:\s*\['cashier'\]/);
 });
 
 test('approvals inbox splits CEO review and cashier advance payout', () => {

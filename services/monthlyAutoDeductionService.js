@@ -10,7 +10,6 @@ const {
   applyDepositToMonthlyDue,
   syncMonthDues,
 } = require('./monthlyTargetService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms } = require('./notificationService');
 const { formatMoney } = require('./moneyFormat');
 
@@ -105,16 +104,6 @@ async function deductMonthlyFromAdvance(member, {
   const message = `Your ${target.monthLabel || yearMonth} monthly deposit of ${formatMoney(towardTarget, 2)} `
     + `was automatically deducted from your Advance Balance before the ${DEDUCTION_WINDOW_END_DAY}th deadline. `
     + `Advance balance is now ${formatMoney(freshMember.advanceBalance, 2)}.`;
-
-  await createMemberNotification({
-    memberId: freshMember._id,
-    type: 'deposit',
-    title: 'Monthly deposit auto-deducted',
-    message,
-    relatedId: deposit._id,
-    relatedModel: 'Deposit',
-    link: 'portfolio',
-  }).catch(() => null);
 
   await notifyMemberByEmailAndSms(freshMember, {
     subject: 'Monthly deposit auto-deducted from advance',

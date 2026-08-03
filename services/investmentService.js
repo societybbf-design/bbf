@@ -2,8 +2,6 @@ const { formatMoney } = require('./moneyFormat');
 const Investment = require('../models/Investment');
 const User = require('../models/User');
 const InvestmentProfit = require('../models/InvestmentProfit');
-const { createMemberNotification } = require('./memberNotificationService');
-const { createAdminNotification } = require('./adminNotificationService');
 
 function splitAmountEqually(amount, memberCount) {
   const normalizedAmount = Number(amount);
@@ -749,15 +747,6 @@ async function applyCompletedCapitalExpansion(expansionInvestment, {
     : applyNote;
   await expansionInvestment.save();
 
-  await createAdminNotification({
-    type: 'general',
-    title: `Capital expanded: ${parent.investmentCode}`,
-    message: `Cashier funding round ${expansionInvestment.investmentCode} added ${formatMoney(addAmount, 2)} to running project capital (now ${formatMoney(parent.amount, 2)}).`,
-    relatedId: parent._id,
-    relatedModel: 'Investment',
-    targetRoles: ['ceo'],
-  }).catch(() => null);
-
   return { parent, expansion: expansionInvestment, alreadyApplied: false };
 }
 
@@ -1178,28 +1167,7 @@ async function createSocietyInvestment({
   if (hasExternalStakes) {
     for (const stake of investment.externalInvestors || []) {
       if (!stake.investor) continue;
-      await createAdminNotification({
-        type: 'general',
-        title: `Project capital approval needed: ${investment.investmentCode}`,
-        message: `${isExpansion ? 'Capital expansion' : 'New project'} — your share `
-          + `${formatMoney(Number(stake.amount || 0), 2)} (${Number(stake.ownershipPct || 0).toFixed(2)}%) `
-          + 'requires your approval before funds can be locked and the project continues.',
-        relatedId: investment._id,
-        relatedModel: 'Investment',
-        targetUser: stake.investor?._id || stake.investor,
-      }).catch(() => {});
     }
-
-    await createAdminNotification({
-      type: 'general',
-      title: isExpansion
-        ? `Capital expansion awaiting external approval: ${investment.investmentCode}`
-        : `Investment awaiting external approval: ${investment.investmentCode}`,
-      message: `${ownershipLabel}. External Investor approval is required before member voting and fund finalization.`,
-      relatedId: investment._id,
-      relatedModel: 'Investment',
-      targetRoles: ['ceo'],
-    });
 
     return {
       investment,
@@ -1218,26 +1186,6 @@ async function createSocietyInvestment({
     ? `Expand capital on running project ${parentCode || 'project'} by ${formatMoney(ownership.amount, 2)} `
       + `(${ownershipLabel}). Please review and approve.`
     : `${normalizedName} · ${normalizedType} · ${formatMoney(ownership.amount, 2)} · ${ownershipLabel} (${normalizedReturnMode === 'monthly' ? 'Monthly return' : 'Fixed/term'}). Please review and approve.`;
-
-  await Promise.all(eligibleMembers.map((member) => createMemberNotification({
-    memberId: member._id,
-    type: 'general',
-    title: notifyTitle,
-    message: notifyMessage,
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-  })));
-
-  await createAdminNotification({
-    type: 'general',
-    title: isExpansion
-      ? `Capital expansion proposed: ${investment.investmentCode}`
-      : `Investment proposed: ${investment.investmentCode}`,
-    message: `Awaiting approval from ${eligibleMembers.length} members.`,
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-    targetRoles: ['ceo'],
-  });
 
   return {
     investment,
@@ -1310,16 +1258,6 @@ async function decideExternalProjectCommitment(actor, investmentId, { approve = 
       }).catch(() => {});
     }
 
-    await createAdminNotification({
-      type: 'general',
-      title: `External capital rejected: ${investment.investmentCode}`,
-      message: `${stake.investorName || 'External Investor'} rejected their `
-        + `${formatMoney(Number(stake.amount || 0), 2)} commitment. Project closed; reserved funds released.`,
-      relatedId: investment._id,
-      relatedModel: 'Investment',
-      targetRoles: ['ceo'],
-    }).catch(() => {});
-
     return {
       investment,
       message: 'Project commitment rejected. Reserved wallet funds have been released.',
@@ -1333,15 +1271,6 @@ async function decideExternalProjectCommitment(actor, investmentId, { approve = 
   if (allApproved) {
     investment.status = 'pending_ceo_fund_release';
     await investment.save();
-    await createAdminNotification({
-      type: 'general',
-      title: `External capital approved — CEO fund release needed: ${investment.investmentCode}`,
-      message: 'All External Investors approved. Confirm to lock allocated capital in their wallets '
-        + 'and continue to member approval.',
-      relatedId: investment._id,
-      relatedModel: 'Investment',
-      targetRoles: ['ceo'],
-    }).catch(() => {});
     return {
       investment,
       message: 'Approved. Waiting for CEO to confirm fund release and lock your capital.',
@@ -1442,27 +1371,6 @@ async function ceoConfirmExternalFundRelease(investmentId, {
 
   const ownershipLabel = `Society ${investment.societyOwnershipPct}% / `
     + `${(investment.externalInvestors || []).map((s) => `${s.investorName || 'Investor'} ${s.ownershipPct}%`).join(' · ')}`;
-
-  await Promise.all(eligibleMembers.map((member) => createMemberNotification({
-    memberId: member._id,
-    type: 'general',
-    title: `New investment request ${investment.investmentCode}`,
-    message: `${investment.investorName || 'Project'} · ${investment.investmentType || 'Project'} · `
-      + `${formatMoney(Number(investment.amount || 0), 2)} · ${ownershipLabel}. `
-      + 'External capital is locked. Please review and approve.',
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-  })));
-
-  await createAdminNotification({
-    type: 'general',
-    title: `External funds locked: ${investment.investmentCode}`,
-    message: `${formatMoney(lockedTotal, 2)} locked from External Investor wallet(s). `
-      + `Project moved to member approval (${eligibleMembers.length} members).`,
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-    targetRoles: ['ceo'],
-  }).catch(() => {});
 
   return {
     investment,
@@ -1642,14 +1550,6 @@ async function approveInvestmentByMember(investmentId, memberId, { proxy = null 
   if (trackingBeforeSave.allApproved) {
     // Maker-checker: members approve → CEO authorizes → cashier pays.
     investment.status = 'pending_ceo_authorization';
-    await createAdminNotification({
-      type: 'general',
-      title: `CEO authorization required: ${investment.investmentCode}`,
-      message: `All ${trackingBeforeSave.totalMembers} members approved. Awaiting CEO final authorization before cashier payment.`,
-      relatedId: investment._id,
-      relatedModel: 'Investment',
-      targetRoles: ['ceo'],
-    });
   }
 
   await investment.save();
@@ -1703,16 +1603,6 @@ async function authorizeInvestmentByCeo(investmentId, {
   await investment.save();
 
   const isExpansion = investment.fundingKind === 'capital_expansion';
-  await createAdminNotification({
-    type: 'general',
-    title: isExpansion
-      ? `Capital expansion ready for cashier: ${investment.investmentCode}`
-      : `Investment ready for cashier: ${investment.investmentCode}`,
-    message: `CEO authorized. Awaiting cashier payment (existing funding validation unchanged).`,
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-    targetRoles: ['cashier'],
-  });
 
   return {
     investment,
@@ -2515,34 +2405,12 @@ async function completeCashierPayment(investmentId, {
       }
     } catch (applyError) {
       console.error('[completeCashierPayment] capital expansion apply failed:', applyError.message);
-      await createAdminNotification({
-        type: 'general',
-        title: `Capital expansion payment OK — apply failed: ${investment.investmentCode}`,
-        message: applyError.message
-          || 'Cashier payment completed but parent capital could not be updated automatically. Reconcile manually.',
-        relatedId: investment._id,
-        relatedModel: 'Investment',
-        targetRoles: ['ceo'],
-      }).catch(() => null);
     }
   }
 
   const parentCode = capitalExpansion?.parent?.investmentCode
     || investment.parentInvestment?.investmentCode
     || '';
-  await createAdminNotification({
-    type: 'general',
-    title: capitalExpansion?.parent
-      ? `Capital expanded: ${parentCode || investment.investmentCode}`
-      : `Investment successful: ${investment.investmentCode}`,
-    message: capitalExpansion?.parent
-      ? `Cashier completed expansion payout of ${formatMoney(societyFundingAmount, 2)}. `
-        + `Parent ${parentCode} capital is now ${formatMoney(Number(capitalExpansion.parent.amount || 0), 2)}.`
-      : `Cashier completed society payout of ${formatMoney(societyFundingAmount, 2)} to ${receiver.name}.${investment.externalAmount > 0 ? ` External share ${formatMoney(Number(investment.externalAmount), 2)} still needs recording if not already received.` : ''}`,
-    relatedId: capitalExpansion?.parent?._id || investment._id,
-    relatedModel: 'Investment',
-    targetRoles: ['ceo'],
-  });
 
   return {
     investment,

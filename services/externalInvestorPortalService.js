@@ -247,17 +247,6 @@ async function decideExternalPayoutRequest(actor, requestId, { approve = true, n
   request.status = 'approved';
   await request.save();
 
-  const { createAdminNotification } = require('./adminNotificationService');
-  await createAdminNotification({
-    type: 'general',
-    title: `External payout approved — CEO payment needed: ${request.investmentCode}`,
-    message: `${request.investorName || 'External Investor'} approved ${money(request.amount)}. `
-      + 'Execute final disbursement from their external ledger.',
-    relatedId: request._id,
-    relatedModel: 'ExternalPayoutRequest',
-    targetRoles: ['ceo'],
-  }).catch(() => {});
-
   return {
     request,
     message: `Payout of ${money(request.amount)} approved. Awaiting CEO final disbursement from your external ledger.`,

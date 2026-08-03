@@ -15,8 +15,6 @@ const withdrawalRoutes = require('./routes/withdrawals');
 const profitRoutes = require('./routes/profit');
 const loanRoutes = require('./routes/loans');
 const kycRoutes = require('./routes/kyc');
-const adminNotificationRoutes = require('./routes/adminNotifications');
-const memberNotificationRoutes = require('./routes/memberNotifications');
 const adminChatRoutes = require('./routes/adminChat');
 const memberChatRoutes = require('./routes/memberChat');
 const ceoRoutes = require('./routes/ceo');
@@ -204,8 +202,6 @@ function buildApp(sessionStore) {
   app.use('/api/admin/analytics', analyticsRoutes);
   app.use('/api/admin/dues-reminders', duesRemindersRoutes);
   app.use('/api/admin/activity-log', activityLogRoutes);
-  app.use('/api/admin/notifications', adminNotificationRoutes);
-  app.use('/api/member/notifications', memberNotificationRoutes);
   app.use('/api/admin/chat', adminChatRoutes);
   app.use('/api/member/chat', memberChatRoutes);
   app.use('/api/external-investor', requireAuth, require('./routes/externalInvestor'));

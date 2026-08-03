@@ -249,13 +249,6 @@ body.sidebar-open {
     grid-template-columns: 1fr !important;
     min-height: 70vh;
   }
-
-  .notification-panel {
-    right: 0.5rem;
-    left: 0.5rem;
-    width: auto;
-    max-width: none;
-  }
 }
 
 @media (max-width: 480px) {

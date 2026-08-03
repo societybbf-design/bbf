@@ -15,7 +15,6 @@ const {
   getExternalLedgerForInvestment,
   money,
 } = require('./externalInvestorLedgerService');
-const { createAdminNotification } = require('./adminNotificationService');
 
 function httpError(message, status = 400) {
   const error = new Error(message);
@@ -206,14 +205,6 @@ function buildExternalApprovals(investment, externalShare) {
 async function notifyExternalApprovers(expense) {
   for (const row of expense.externalApprovals || []) {
     if (!row.investor || row.status !== 'pending') continue;
-    await createAdminNotification({
-      type: 'general',
-      title: `Expense approval needed: ${expense.investmentCode}`,
-      message: `${expense.description} — your share ${money(row.shareAmount).toFixed(2)} requires approval before CEO disbursement.`,
-      relatedId: expense._id,
-      relatedModel: 'ProjectExpense',
-      targetUser: row.investor,
-    }).catch(() => {});
   }
 }
 
@@ -225,14 +216,6 @@ async function routeExpenseAfterSubmit(expense, investment) {
       expense.status = 'pending_external_approval';
       await expense.save();
       await notifyExternalApprovers(expense);
-      await createAdminNotification({
-        type: 'general',
-        title: `Expense awaiting external approval: ${investment.investmentCode}`,
-        message: `${expense.description} — external share ${externalShare.toFixed(2)} routed to External Investor(s) first.`,
-        relatedId: expense._id,
-        relatedModel: 'ProjectExpense',
-        targetRoles: ['ceo'],
-      }).catch(() => {});
       return {
         expense,
         message: 'Expense submitted. External Investor approval is required before CEO can disburse from the external ledger.',
@@ -242,14 +225,6 @@ async function routeExpenseAfterSubmit(expense, investment) {
 
   expense.status = 'submitted';
   await expense.save();
-  await createAdminNotification({
-    type: 'general',
-    title: `Project expense submitted: ${investment.investmentCode}`,
-    message: `${expense.description} — ${money(expense.amount).toFixed(2)} awaiting CEO review.`,
-    relatedId: expense._id,
-    relatedModel: 'ProjectExpense',
-    targetRoles: ['ceo'],
-  });
   return { expense, message: 'Expense submitted for CEO review.' };
 }
 
@@ -343,14 +318,6 @@ async function decideExternalExpenseApproval(actor, expenseId, { approve = true,
   if (!approve) {
     expense.status = 'external_rejected';
     await expense.save();
-    await createAdminNotification({
-      type: 'general',
-      title: `External expense rejected: ${expense.investmentCode}`,
-      message: `${expense.description} was rejected by ${approval.investorName || 'External Investor'}.`,
-      relatedId: expense._id,
-      relatedModel: 'ProjectExpense',
-      targetRoles: ['ceo', 'project_manager'],
-    }).catch(() => {});
     return { expense, message: 'Expense rejected.' };
   }
 
@@ -358,14 +325,6 @@ async function decideExternalExpenseApproval(actor, expenseId, { approve = true,
   if (allApproved) {
     expense.status = 'external_approved';
     await expense.save();
-    await createAdminNotification({
-      type: 'general',
-      title: `External expense approved — CEO payment needed: ${expense.investmentCode}`,
-      message: `${expense.description} — disburse external share ${money(expense.externalShare).toFixed(2)} from the external ledger.`,
-      relatedId: expense._id,
-      relatedModel: 'ProjectExpense',
-      targetRoles: ['ceo'],
-    }).catch(() => {});
     return {
       expense,
       message: 'Approved. The request is now with the CEO for final disbursement from your external ledger.',
@@ -561,17 +520,6 @@ async function createOrSubmitMonthlyReport({
   report.submittedBy = submit ? (user.name || 'Project Manager') : '';
   await report.save();
 
-  if (submit) {
-    await createAdminNotification({
-      type: 'general',
-      title: `Monthly P&L submitted: ${investment.investmentCode} (${period})`,
-      message: `Gross ${revenue.toFixed(2)} − Expenses ${totalExpenses.toFixed(2)} = Net ${netProfit.toFixed(2)}. Awaiting CEO review.`,
-      relatedId: report._id,
-      relatedModel: 'ProjectMonthlyReport',
-      targetRoles: ['ceo'],
-    });
-  }
-
   return {
     report,
     expenses,
@@ -639,18 +587,6 @@ async function ceoReviewMonthlyReport(reportId, {
   }
 
   await report.save();
-
-  // Notify PM — society execution stays on existing profit tools; external is separate.
-  await createAdminNotification({
-    type: 'general',
-    title: `Monthly P&L approved: ${report.investmentCode} (${report.yearMonth})`,
-    message: money(report.investorProfitShare) > 0
-      ? `External profit ${money(report.investorProfitShare).toFixed(2)} routed to isolated external sub-ledger (society bank unchanged).`
-      : `Society-only P&L approved. Net ${money(report.netProfit).toFixed(2)}.`,
-    relatedId: report._id,
-    relatedModel: 'ProjectMonthlyReport',
-    targetRoles: ['ceo', 'project_manager'],
-  });
 
   return {
     report,

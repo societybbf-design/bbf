@@ -2186,103 +2186,6 @@ logoutBtn.addEventListener('click', async () => {
   window.location.href = '/';
 });
 
-async function loadMemberNotifications({ openPanel = false } = {}) {
-  const list = document.getElementById('memberNotificationList');
-  const badge = document.getElementById('memberNotificationBadge');
-  const panel = document.getElementById('memberNotificationPanel');
-
-  if (openPanel && list) {
-    list.innerHTML = '<p class="table-subtitle">Loading notifications...</p>';
-  }
-
-  try {
-    const response = await fetch('/api/member/notifications');
-    if (!response.ok) return;
-    const data = await response.json();
-    const notifications = data.notifications || [];
-    const unreadCount = data.unreadCount || 0;
-    if (badge) {
-      badge.textContent = unreadCount;
-      badge.classList.toggle('hidden', unreadCount === 0);
-    }
-    if (openPanel && list) {
-      list.innerHTML = window.SocietyNotifications
-        ? window.SocietyNotifications.renderNotificationItems(notifications, { idAttr: 'data-member-notification-id' })
-        : '<p class="table-subtitle">Unable to render notifications.</p>';
-    }
-    if (openPanel && panel) {
-      panel.classList.remove('hidden');
-      panel.hidden = false;
-    }
-  } catch (error) {
-    if (openPanel && list) list.innerHTML = '<p class="table-subtitle">Unable to load notifications.</p>';
-  }
-}
-
-function bindMemberNotificationUi() {
-  const btn = document.getElementById('memberNotificationBtn');
-  const panel = document.getElementById('memberNotificationPanel');
-  const markAllBtn = document.getElementById('markAllMemberNotificationsReadBtn');
-
-  const closePanel = () => {
-    if (!panel) return;
-    panel.classList.add('hidden');
-    panel.hidden = true;
-  };
-
-  const openNotifications = () => {
-    void loadMemberNotifications({ openPanel: true });
-  };
-
-  void loadMemberNotifications({ openPanel: false });
-
-  if (btn && panel) {
-    btn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      if (panel.classList.contains('hidden')) {
-        openNotifications();
-      } else {
-        closePanel();
-      }
-    });
-  }
-
-  document.addEventListener('click', (event) => {
-    if (!panel || panel.classList.contains('hidden')) {
-      return;
-    }
-    if (!panel.contains(event.target) && event.target !== btn) {
-      closePanel();
-    }
-  });
-
-  if (markAllBtn) {
-    markAllBtn.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      await fetch('/api/member/notifications/read-all', { method: 'PATCH' });
-      await loadMemberNotifications({ openPanel: true });
-    });
-  }
-
-  document.addEventListener('click', async (event) => {
-    const item = event.target.closest('#memberNotificationPanel [data-member-notification-id]');
-    if (!item || !panel || panel.classList.contains('hidden')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (window.SocietyNotifications?.handleNotificationClick) {
-      await window.SocietyNotifications.handleNotificationClick(item, {
-        readUrl: (id) => `/api/member/notifications/${id}/read`,
-        closePanel,
-        onSameDashboard: (section) => navigateMemberPage(section),
-      });
-      void loadMemberNotifications({ openPanel: false });
-      return;
-    }
-    await fetch(`/api/member/notifications/${item.dataset.memberNotificationId}/read`, { method: 'PATCH' });
-    await loadMemberNotifications({ openPanel: true });
-  });
-}
-
 let memberChatPollTimer = null;
 let memberChatReplyTo = null;
 
@@ -2686,7 +2589,6 @@ document.addEventListener('DOMContentLoaded', () => {
   bindSidebarControls();
   bindMemberReportCards();
   bindLoanAndKycForms();
-  bindMemberNotificationUi();
   bindMemberChatUi();
 
   document.addEventListener('click', async (event) => {

@@ -4,8 +4,6 @@ const LoanRepayment = require('../models/LoanRepayment');
 const User = require('../models/User');
 const path = require('path');
 const fs = require('fs');
-const { createAdminNotification } = require('./adminNotificationService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { sendTransactionalEmail, generateLoanContractPdf, formatPaymentMethodLabel } = require('./notificationService');
 const { sendSms } = require('./smsService');
 const {
@@ -313,35 +311,8 @@ async function createLoanApplication({
       });
     }
 
-    await createMemberNotification({
-      memberId,
-      type: 'loan',
-      title: 'Loan Application Auto-Rejected',
-      message: `Your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was auto-rejected.`,
-      relatedId: loan._id,
-      relatedModel: 'LoanApplication',
-    });
-
     return { loan, autoRejected: true };
   }
-
-  await createMemberNotification({
-    memberId,
-    type: 'loan',
-    title: 'Loan Application Submitted',
-    message: `Your ${normalizedType} loan application for ${formatMoney(normalizedAmount, 2)} was submitted and is awaiting CEO review.`,
-    relatedId: loan._id,
-    relatedModel: 'LoanApplication',
-  });
-
-  await createAdminNotification({
-    type: 'loan',
-    title: `New ${normalizedType === 'emergency' ? 'Emergency ' : ''}Loan Application from ${member.name} (CEO review)`,
-    message: `${member.name} requested a ${normalizedType} loan of ${formatMoney(normalizedAmount, 2)}. Awaiting CEO approval before Cashier disbursement. Reason: ${reason.trim()}`,
-    relatedId: loan._id,
-    relatedModel: 'LoanApplication',
-    targetRoles: ['ceo'],
-  });
 
   if (process.env.ADMIN_ALERT_EMAIL) {
     await sendTransactionalEmail({
@@ -856,28 +827,6 @@ async function updateLoanApplicationStatus(loanId, status, adminNote = '', revie
     await sendSms({
       to: member.phone,
       message: `Loan update: your ${loan.loanType} loan for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.paymentMethod ? ` Payment: ${paymentLabel}.` : ''}`,
-    });
-  }
-
-  await createMemberNotification({
-    memberId: loan.member._id || loan.member,
-    type: 'loan',
-    title: `Loan Application ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-    message: status === 'approved'
-      ? `Your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} was approved by the CEO and forwarded to the Cashier for disbursement.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`
-      : `Your ${loan.loanType} loan application for ${formatMoney(Number(loan.amount), 2)} is now ${status}.${loan.adminNote ? ` Note: ${loan.adminNote}` : ''}`,
-    relatedId: loan._id,
-    relatedModel: 'LoanApplication',
-  });
-
-  if (status === 'approved') {
-    await createAdminNotification({
-      type: 'loan',
-      title: 'Loan approved — awaiting Cashier disbursement',
-      message: `${member?.name || 'Member'}'s ${loan.loanType} loan of ${formatMoney(Number(loan.amount), 2)} was approved and is ready for Cashier payout.`,
-      relatedId: loan._id,
-      relatedModel: 'LoanApplication',
-      targetRoles: ['cashier'],
     });
   }
 
@@ -1441,15 +1390,6 @@ async function disburseLoanApplication(loanId, {
       message: `Loan transferred: ${formatMoney(Number(workingLoan.amount), 2)} via ${paymentLabel}${sourceNote}.${referenceNote}`,
     });
   }
-
-  await createMemberNotification({
-    memberId: workingLoan.member._id || workingLoan.member,
-    type: 'loan',
-    title: 'Loan Money Transferred',
-    message: `Your ${workingLoan.loanType} loan of ${formatMoney(Number(workingLoan.amount), 2)} was transferred via ${paymentLabel}${sourceNote}.${referenceNote}`,
-    relatedId: workingLoan._id,
-    relatedModel: 'LoanApplication',
-  });
 
   return result;
 }

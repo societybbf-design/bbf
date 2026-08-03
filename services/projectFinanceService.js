@@ -3,8 +3,6 @@ const InvestmentProfit = require('../models/InvestmentProfit');
 const Sale = require('../models/Sale');
 const User = require('../models/User');
 const { formatMoney } = require('./moneyFormat');
-const { createAdminNotification } = require('./adminNotificationService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { getDistributionType } = require('./societyConfig');
 const {
   withMongoTransaction,
@@ -396,17 +394,6 @@ async function recordCeoExternalInvestorDeposit({
   investment.externalCapitalLedgerEntryId = externalLedger?.entry?._id || investment.externalCapitalLedgerEntryId || null;
   await investment.save();
 
-  await createAdminNotification({
-    type: 'general',
-    title: `External deposit recorded: ${investment.investmentCode}`,
-    message: `${formatMoney(deposit, 2)} cash deposit from ${investor.name || 'External Investor'} `
-      + `credited to isolated external ledger (remaining stake ${formatMoney(money(committed - stake.capitalReceived), 2)}).`,
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-    targetRoles: ['ceo', 'cashier'],
-    targetUser: investor._id,
-  }).catch(() => {});
-
   return {
     investment,
     investor,
@@ -501,20 +488,6 @@ async function recordExternalInvestment({
   }
 
   await investment.save();
-
-  const stakeholderNames = Array.isArray(investment.externalInvestors) && investment.externalInvestors.length
-    ? investment.externalInvestors.map((s) => s.investorName || 'investor').join(', ')
-    : (investment.investorName || 'investor');
-
-  await createAdminNotification({
-    type: 'general',
-    title: `External capital recorded: ${investment.investmentCode}`,
-    message: `${formatMoney(received, 2)} received from ${stakeholderNames} on isolated external sub-ledger `
-      + `(${formatMoney(investment.externalCapitalReceived, 2)} / ${formatMoney(expected, 2)}; society bank unchanged).`,
-    relatedId: investment._id,
-    relatedModel: 'Investment',
-    targetRoles: ['ceo', 'cashier'],
-  });
 
   return {
     investment,
@@ -741,20 +714,6 @@ async function recordMonthlyProjectReturn({
         + `, external net ${investorLabel} queued for External Investor approval.`,
     };
   });
-
-  for (const req of result.payoutRequests || []) {
-    if (!req.investor) continue;
-    try {
-      await createAdminNotification({
-        type: 'general',
-        title: `Monthly payout approval: ${req.investmentCode || ''}`,
-        message: `Please approve your monthly profit payout of ${formatMoney(req.amount, 2)}.`,
-        relatedId: req._id,
-        relatedModel: 'ExternalPayoutRequest',
-        targetUser: req.investor,
-      });
-    } catch (_) { /* non-fatal */ }
-  }
 
   return result;
 }
@@ -1291,61 +1250,6 @@ async function liquidateProject({
         + ' Ledger locked.',
     };
   });
-
-  // Notifications outside the transaction
-  try {
-    await createAdminNotification({
-      type: 'general',
-      title: `Project closed: ${result.investment.investmentCode}`,
-      message: result.message,
-      relatedId: result.investment._id,
-      relatedModel: 'Investment',
-      targetRoles: ['ceo', 'cashier'],
-    });
-  } catch (_) { /* non-fatal */ }
-
-  for (const req of result.pendingExternalPayoutRequests || []) {
-    if (!req.investor) continue;
-    try {
-      await createAdminNotification({
-        type: 'general',
-        title: `Payout approval needed: ${req.investmentCode || result.investment.investmentCode}`,
-        message: `Please approve your settlement payout of ${formatMoney(req.amount, 2)}`
-          + (Number(req.externalExtraExpenses || 0) > 0
-            ? ` (after external expense ${formatMoney(req.externalExtraExpenses, 2)})`
-            : '')
-          + '.',
-        relatedId: req._id,
-        relatedModel: 'ExternalPayoutRequest',
-        targetUser: req.investor,
-      });
-    } catch (_) { /* non-fatal */ }
-  }
-
-  const notified = new Set();
-  for (const row of result.settlement?.investorPayouts || []) {
-    const memberId = row.investor?._id || row.investor;
-    if (!memberId || notified.has(String(memberId))) continue;
-    notified.add(String(memberId));
-    await createMemberNotification({
-      memberId,
-      type: 'general',
-      title: `Project settled: ${result.investment.investmentCode}`,
-      message: `Your ownership share was settled for ${formatMoney(row.payout, 2)}.`,
-      relatedId: result.investment._id,
-      relatedModel: 'Investment',
-    }).catch(() => {});
-  }
-  if (!notified.size && result.investment?.investor) {
-    await createMemberNotification({
-      memberId: result.investment.investor._id || result.investment.investor,
-      type: 'general',
-      title: `Project settled: ${result.investment.investmentCode}`,
-      message: `Your ownership share was settled for ${formatMoney(result.settlement.investorPayout, 2)}.`,
-      relatedId: result.investment._id,
-      relatedModel: 'Investment',
-    }).catch(() => {});
-  }
 
   return result;
 }

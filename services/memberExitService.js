@@ -2,8 +2,6 @@ const { formatMoney } = require('./moneyFormat');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const MemberExitRequest = require('../models/MemberExitRequest');
-const { createMemberNotification } = require('./memberNotificationService');
-const { createAdminNotification } = require('./adminNotificationService');
 const { money, amountsMatch, listActiveSocietyMembers, getEntryValuation } = require('./memberMigrationService');
 
 const OPEN_EXIT_STATUSES = [
@@ -259,24 +257,6 @@ async function initiateMemberExit({
     initiatedAt: new Date(),
   });
 
-  await createMemberNotification({
-    memberId: member._id,
-    type: 'general',
-    title: 'Member Exit Approval Required',
-    message: `CEO initiated your exit. Settlement ${formatMoney(preview.settlementAmount, 2)}. Please approve or reject this exit request.`,
-    relatedId: exitRequest._id,
-    relatedModel: 'MemberExitRequest',
-  });
-
-  await createAdminNotification({
-    type: 'general',
-    title: 'Member exit initiated — awaiting departing approval',
-    message: `Exit for ${member.name} (${formatMoney(preview.settlementAmount, 2)}) is waiting for the departing member to approve.`,
-    relatedId: exitRequest._id,
-    relatedModel: 'MemberExitRequest',
-    targetRoles: ['ceo'],
-  });
-
   return {
     exitRequest: serializeExitRequest(exitRequest),
     preview,
@@ -368,23 +348,6 @@ async function approveExitByDepartingMember(exitRequestId, memberId, { proxy = n
   await exitRequest.save();
 
   const eligibleIds = exitRequest.eligibleMembers || [];
-  await Promise.all(eligibleIds.map((id) => createMemberNotification({
-    memberId: id,
-    type: 'general',
-    title: 'Approve Member Exit Redistribution',
-    message: `${exitRequest.departingMemberName} approved their exit. Settlement ${formatMoney(exitRequest.settlementAmount, 2)} will be paid by the Cashier after all members approve the share redistribution.`,
-    relatedId: exitRequest._id,
-    relatedModel: 'MemberExitRequest',
-  })));
-
-  await createAdminNotification({
-    type: 'general',
-    title: 'Departing member approved exit — member votes required',
-    message: `${exitRequest.departingMemberName} approved exit. Waiting for ${eligibleIds.length} remaining member approval(s).`,
-    relatedId: exitRequest._id,
-    relatedModel: 'MemberExitRequest',
-    targetRoles: ['ceo'],
-  });
 
   return {
     exitRequest: serializeExitRequest(exitRequest),
@@ -408,15 +371,6 @@ async function rejectExitByDepartingMember(exitRequestId, memberId, reason = '')
   exitRequest.rejectedBy = 'departing_member';
   exitRequest.rejectionReason = String(reason || 'Rejected by departing member').trim();
   await exitRequest.save();
-
-  await createAdminNotification({
-    type: 'general',
-    title: 'Member exit rejected by departing member',
-    message: `${exitRequest.departingMemberName} rejected the exit request.`,
-    relatedId: exitRequest._id,
-    relatedModel: 'MemberExitRequest',
-    targetRoles: ['ceo'],
-  });
 
   return {
     exitRequest: serializeExitRequest(exitRequest),
@@ -489,14 +443,6 @@ async function approveExitByMember(exitRequestId, memberId, { proxy = null } = {
     if (claimed) {
       exitRequest = claimed;
       message = 'All members approved. Exit forwarded to the Cashier for payout.';
-      await createAdminNotification({
-        type: 'general',
-        title: 'Member exit ready for Cashier payout',
-        message: `Exit for ${exitRequest.departingMemberName} (${formatMoney(exitRequest.settlementAmount, 2)}) is ready for Cashier disbursement.`,
-        relatedId: exitRequest._id,
-        relatedModel: 'MemberExitRequest',
-        targetRoles: ['cashier'],
-      });
     } else {
       exitRequest = await MemberExitRequest.findById(exitRequestId);
       message = 'Approval recorded. Exit is already with the Cashier or completed.';
@@ -702,15 +648,6 @@ async function completeCashierMemberExit(exitRequestId, {
           ? `Exit completed. ${formatMoney(settlement, 2)} paid from society bank. Departing balances zeroed; ownership seat redistributed among remaining members (no second credit to their wallets).`
           : 'Exit completed with zero settlement. Share seat removed among remaining members.',
       };
-    });
-
-    await createAdminNotification({
-      type: 'general',
-      title: 'Member exit payout completed',
-      message: `Cashier completed exit payout for ${result.departingMember?.name || memberName}: ${formatMoney(settlement, 2)}. Ownership seat redistributed; balances were not double-credited.`,
-      relatedId: claimed._id,
-      relatedModel: 'MemberExitRequest',
-      targetRoles: ['ceo'],
     });
 
     return result;

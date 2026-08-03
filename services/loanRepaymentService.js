@@ -4,8 +4,6 @@ const fs = require('fs');
 const LoanApplication = require('../models/LoanApplication');
 const LoanRepayment = require('../models/LoanRepayment');
 const User = require('../models/User');
-const { createAdminNotification } = require('./adminNotificationService');
-const { createMemberNotification } = require('./memberNotificationService');
 const { notifyMemberByEmailAndSms, generateLoanRepaymentReceiptPdf, formatPaymentMethodLabel } = require('./notificationService');
 const {
   withMongoTransaction,
@@ -247,24 +245,6 @@ async function createLoanRepaymentRequest({
     memberNote: memberNote?.trim() || '',
     balanceBefore: outstandingBalance,
     status: 'pending',
-  });
-
-  await createMemberNotification({
-    memberId,
-    type: 'repayment',
-    title: 'Loan Repayment Request Submitted',
-    message: `Your loan repayment request for ${formatMoney(finalAmount, 2)} was submitted and is awaiting admin verification.`,
-    relatedId: repayment._id,
-    relatedModel: 'LoanRepayment',
-  });
-
-  await createAdminNotification({
-    type: 'loan',
-    title: `Loan Repayment Request from ${member.name}`,
-    message: `${member.name} submitted a ${normalizedType} repayment of ${formatMoney(finalAmount, 2)} for outstanding loan ${formatMoney(outstandingBalance, 2)}.`,
-    relatedId: repayment._id,
-    relatedModel: 'LoanRepayment',
-    targetRoles: ['ceo', 'cashier'],
   });
 
   await notifyMemberByEmailAndSms(member, {
@@ -540,14 +520,6 @@ async function finalizeRepaymentArtifacts(repayment, loan, member, reviewedBy, f
     subject: balanceAfter <= 0 ? 'Loan Fully Paid' : 'Loan Repayment Recorded',
     message: `Dear ${member.name}, your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded.${clearedNote}${fundingNote}`,
   });
-  await createMemberNotification({
-    memberId: member._id,
-    type: 'repayment',
-    title: balanceAfter <= 0 ? 'Loan Completed / Paid' : 'Loan Repayment Recorded',
-    message: `Your loan repayment of ${formatMoney(Number(repayment.amount), 2)} was recorded by cashier.${clearedNote}${fundingNote}`,
-    relatedId: repayment._id,
-    relatedModel: 'LoanRepayment',
-  });
 }
 
 async function recordAdminLoanRepayment({
@@ -738,14 +710,6 @@ async function updateLoanRepaymentStatus(repaymentId, status, adminNote = '', re
       await notifyMemberByEmailAndSms(repayment.member, {
         subject: 'Loan Repayment Rejected',
         message: `Dear ${repayment.member.name}, your loan repayment request for ${formatMoney(Number(repayment.amount), 2)} was rejected.${adminNote ? ` Note: ${adminNote}` : ''}`,
-      });
-      await createMemberNotification({
-        memberId: repayment.member._id,
-        type: 'repayment',
-        title: 'Loan Repayment Rejected',
-        message: `Your loan repayment request for ${formatMoney(Number(repayment.amount), 2)} was rejected.${adminNote ? ` Note: ${adminNote}` : ''}`,
-        relatedId: repayment._id,
-        relatedModel: 'LoanRepayment',
       });
     }
 

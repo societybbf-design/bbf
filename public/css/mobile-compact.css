@@ -103,8 +103,7 @@
   }
 
   .theme-toggle-btn,
-  .language-toggle-btn,
-  .notification-bell-btn {
+  .language-toggle-btn {
     width: 1.85rem !important;
     height: 1.85rem !important;
     min-width: 1.85rem !important;
@@ -113,15 +112,6 @@
     font-size: 0.78rem !important;
     border-radius: 8px;
     flex-shrink: 0;
-  }
-
-  .notification-bell-btn {
-    font-size: 0.85rem !important;
-  }
-
-  .notification-badge {
-    transform: scale(0.85);
-    transform-origin: top right;
   }
 
   .user-profile-menu {
