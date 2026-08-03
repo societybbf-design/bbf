@@ -21,19 +21,14 @@ test('wipe service preserves developer role and reseeds basics', () => {
   assert.match(resetScript, /wipeTransactionalDatabase/);
 });
 
-test('developer-only wipe API requires phrase, password, and strict developer role', () => {
-  assert.match(developerRoutes, /\/database\/wipe/);
-  assert.match(developerRoutes, /requireStrictDeveloper/);
-  assert.match(developerRoutes, /requirePasswordConfirmation/);
-  assert.match(developerRoutes, /WIPE_CONFIRM_PHRASE/);
-  assert.match(developerRoutes, /wipeTransactionalDatabase/);
-  assert.match(developerRoutes, /Only the platform Developer account/);
-});
-
-test('User Management Danger Zone UI wires wipe form', () => {
-  assert.match(umHtml, /umDatabaseWipeForm/);
-  assert.match(umHtml, /WIPE_ALL_DATA/);
-  assert.match(umHtml, /data-dev-panel="danger"/);
-  assert.match(developerJs, /\/api\/developer\/database\/wipe/);
-  assert.match(developerJs, /SEED_ONLY_DEVELOPER/);
+test('Danger Zone database-wipe module is removed from the User Management dashboard', () => {
+  // The dashboard-facing wipe module (nav item, panel, JS handler, and HTTP endpoint)
+  // was intentionally removed. Destructive wipes remain available only via the
+  // CLI (`npm run db:reset:confirm`) which uses services/databaseResetService.js.
+  assert.doesNotMatch(developerRoutes, /\/database\/wipe/);
+  assert.doesNotMatch(developerRoutes, /requireStrictDeveloper/);
+  assert.doesNotMatch(umHtml, /umDatabaseWipeForm/);
+  assert.doesNotMatch(umHtml, /data-dev-panel="danger"/);
+  assert.doesNotMatch(umHtml, /data-dev-tab="danger"/);
+  assert.doesNotMatch(developerJs, /\/api\/developer\/database\/wipe/);
 });

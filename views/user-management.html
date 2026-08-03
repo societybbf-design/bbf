@@ -55,10 +55,6 @@
         <span class="nav-icon-wrap"><span class="nav-icon">🔒</span></span>
         <span class="nav-label" data-i18n="um.mySecurity">My Security</span>
       </a>
-      <a href="#" class="nav-item" data-dev-tab="danger" data-developer-only-nav>
-        <span class="nav-icon-wrap"><span class="nav-icon">☢️</span></span>
-        <span class="nav-label">Danger Zone</span>
-      </a>
     </nav>
 
     <div class="sidebar-user-card">
@@ -311,29 +307,6 @@
           </section>
         </section>
 
-        <section class="content-section hidden" data-dev-panel="danger" data-developer-only-panel>
-          <section class="panel-card">
-            <h2>Danger Zone — Database wipe</h2>
-            <p class="table-subtitle">
-              Permanently deletes all members, cashiers, CEOs, external investors, deposits, withdrawals,
-              loans, projects, bank ledger entries, notifications, and sessions. Dashboard balances reset to zero.
-              Developer login credentials are kept.
-            </p>
-            <p class="message error" style="margin:0.75rem 0;">
-              This cannot be undone. Use only to clear Hostinger trial data before live production use.
-            </p>
-            <form id="umDatabaseWipeForm" class="add-member-form">
-              <div class="form-group">
-                <label>
-                  Type <code>WIPE_ALL_DATA</code> to confirm
-                  <input type="text" name="confirmPhrase" id="umWipeConfirmPhrase" autocomplete="off" required placeholder="WIPE_ALL_DATA" />
-                </label>
-              </div>
-              <button type="submit" class="primary-btn" id="umWipeSubmitBtn">Wipe all trial data</button>
-              <p id="umWipeMessage" class="message" role="status"></p>
-            </form>
-          </section>
-        </section>
       </div>
     </main>
   </div>

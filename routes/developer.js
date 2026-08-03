@@ -35,20 +35,8 @@ const {
   umMutateRateLimit,
   otpVerifyRateLimit,
 } = require('../services/requestRateLimit');
-const {
-  WIPE_CONFIRM_PHRASE,
-  wipeTransactionalDatabase,
-} = require('../services/databaseResetService');
 
 router.use(requireAuth, requireDeveloper);
-
-/** Absolute developer role only — never CEO/admin for destructive DB wipe. */
-function requireStrictDeveloper(req, res, next) {
-  if (isDeveloperRole(req.session?.user?.role)) return next();
-  return res.status(403).json({
-    error: 'Only the platform Developer account can wipe the database.',
-  });
-}
 
 const proxyMemberApprovals = requirePermission('can_proxy_member_approvals');
 
@@ -267,63 +255,5 @@ router.post('/member-approvals/exits/:id/proxy', proxyMemberApprovals, requirePa
     return res.status(error.status || 500).json({ error: error.message || 'Unable to record proxy approval.' });
   }
 });
-
-/**
- * Wipe all trial / transactional data. Keeps developer login credentials only.
- * Requires: developer role + password confirm + exact phrase WIPE_ALL_DATA.
- */
-router.post(
-  '/database/wipe',
-  requireStrictDeveloper,
-  requirePasswordConfirmation,
-  umMutateRateLimit.middleware(),
-  async (req, res) => {
-    try {
-      const phrase = String(req.body?.confirmPhrase || req.body?.confirm || '').trim();
-      if (phrase !== WIPE_CONFIRM_PHRASE) {
-        return res.status(400).json({
-          error: `Type ${WIPE_CONFIRM_PHRASE} exactly to confirm the database wipe.`,
-          confirmPhraseRequired: WIPE_CONFIRM_PHRASE,
-        });
-      }
-
-      const actor = req.session.user;
-      const result = await wipeTransactionalDatabase({
-        reseedBasics: true,
-        actorLabel: actor?.email || actor?.name || 'developer',
-      });
-
-      await recordAudit({
-        action: 'database_wipe',
-        actorId: actor?.id,
-        actorEmail: actor?.email,
-        actorRole: actor?.role,
-        details: {
-          collectionsDropped: result.collectionCount,
-          developersPreserved: result.developersPreserved,
-        },
-        ip: clientIp(req),
-        success: true,
-      }).catch(() => {});
-
-      // Destroy this session — sessions collection was wiped; force re-login.
-      await new Promise((resolve) => {
-        if (!req.session) return resolve();
-        req.session.destroy(() => resolve());
-      });
-      res.clearCookie?.('society.sid');
-
-      return res.json({
-        ...result,
-        requireRelogin: true,
-        hint: 'Log in again with the developer account. Set SEED_ONLY_DEVELOPER=1 in Hostinger env so CEO/cashier/member trial accounts are not recreated on restart.',
-      });
-    } catch (error) {
-      return res.status(error.status || 500).json({
-        error: error.message || 'Unable to wipe database.',
-      });
-    }
-  }
-);
 
 module.exports = router;
